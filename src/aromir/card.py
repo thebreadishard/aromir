@@ -12,9 +12,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from aromir import dft, families, repair
+from aromir.release import error_text, level_name
 
 if TYPE_CHECKING:
-    from aromir.release import Evaluation, Release
+    from aromir.release import Evaluation, Release, Training
 
 LICENCE: Final = "cc-by-4.0"
 REPOSITORY: Final = "https://github.com/thebreadishard/aromir"
@@ -70,8 +71,8 @@ def _evaluation_table(evaluation: Evaluation) -> list[str]:
     lines = [f"| family | {header} | licensed |", "|---|" + "---|" * (len(holdouts) + 1)]
     for family in families.FAMILIES:
         cells = " | ".join(
-            f"{evaluation.errors_cm[family][name]} "
-            f"({', '.join(str(x) for x in evaluation.seed_errors_cm[family][name])})"
+            f"{error_text(evaluation.errors_cm[family][name])} "
+            f"({', '.join(error_text(x) for x in evaluation.seed_errors_cm[family][name])})"
             for name in holdouts
         )
         licensed = "yes" if evaluation.licensed(family) else "no"
@@ -86,7 +87,8 @@ def _evaluation(release: Release) -> list[str]:
         "",
         (
             "The rms error of the corrected band positions against "
-            f"{evaluation.higher_level}, in cm⁻¹, on molecules the network never trained on. "
+            f"{level_name(evaluation.higher_level)}, in cm⁻¹, on molecules the network never "
+            "trained on. "
             "The seed mean, with each seed's value in brackets."
         ),
         "",
@@ -106,11 +108,27 @@ def _evaluation(release: Release) -> list[str]:
     ]
 
 
+def _held_out(training: Training) -> str:
+    """Count each hold-out's molecules the network did not train on, and name the others.
+
+    A molecule can sit in a hold-out and, under another identifier, in the training set.
+    It was trained on, so it is not counted as held out; the card says how many there are.
+    """
+    trained = set(training.trained_smiles)
+    parts = []
+    for name, smiles in training.held_out_smiles.items():
+        held_out = set(smiles)
+        n_trained = len(held_out & trained)
+        part = f"{len(held_out) - n_trained} in ({name})"
+        if n_trained:
+            part += f", not counting {n_trained} the network also trained on"
+        parts.append(part)
+    return "; ".join(parts) or "none"
+
+
 def _training(release: Release) -> list[str]:
     training = release.training
-    held_out = ", ".join(
-        f"{len(smiles)} in ({name})" for name, smiles in training.held_out_smiles.items()
-    )
+    held_out = _held_out(training)
     prepared = (
         "with their soft modes (below "
         f"{repair.SOFT_BELOW_CM:g} cm⁻¹) measured from gradients that include the grid's response"
@@ -169,8 +187,8 @@ def _limits(release: Release) -> list[str]:
         "## Where it stops being known",
         "",
         (
-            f"- **The level is {evaluation.higher_level}.** The errors above are against that "
-            "level, not against experiment."
+            f"- **The level is {level_name(evaluation.higher_level)}.** The errors above are "
+            "against that level, not against experiment."
         ),
         "- **Positions are harmonic.** No anharmonic shift is applied.",
         (

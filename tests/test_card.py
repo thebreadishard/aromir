@@ -31,17 +31,65 @@ def test_the_card_states_the_releases_own_numbers(loaded: release.Release) -> No
     assert "- **Licensed families:** ring-ip, CH-stretch, CH-oop." in text
     assert "- **Not licensed:** other." in text
     seeds = loaded.evaluation.seed_errors_cm["ring-ip"]
-    brackets = {name: ", ".join(str(error) for error in seeds[name]) for name in seeds}
+    brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
     assert f"| ring-ip | 1.77 ({brackets['a']}) | 2.12 ({brackets['b']}) | yes |" in text
     assert "- Elements: C, H, N, O." in text
     assert "- Sizes: 10 to 30 atoms." in text
     assert "- 1 molecules, neutral" in text
-    assert "1 in (a), 1 in (b)" in text
+    assert "1 in (a); 1 in (b)" in text
     n_parameters = sum(parameter.numel() for parameter in loaded.networks[0].parameters())
     assert f"- {n_parameters:,} parameters per seed." in text
     for sha256 in loaded.tensor_sha256:
         assert f"`{sha256}`" in text
     assert text.endswith("own files.\n")
+
+
+def test_a_held_out_molecule_that_was_trained_on_is_not_counted_as_held_out(
+    loaded: release.Release,
+) -> None:
+    leaked = loaded.training.model_copy(
+        update={"held_out_smiles": {"a": ["c1ccccc1", "c1ccc2ccccc2c1"], "b": ["Cc1ccccc1"]}}
+    )
+    text = card.to_markdown(replace(loaded, training=leaked))
+    assert (
+        "- Held out and never trained on: 1 in (a), not counting 1 the network also trained "
+        "on; 1 in (b)." in text
+    )
+
+
+def test_a_hold_out_list_is_counted_by_molecule_and_none_is_said(
+    loaded: release.Release,
+) -> None:
+    twice = {"a": ["c1ccc2ccccc2c1", "c1ccc2ccccc2c1"], "b": ["Cc1ccccc1", "Cc1ccccc1"]}
+    training = loaded.training.model_copy(update={"held_out_smiles": twice})
+    text = card.to_markdown(replace(loaded, training=training))
+    assert (
+        "- Held out and never trained on: 0 in (a), not counting 1 the network also trained "
+        "on; 1 in (b)." in text
+    )
+    nothing = loaded.training.model_copy(update={"held_out_smiles": {}})
+    assert "- Held out and never trained on: none." in card.to_markdown(
+        replace(loaded, training=nothing)
+    )
+
+
+def test_errors_are_written_with_two_decimals(loaded: release.Release) -> None:
+    errors = dict(loaded.evaluation.errors_cm)
+    errors["CH-stretch"] = {"a": 1.2, "b": 2.5}
+    evaluation = loaded.evaluation.model_copy(update={"errors_cm": errors})
+    text = card.to_markdown(replace(loaded, evaluation=evaluation))
+    assert "| CH-stretch | 1.20 (" in text
+    assert ") | 2.50 (" in text
+
+
+def test_the_level_is_explained_once_and_named_after(loaded: release.Release) -> None:
+    explained = "ωB97X/6-31G* (the DFT proxy: trained on ωB97X − B3LYP Hessians)"
+    evaluation = loaded.evaluation.model_copy(update={"higher_level": explained})
+    text = card.to_markdown(replace(loaded, evaluation=evaluation))
+    assert text.count("(the DFT proxy") == 1
+    assert "the difference to ωB97X/6-31G* (the DFT proxy" in text
+    assert "- **The level is ωB97X/6-31G*.**" in text
+    assert "positions against ωB97X/6-31G*, in cm⁻¹" in text
 
 
 def test_the_card_says_how_the_training_hessians_were_prepared(loaded: release.Release) -> None:

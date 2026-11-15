@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -136,10 +137,15 @@ def test_the_record_and_its_text(
     assert text.startswith("# Certificate: c1ccccc1\n")
     assert "the training set spans 10–30 atoms: inside" in text
     seeds = loaded.evaluation.seed_errors_cm["other"]
-    in_brackets = {name: ", ".join(str(error) for error in seeds[name]) for name in seeds}
+    in_brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
     assert f"| other | 3.62 ({in_brackets['a']}) | 3.89 ({in_brackets['b']}) | no |" in text
+    assert ") | 2.70 (" in text
+    assert "(the DFT proxy" in record["statement"]
+    assert text.count("(the DFT proxy") == 1
     band_rows = [line for line in text.split("\n") if line.count("|") == 9 and "–" in line]
     assert len(band_rows) == N_BANDS
+    error_cells = [line.split("|")[-2].strip() for line in band_rows]
+    assert all(re.fullmatch(r"\d+\.\d\d / \d+\.\d\d", cell) for cell in error_cells)
 
 
 def test_a_molecule_outside_the_training_sizes_is_marked(

@@ -135,6 +135,21 @@ class Training(BaseModel):
     soft_mode_repair: bool
 
 
+def error_text(error_cm: float) -> str:
+    """Write a measured error for a table: two decimals always, so 2.50 reads like 2.12."""
+    return f"{error_cm:.2f}"
+
+
+def level_name(higher_level: str) -> str:
+    """Return a level of theory without the explanation in brackets that may follow it.
+
+    A document explains the level where it first names it and uses the bare name after.
+    The name ends at the first bracket that follows a space, so "CCSD(T)/cc-pVTZ" is kept
+    whole.
+    """
+    return higher_level.split(" (", 1)[0]
+
+
 @dataclass(frozen=True, eq=False)
 class Corrections:
     """The seeds' answers for one molecule.

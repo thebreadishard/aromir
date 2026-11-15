@@ -14,6 +14,7 @@ from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Final
 
 from aromir import families, spectrum, vibrations
+from aromir.release import error_text, level_name
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -169,7 +170,7 @@ def _band_lines(record: dict[str, Any]) -> list[str]:
     ]
     for band in record["bands"]:
         low, high = band["seed_range_cm"]
-        errors = " / ".join(str(band["measured_error_cm"][name]) for name in holdouts)
+        errors = " / ".join(error_text(band["measured_error_cm"][name]) for name in holdouts)
         lines.append(
             f"| {band['wavenumber_cm']} | {band['intensity_km_mol']} | {low}–{high} "
             f"| {band['b3lyp_cm']} | {band['scaled_b3lyp_cm']} | {band['family']} "
@@ -185,7 +186,8 @@ def _accuracy_lines(accuracy: dict[str, Any]) -> list[str]:
     for family, errors in accuracy["errors_cm"].items():
         per_seed = accuracy["seed_errors_cm"][family]
         cells = " | ".join(
-            f"{errors[name]} ({', '.join(str(x) for x in per_seed[name])})" for name in holdouts
+            f"{error_text(errors[name])} ({', '.join(error_text(x) for x in per_seed[name])})"
+            for name in holdouts
         )
         licensed = "yes" if family in accuracy["licensed_families"] else "no"
         lines.append(f"| {family} | {cells} | {licensed} |")
@@ -224,8 +226,8 @@ def to_markdown(record: dict[str, Any]) -> str:
         "## How well the network is known",
         "",
         (
-            f"Seed-mean rms error of the corrected positions against {network['higher_level']}, "
-            "in cm⁻¹, each seed's value in brackets."
+            "Seed-mean rms error of the corrected positions against "
+            f"{level_name(network['higher_level'])}, in cm⁻¹, each seed's value in brackets."
         ),
         "",
         *_accuracy_lines(record["accuracy"]),
