@@ -10,12 +10,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from aromir.constants import KM_PER_MOL_PER_SQUARED_DIPOLE_DERIVATIVE
 from aromir.vibrations import vibrational_modes
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from numpy.typing import NDArray
+
     from aromir.molecule import FloatArray, Geometry
+    from aromir.vibrations import Modes
 
 FWHM: Final = 10.0
 """Full width at half maximum of the drawn Lorentzian, cm⁻¹."""
@@ -101,3 +107,29 @@ def broadened(bands: Bands, wavenumbers: FloatArray, fwhm: float = FWHM) -> Floa
     offsets = wavenumbers[None, :] - bands.wavenumbers[:, None]
     lines = bands.intensities[:, None] * half_width / np.pi / (offsets**2 + half_width**2)
     return np.asarray(lines.sum(axis=0), dtype=float)
+
+
+def partners(corrected: Modes, reference: Modes) -> NDArray[np.int64]:
+    """Return, for each corrected mode, the reference mode that moves most like it.
+
+    The pairing is the one-to-one assignment of largest total squared overlap of the
+    mass-weighted mode vectors, so two modes that swap places in wavenumber keep their
+    partners. Degenerate partners may swap, which changes nothing they share.
+    """
+    overlap = (corrected.vectors.T @ reference.vectors) ** 2
+    _, reference_index = linear_sum_assignment(-overlap)
+    return np.asarray(reference_index, dtype=np.int64)
+
+
+def seed_ranges(
+    hessian: FloatArray, geometry: Geometry, corrections: Sequence[FloatArray]
+) -> FloatArray:
+    """Return each band's lowest and highest position over the seeds, shape (3N−6, 2).
+
+    Each seed's corrected modes are ranked by wavenumber, and bands of equal rank are
+    compared: the spread a reader sees when the seeds' spectra are laid over each other.
+    """
+    per_seed = np.array(
+        [vibrational_modes(hessian + delta, geometry).wavenumbers for delta in corrections]
+    )
+    return np.stack([per_seed.min(axis=0), per_seed.max(axis=0)], axis=1)

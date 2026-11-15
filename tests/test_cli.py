@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import aromir
-from aromir import cli, pipeline
+from aromir import cli, pipeline, release
 from aromir.errors import ConvergenceError
 
 if TYPE_CHECKING:
@@ -75,3 +75,33 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         cli.main(["--version"])
     assert capsys.readouterr().out == f"aromir {aromir.__version__}\n"
+
+
+def test_spectrum_reports_the_licensed_bands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    loaded_from = []
+
+    def load(folder: Path) -> str:
+        loaded_from.append(folder)
+        return "the release"
+
+    def run(_request: pipeline.Request, loaded: str) -> dict[str, Any]:
+        assert loaded == "the release"
+        return {"bands": [{"licensed": True}, {"licensed": True}, {"licensed": False}]}
+
+    monkeypatch.setattr(release, "load", load)
+    monkeypatch.setattr(pipeline, "run_spectrum", run)
+    out = tmp_path / "benzene"
+    arguments = ["spectrum", "c1ccccc1", "--out", str(out), "--release", str(tmp_path / "r")]
+    assert cli.main(arguments) == cli.EXIT_DONE
+    assert loaded_from == [tmp_path / "r"]
+    assert capsys.readouterr().out == (
+        f"done: 3 bands, 2 of them in a licensed family; certificate in {out / 'certificate.md'}\n"
+    )
+
+
+def test_spectrum_needs_a_release(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        cli.main(["spectrum", "c1ccccc1", "--out", "x"])
+    assert "--release" in capsys.readouterr().err

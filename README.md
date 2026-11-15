@@ -3,10 +3,10 @@
 Infrared spectra of aromatic molecules: a cheap DFT Hessian, a learned correction to it,
 and a certificate that says how far each band can be trusted.
 
-> **Status: pre-alpha (0.1.0.dev0).** The low level works end to end and is tested. The
-> network's code is in the package and reproduces its training code's output, but its
-> trained weights are not published yet, so no corrected spectrum can be computed. The
-> anharmonic step and the certificate are not in this version; see
+> **Status: pre-alpha (0.1.0.dev0).** The whole chain is in the package and tested: the
+> low level, the network, the corrected spectrum and its certificate. The network's
+> trained weights are not published yet, so a corrected spectrum cannot be computed
+> without them, and the anharmonic step is not in this version; see
 > [What works today](#what-works-today) and the [roadmap](#roadmap).
 
 ## The idea
@@ -23,7 +23,7 @@ SMILES or xyz
   → analytic Hessian and dipole derivatives     (pyscf)
   → ΔH, the learned correction to the Hessian   (code here; weights not published yet)
   → band positions, heights, spectrum
-  → certificate: what each band rests on        (not in this version)
+  → certificate: what each band rests on
 ```
 
 The network is trained on neutral, closed-shell aromatic molecules of H, C, N, O, F, S
@@ -45,6 +45,29 @@ $ aromir baseline "c1ccccc1" --out results/benzene --threads 4
 The result folder holds `geometry.json` (the optimised geometry), `lowlevel.npz` (the
 Hessian and the polar tensor), `baseline.json` (bands, checks and provenance) and
 `pyscf.log` (the quantum-chemistry log, written as the calculation runs).
+
+`aromir spectrum` adds the learned correction and the certificate. It needs a network
+release, which is not published yet:
+
+```console
+$ aromir spectrum "c1ccccc1" --out results/benzene --release releases/v1.3
+```
+
+A release is a folder with one weight file and recipe per seed, `evaluation.json` (the
+version's measured error per mode family and hold-out) and `training.json` (the elements,
+sizes and molecules it was trained on). The result folder then also holds
+`correction.npz` (each seed's ΔH and their mean) and the certificate, as
+`certificate.json` and `certificate.md`. The certificate lists every band with
+
+- its corrected position and height, and how far the seeds disagree about the position;
+- the uncorrected B3LYP band that moves most like it, plain and scaled;
+- its family (CH stretch, CH out-of-plane, ring in-plane, other), the error measured for
+  that family on molecules the network never saw, and whether the family is licensed: its
+  error is within the licence line on every hold-out;
+
+and says whether the molecule lies inside the sizes the network was trained on, and
+whether the network has seen it. Nothing it states about the network is typed into the
+package: every number comes from the release's records.
 
 Two checks guard every result:
 
@@ -101,7 +124,7 @@ $ ruff check . && ruff format --check . && mypy
 
 | version | what it adds |
 |---|---|
-| 0.1 | the network's trained weights, the anharmonic band positions, the certificate, `aromir spectrum` |
+| 0.1 | the network's trained weights as a release, the anharmonic band positions, the low-mode repair of the Hessian |
 | 1.0 | an answer that does not depend on the atom order, the training code, a model card generated from the evaluation records, releases on PyPI and conda-forge |
 
 ## Licence

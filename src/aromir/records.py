@@ -18,7 +18,16 @@ if TYPE_CHECKING:
 
     from aromir.molecule import FloatArray
 
-_RECORDED_PACKAGES: Final = ("aromir", "pyscf", "geometric", "rdkit", "numpy", "scipy")
+_RECORDED_PACKAGES: Final = (
+    "aromir",
+    "pyscf",
+    "geometric",
+    "rdkit",
+    "numpy",
+    "scipy",
+    "torch",
+    "safetensors",
+)
 
 
 def provenance() -> dict[str, Any]:
@@ -44,4 +53,11 @@ def write_arrays(path: Path, arrays: Mapping[str, FloatArray]) -> None:
     temporary = path.with_name(path.name + ".tmp")
     with temporary.open("wb") as handle:
         np.savez_compressed(handle, allow_pickle=False, **arrays)
+    os.replace(temporary, path)  # noqa: PTH105  as in write_json
+
+
+def write_text(path: Path, text: str) -> None:
+    """Write a text file through a temporary file, with Unix line ends on every platform."""
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(text, encoding="utf-8", newline="\n")
     os.replace(temporary, path)  # noqa: PTH105  as in write_json

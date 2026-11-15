@@ -1,0 +1,92 @@
+{
+ "network_version": "1.3",
+ "higher_level": "ωB97X/6-31G* (the DFT proxy: the network's ΔH is trained on ωB97X − B3LYP Hessians)",
+ "licence_line_cm": 3.0,
+ "holdouts": {
+  "a": {
+   "description": "hold-out (a) without its two trained twins (2-naphthoic acid and benzonitrile were trained on as layer-B molecules; TASKS 157): eight layer-A molecules held out on 19 Sep 2026, never trained on under any id",
+   "n_molecules": 8
+  },
+  "b": {
+   "description": "hold-out (b): every substituted molecule of two scaffold cores, frozen on 8 Oct 2026 — scaffolds the network never saw",
+   "n_molecules": 39
+  }
+ },
+ "errors_cm": {
+  "ring-ip": {
+   "a": 1.77,
+   "b": 2.12
+  },
+  "CH-stretch": {
+   "a": 1.19,
+   "b": 2.5
+  },
+  "CH-oop": {
+   "a": 2.17,
+   "b": 2.7
+  },
+  "other": {
+   "a": 3.62,
+   "b": 3.89
+  }
+ },
+ "seed_errors_cm": {
+  "ring-ip": {
+   "a": [
+    1.95,
+    1.68,
+    1.7
+   ],
+   "b": [
+    2.25,
+    2.02,
+    2.11
+   ]
+  },
+  "CH-stretch": {
+   "a": [
+    0.91,
+    1.74,
+    0.91
+   ],
+   "b": [
+    1.91,
+    3.51,
+    2.08
+   ]
+  },
+  "CH-oop": {
+   "a": [
+    2.47,
+    2.06,
+    1.99
+   ],
+   "b": [
+    2.44,
+    2.95,
+    2.72
+   ]
+  },
+  "other": {
+   "a": [
+    4.09,
+    3.27,
+    3.51
+   ],
+   "b": [
+    3.65,
+    4.51,
+    3.52
+   ]
+  }
+ },
+ "coupled_cluster": "not measured for this network version: the coupled-cluster reads (T3) were made on chain 34, and tests on the 9–11 existing anchors wait for the anchor decision of November 2026",
+ "sources": [
+  "E7_rungC_chain35_analytic_eval_frozenb_seed0.json",
+  "E7_rungC_chain35_analytic_eval_frozenb_seed1.json",
+  "E7_rungC_chain35_analytic_eval_frozenb_seed2.json",
+  "E7_rungC_chain35_analytic_a8read_seed0.json",
+  "E7_rungC_chain35_analytic_a8read_seed1.json",
+  "E7_rungC_chain35_analytic_a8read_seed2.json"
+ ]
+}

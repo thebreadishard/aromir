@@ -1,4 +1,4 @@
-"""The command line: ``aromir check`` and ``aromir baseline``."""
+"""The command line: ``aromir check``, ``aromir baseline`` and ``aromir spectrum``."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Final
 from pydantic import ValidationError
 
 import aromir
-from aromir import pipeline
+from aromir import pipeline, release
 from aromir.dft import Resources
 from aromir.errors import AromirError, RefusedError
 
@@ -38,11 +38,20 @@ def _parser() -> argparse.ArgumentParser:
         parents=[molecule],
         help="optimise, compute the B3LYP Hessian and write the harmonic and scaled spectra",
     )
-    baseline.add_argument(
-        "--out", type=Path, required=True, help="the result folder (empty or new)"
+    spectrum = commands.add_parser(
+        "spectrum",
+        parents=[molecule],
+        help="compute the corrected spectrum with a network release and write its certificate",
     )
-    baseline.add_argument("--threads", type=int, default=defaults.threads)
-    baseline.add_argument("--max-memory-mb", type=int, default=defaults.max_memory_mb)
+    spectrum.add_argument(
+        "--release", type=Path, required=True, help="the folder of a network release"
+    )
+    for computing in (baseline, spectrum):
+        computing.add_argument(
+            "--out", type=Path, required=True, help="the result folder (empty or new)"
+        )
+        computing.add_argument("--threads", type=int, default=defaults.threads)
+        computing.add_argument("--max-memory-mb", type=int, default=defaults.max_memory_mb)
     return parser
 
 
@@ -54,9 +63,17 @@ def _run(arguments: argparse.Namespace) -> None:
         return
     resources = Resources(threads=arguments.threads, max_memory_mb=arguments.max_memory_mb)
     request = pipeline.Request(molecule=molecule, out=arguments.out, resources=resources)
-    record = pipeline.run_baseline(request)
-    n_bands = len(record["harmonic"]["bands"])
-    print(f"done: {n_bands} bands in {request.out / pipeline.BASELINE_FILE}")  # noqa: T201  the command's answer
+    if arguments.command == "baseline":
+        record = pipeline.run_baseline(request)
+        n_bands = len(record["harmonic"]["bands"])
+        print(f"done: {n_bands} bands in {request.out / pipeline.BASELINE_FILE}")  # noqa: T201  the command's answer
+        return
+    record = pipeline.run_spectrum(request, release.load(arguments.release))
+    n_licensed = sum(band["licensed"] for band in record["bands"])
+    print(  # noqa: T201  the command's answer
+        f"done: {len(record['bands'])} bands, {n_licensed} of them in a licensed family; "
+        f"certificate in {request.out / pipeline.CERTIFICATE_TEXT_FILE}"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

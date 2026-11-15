@@ -34,5 +34,21 @@ def test_arrays_round_trip_and_leave_no_temporary_file(tmp_path: Path) -> None:
 def test_provenance_names_the_versions_and_the_time() -> None:
     stamp = records.provenance()
     assert stamp["packages"]["aromir"] == aromir.__version__
-    assert set(stamp["packages"]) == {"aromir", "pyscf", "geometric", "rdkit", "numpy", "scipy"}
+    assert set(stamp["packages"]) == {
+        "aromir",
+        "pyscf",
+        "geometric",
+        "rdkit",
+        "numpy",
+        "scipy",
+        "torch",
+        "safetensors",
+    }
     assert stamp["timestamp_utc"].endswith("+00:00")
+
+
+def test_text_is_written_with_unix_line_ends(tmp_path: Path) -> None:
+    path = tmp_path / "certificate.md"
+    records.write_text(path, "# Title\n\nω in cm⁻¹\n")
+    assert path.read_bytes() == "# Title\n\nω in cm⁻¹\n".encode()
+    assert [entry.name for entry in tmp_path.iterdir()] == ["certificate.md"]

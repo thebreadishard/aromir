@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
+from aromir.network import weights
+from aromir.network.inputs import InputSettings
 from aromir.network.model import Architecture, DeltaHessianNetwork
 
 if TYPE_CHECKING:
@@ -89,3 +93,34 @@ def random_network(architecture: Architecture, seed: int) -> DeltaHessianNetwork
             drawn = torch.randn_like(value) * 0.1
             value.copy_(drawn.abs() + 0.5 if name in positive else drawn)
     return network.eval()
+
+
+RELEASE_DATA = Path(__file__).parent / "data" / "release"
+SMALL_ARCHITECTURE = Architecture(n_features=16, n_blocks=2, hidden=24)
+TRAINING = {
+    "network_version": "1.3",
+    "elements": ["C", "H", "N", "O"],
+    "min_atoms": 10,
+    "max_atoms": 30,
+    "trained_smiles": ["c1ccc2ccccc2c1"],
+    "held_out_smiles": {"a": ["c1ccccc1"], "b": ["Cc1ccccc1"]},
+}
+"""A made-up training set: benzene held out, naphthalene trained on, no chlorine."""
+
+
+def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = "1.3") -> Path:
+    """Write a release folder: v1.3's evaluation record, ``TRAINING`` and random small seeds."""
+    folder.mkdir(parents=True, exist_ok=True)
+    evaluation = (RELEASE_DATA / "evaluation_v1.3.json").read_text(encoding="utf-8")
+    (folder / "evaluation.json").write_text(evaluation, encoding="utf-8")
+    (folder / "training.json").write_text(json.dumps(TRAINING), encoding="utf-8")
+    for seed in seeds:
+        recipe = weights.Recipe(
+            network_version=version,
+            seed=seed,
+            architecture=SMALL_ARCHITECTURE,
+            inputs=InputSettings(),
+        )
+        state = random_network(SMALL_ARCHITECTURE, seed).state_dict()
+        weights.save(state, folder, f"seed-{seed}", recipe)
+    return folder

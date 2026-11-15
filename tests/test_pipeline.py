@@ -9,10 +9,10 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from aromir import lowlevel, optimisation, pipeline, response, spectrum
+from aromir import certificate, lowlevel, optimisation, pipeline, release, response, spectrum
 from aromir.errors import NotAMinimumError, RefusedError
 
-from support import BENZENE_XYZ, bond_force_field
+from support import BENZENE_XYZ, bond_force_field, write_release
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -146,3 +146,37 @@ def test_a_saddle_point_gets_no_spectrum(tmp_path: Path, monkeypatch: pytest.Mon
     with pytest.raises(NotAMinimumError, match="imaginary mode"):
         pipeline.run_baseline(_benzene(tmp_path / "benzene"))
     assert not (tmp_path / "benzene" / "baseline.json").exists()
+
+
+@pytest.mark.usefixtures("synthetic_chemistry")
+def test_a_spectrum_run_writes_the_correction_and_the_certificate(tmp_path: Path) -> None:
+    loaded = release.load(write_release(tmp_path / "release"))
+    record = pipeline.run_spectrum(_benzene(tmp_path / "benzene"), loaded)
+    folder = tmp_path / "benzene"
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "certificate.json",
+        "certificate.md",
+        "correction.npz",
+        "geometry.json",
+        "lowlevel.npz",
+        "pyscf.log",
+    ]
+    assert json.loads((folder / "certificate.json").read_text(encoding="utf-8")) == record
+    assert len(record["bands"]) == 3 * 12 - 6
+    assert record["computation"]["level"]["functional"] == "b3lyp"
+    assert record["provenance"]["packages"]["torch"]
+    with np.load(folder / "correction.npz") as arrays:
+        assert arrays["per_seed"].shape == (2, 36, 36)
+        np.testing.assert_allclose(arrays["mean"], arrays["per_seed"].mean(axis=0))
+    text = (folder / "certificate.md").read_text(encoding="utf-8")
+    assert text == certificate.to_markdown(record)
+
+
+def test_an_element_the_network_never_trained_on_is_refused(tmp_path: Path) -> None:
+    loaded = release.load(write_release(tmp_path / "release"))
+    request = pipeline.Request(
+        molecule=pipeline.MoleculeInput(smiles="Clc1ccccc1"), out=tmp_path / "x"
+    )
+    with pytest.raises(RefusedError, match=r"Cl outside the network's training set \(C, H, N, O\)"):
+        pipeline.run_spectrum(request, loaded)
+    assert not (tmp_path / "x").exists()

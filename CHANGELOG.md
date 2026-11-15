@@ -21,3 +21,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The ΔH network (`aromir.network`): its inputs, the model, weights as safetensors with
   a recipe, and the conversion of a training checkpoint. Trained weights are not
   included yet.
+- The family of every mode (CH stretch, CH out-of-plane, ring in-plane, other).
+- A network release (seeds, measured errors, training set) and `aromir spectrum`: the
+  corrected spectrum with each seed's ΔH and a certificate, in JSON and Markdown, that
+  states each band's family, licence, measured error and spread over the seeds.

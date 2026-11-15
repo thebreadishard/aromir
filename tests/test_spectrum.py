@@ -98,3 +98,22 @@ def test_a_line_width_must_be_positive() -> None:
     bands = spectrum.Bands(np.array([900.0]), np.array([2.0]))
     with pytest.raises(ValueError, match="not positive"):
         spectrum.broadened(bands, spectrum.grid(), fwhm=0.0)
+
+
+def test_partners_follow_the_motion_not_the_position(
+    water: Geometry, water_hessian: FloatArray
+) -> None:
+    modes = vibrations.vibrational_modes(water_hessian, water)
+    swapped = vibrations.Modes(modes.wavenumbers, modes.vectors[:, [2, 0, 1]])
+    assert spectrum.partners(modes, modes).tolist() == [0, 1, 2]
+    assert spectrum.partners(swapped, modes).tolist() == [2, 0, 1]
+
+
+def test_seed_ranges_span_the_seeds_band_by_band(
+    water: Geometry, water_hessian: FloatArray
+) -> None:
+    stiffer, softer = 0.02 * water_hessian, -0.02 * water_hessian
+    ranges = spectrum.seed_ranges(water_hessian, water, [stiffer, softer])
+    plain = vibrations.vibrational_modes(water_hessian, water).wavenumbers
+    np.testing.assert_allclose(ranges[:, 0], plain * np.sqrt(0.98), rtol=1e-9)
+    np.testing.assert_allclose(ranges[:, 1], plain * np.sqrt(1.02), rtol=1e-9)
