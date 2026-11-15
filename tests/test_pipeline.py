@@ -28,14 +28,21 @@ def _ring_force_field(geometry: Geometry) -> tuple[tuple[int, int, float], ...]:
 
 
 @pytest.fixture
-def synthetic_chemistry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace the optimisation and the low level by instant, synthetic results."""
+def synthetic_chemistry(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Replace the optimisation and the low level by instant, synthetic results.
+
+    Returns the list that records, per low-level call, whether the soft-mode repair was asked for.
+    """
+    asked_for_repair: list[bool] = []
 
     def optimise(start: Geometry, _resources: Resources, log: TextIO) -> optimisation.Optimisation:
         log.write("optimised\n")
         return optimisation.Optimisation(start, energy=-1.0, max_force=1e-6, n_steps=3)
 
-    def compute(geometry: Geometry, _resources: Resources, _log: TextIO) -> lowlevel.LowLevel:
+    def compute(
+        geometry: Geometry, _resources: Resources, _log: TextIO, *, repair_soft_modes: bool
+    ) -> lowlevel.LowLevel:
+        asked_for_repair.append(repair_soft_modes)
         return lowlevel.LowLevel(
             energy=-1.0,
             hessian=bond_force_field(geometry, _ring_force_field(geometry)),
@@ -47,6 +54,7 @@ def synthetic_chemistry(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(optimisation, "optimise", optimise)
     monkeypatch.setattr(lowlevel, "compute", compute)
+    return asked_for_repair
 
 
 def _benzene(out: Path) -> pipeline.Request:
@@ -131,8 +139,10 @@ def test_a_refused_molecule_leaves_no_folder(tmp_path: Path) -> None:
 def test_a_saddle_point_gets_no_spectrum(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     stable = lowlevel.compute
 
-    def unstable(geometry: Geometry, resources: Resources, log: TextIO) -> lowlevel.LowLevel:
-        result = stable(geometry, resources, log)
+    def unstable(
+        geometry: Geometry, resources: Resources, log: TextIO, *, repair_soft_modes: bool
+    ) -> lowlevel.LowLevel:
+        result = stable(geometry, resources, log, repair_soft_modes=repair_soft_modes)
         return lowlevel.LowLevel(
             result.energy,
             -result.hessian,
@@ -180,3 +190,20 @@ def test_an_element_the_network_never_trained_on_is_refused(tmp_path: Path) -> N
     with pytest.raises(RefusedError, match=r"Cl outside the network's training set \(C, H, N, O\)"):
         pipeline.run_spectrum(request, loaded)
     assert not (tmp_path / "x").exists()
+
+
+def test_the_baseline_asks_for_the_repair(tmp_path: Path, synthetic_chemistry: list[bool]) -> None:
+    record = pipeline.run_baseline(_benzene(tmp_path / "benzene"))
+    assert synthetic_chemistry == [True]
+    assert record["soft_mode_repair"] is None  # the synthetic low level repaired nothing
+
+
+@pytest.mark.parametrize("trained_on_repaired", [False, True])
+def test_a_release_decides_whether_its_network_gets_a_repaired_hessian(
+    tmp_path: Path, synthetic_chemistry: list[bool], *, trained_on_repaired: bool
+) -> None:
+    loaded = release.load(write_release(tmp_path / "release"))
+    training = loaded.training.model_copy(update={"soft_mode_repair": trained_on_repaired})
+    chosen = release.Release(loaded.networks, loaded.recipes, loaded.evaluation, training)
+    pipeline.run_spectrum(_benzene(tmp_path / "benzene"), chosen)
+    assert synthetic_chemistry == [trained_on_repaired]

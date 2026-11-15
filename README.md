@@ -69,7 +69,7 @@ and says whether the molecule lies inside the sizes the network was trained on, 
 whether the network has seen it. Nothing it states about the network is typed into the
 package: every number comes from the release's records.
 
-Two checks guard every result:
+Two checks and a repair guard every result:
 
 - **The geometry is a minimum.** A geometry with an imaginary mode has no harmonic
   spectrum, and none is written.
@@ -78,6 +78,12 @@ Two checks guard every result:
   barely feels and a band height does. aromir checks the response against the
   coupled-perturbed equations, corrects it, and refuses the result if the residual stays
   above 1e-6 or the translation sum rule is violated by more than 5e-4 e.
+- **Soft modes are measured.** pyscf's analytic DFT Hessian leaves out the response of
+  the integration grid, which can move a mode below 20 cm⁻¹ by several cm⁻¹ or make it
+  imaginary. For those modes aromir replaces the Hessian's columns by central
+  differences of gradients that include the grid's response. `aromir baseline` always
+  does this; `aromir spectrum` does it when the release says its network was trained on
+  Hessians repaired the same way, because a network must be given what it was trained on.
 
 ## The network
 
@@ -124,7 +130,7 @@ $ ruff check . && ruff format --check . && mypy
 
 | version | what it adds |
 |---|---|
-| 0.1 | the network's trained weights as a release, the low-mode repair of the Hessian; positions are harmonic, and the certificate says so |
+| 0.1 | the network's trained weights as a release, and its model card; positions are harmonic, and the certificate says so |
 | 0.2 | anharmonic band positions as an optional extra: a learned shift per band from a GFN2-xTB force field, with its measured error |
 | 1.0 | an answer that does not depend on the atom order, the training code, a model card generated from the evaluation records, releases on PyPI and conda-forge |
 

@@ -20,6 +20,7 @@ N_RIGID_MOTIONS = 6
 """Translations and rotations of a non-linear molecule."""
 
 _RANK_TOLERANCE = 1e-8
+_ORTHONORMAL_TOLERANCE = 1e-10
 
 
 @dataclass(frozen=True, eq=False)
@@ -104,3 +105,60 @@ def vibrational_modes(hessian: FloatArray, geometry: Geometry) -> Modes:
         internal.T @ _mass_weighted(hessian, geometry.masses_amu) @ internal
     )
     return Modes(signed_wavenumber(curvature), np.asarray(internal @ vectors, dtype=float))
+
+
+def displacement(
+    direction: FloatArray, masses_amu: FloatArray, largest_step_bohr: float
+) -> tuple[FloatArray, float]:
+    """Return a Cartesian step along a mass-weighted direction, and its mass-weighted length.
+
+    The step, shape (N, 3) in bohr, moves the atom that moves most by ``largest_step_bohr``.
+    """
+    cartesian = (direction / mass_weights(masses_amu)).reshape(-1, 3)
+    length = largest_step_bohr / float(np.max(np.linalg.norm(cartesian, axis=1)))
+    return length * cartesian, length
+
+
+def column(
+    gradient_plus: FloatArray, gradient_minus: FloatArray, length: float, masses_amu: FloatArray
+) -> FloatArray:
+    """Return the mass-weighted Hessian's column along a direction, by central differences.
+
+    The gradients (hartree/bohr) are those at plus and minus ``length`` along the
+    mass-weighted direction.
+    """
+    difference = np.ravel(gradient_plus) - np.ravel(gradient_minus)
+    return np.asarray(difference / mass_weights(masses_amu) / (2 * length), dtype=float)
+
+
+def with_measured_columns(
+    hessian: FloatArray, masses_amu: FloatArray, directions: FloatArray, columns: FloatArray
+) -> FloatArray:
+    """Return the Hessian with its mass-weighted rows and columns along U replaced by C.
+
+    For orthonormal mass-weighted directions U (3N, k) and measured columns C = H U,
+
+        H' = Q H Q + C Uᵀ + U Cᵀ − U S Uᵀ,   Q = 1 − U Uᵀ,   S = (UᵀC + CᵀU) / 2,
+
+    which keeps the Hessian outside span(U) and takes the measurement inside it.
+
+    Raises:
+        ValueError: The directions are not orthonormal, or the shapes differ.
+    """
+    if directions.shape != columns.shape:
+        msg = f"directions {directions.shape} and columns {columns.shape} differ in shape"
+        raise ValueError(msg)
+    k = directions.shape[1]
+    if np.abs(directions.T @ directions - np.eye(k)).max() > _ORTHONORMAL_TOLERANCE:
+        msg = "the directions are not orthonormal"
+        raise ValueError(msg)
+    weights = mass_weights(masses_amu)
+    outside = np.eye(len(weights)) - directions @ directions.T
+    inside = 0.5 * (directions.T @ columns + columns.T @ directions)
+    patched = (
+        outside @ _mass_weighted(hessian, masses_amu) @ outside
+        + columns @ directions.T
+        + directions @ columns.T
+        - directions @ inside @ directions.T
+    )
+    return np.asarray(0.5 * (patched + patched.T) * np.outer(weights, weights), dtype=float)

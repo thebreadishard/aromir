@@ -15,7 +15,7 @@ from pyscf import dft, gto, lib
 from aromir.errors import ConvergenceError
 
 if TYPE_CHECKING:
-    from aromir.molecule import Geometry
+    from aromir.molecule import FloatArray, Geometry
 
 FUNCTIONAL: Final = "b3lyp"
 BASIS: Final = "6-31g*"
@@ -84,8 +84,21 @@ def _finish_by_second_order(scf: Scf) -> None:
         scf.kernel(dm0=second_order.make_rdm1())
 
 
-def converged_scf(molecule: gto.Mole) -> Scf:
+def converged_scf(
+    molecule: gto.Mole,
+    *,
+    energy_tolerance: float = ENERGY_TOLERANCE,
+    gradient_tolerance: float | None = None,
+    start_density: FloatArray | None = None,
+) -> Scf:
     """Run the low level's Kohn-Sham SCF to convergence.
+
+    Args:
+        molecule: The pyscf molecule.
+        energy_tolerance: The energy threshold, hartree.
+        gradient_tolerance: The orbital-gradient threshold; pyscf's √energy_tolerance
+            when None.
+        start_density: A density matrix to start from, such as a neighbouring geometry's.
 
     Raises:
         ConvergenceError: Neither DIIS nor the second-order finish converged.
@@ -94,11 +107,12 @@ def converged_scf(molecule: gto.Mole) -> Scf:
     scf.xc = FUNCTIONAL
     scf.grids.atom_grid = GRID
     scf.grids.prune = None
-    scf.conv_tol = ENERGY_TOLERANCE
-    scf.kernel()
+    scf.conv_tol = energy_tolerance
+    scf.conv_tol_grad = gradient_tolerance
+    scf.kernel(dm0=start_density)
     if not scf.converged:
         _finish_by_second_order(scf)
     if not scf.converged:
-        msg = f"the {FUNCTIONAL} SCF did not converge to {ENERGY_TOLERANCE:g} hartree"
+        msg = f"the {FUNCTIONAL} SCF did not converge to {energy_tolerance:g} hartree"
         raise ConvergenceError(msg)
     return scf

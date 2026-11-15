@@ -104,6 +104,7 @@ TRAINING = {
     "max_atoms": 30,
     "trained_smiles": ["c1ccc2ccccc2c1"],
     "held_out_smiles": {"a": ["c1ccccc1"], "b": ["Cc1ccccc1"]},
+    "soft_mode_repair": False,
 }
 """A made-up training set: benzene held out, naphthalene trained on, no chlorine."""
 

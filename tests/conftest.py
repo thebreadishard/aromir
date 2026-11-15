@@ -23,3 +23,12 @@ def water() -> Geometry:
 def water_hessian(water: Geometry) -> FloatArray:
     """A synthetic, exactly rigid-motion-free Hessian for the water fixture."""
     return bond_force_field(water, WATER_BONDS)
+
+
+@pytest.fixture(scope="module")
+def water_for_module() -> Geometry:
+    """The water geometry for fixtures that compute once per module."""
+    return Geometry(
+        ("O", "H", "H"),
+        np.array([[0.0, 0.0, 0.2217], [0.0, 1.4309, -0.8867], [0.0, -1.4309, -0.8867]]),
+    )

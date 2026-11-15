@@ -5,6 +5,7 @@ Every refusal comes before the first computation, and a result is never overwrit
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Self
 
@@ -86,14 +87,16 @@ def _new_folder(out: Path) -> Path:
 
 
 def _compute(
-    start: Geometry, folder: Path, resources: Resources
+    start: Geometry, folder: Path, resources: Resources, *, repair_soft_modes: bool
 ) -> tuple[optimisation.Optimisation, lowlevel.LowLevel]:
     """Optimise, compute the low level and write both; refuse a geometry that is no minimum."""
     folder.mkdir(parents=True, exist_ok=True)
     with (folder / QUANTUM_LOG_FILE).open("w", encoding="utf-8") as log:
         optimised = optimisation.optimise(start, resources, log)
         records.write_json(folder / GEOMETRY_FILE, optimised.geometry.to_dict())
-        low = lowlevel.compute(optimised.geometry, resources, log)
+        low = lowlevel.compute(
+            optimised.geometry, resources, log, repair_soft_modes=repair_soft_modes
+        )
     n_imaginary = vibrations.vibrational_modes(low.hessian, optimised.geometry).n_imaginary
     if n_imaginary:
         msg = f"{n_imaginary} imaginary mode(s): the optimised geometry is not a minimum"
@@ -121,6 +124,7 @@ def _computation_record(
             "response_single_columns": low.refinement.single_columns,
             "sum_rule_violation_e": low.sum_rule_violation,
         },
+        "soft_mode_repair": None if low.soft_modes is None else asdict(low.soft_modes),
         "seconds_low_level": round(low.seconds, 1),
     }
 
@@ -147,7 +151,7 @@ def run_baseline(request: Request) -> dict[str, Any]:
     admitted, start = admit(request.molecule)
     folder = _new_folder(request.out)
     launched = records.provenance()
-    optimised, low = _compute(start, folder, request.resources)
+    optimised, low = _compute(start, folder, request.resources, repair_soft_modes=True)
     bands = spectrum.harmonic_bands(low.hessian, optimised.geometry, low.polar_tensor)
     record = {
         "molecule": {
@@ -199,7 +203,9 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
         raise RefusedError(reasons)
     folder = _new_folder(request.out)
     launched = records.provenance()
-    optimised, low = _compute(start, folder, request.resources)
+    optimised, low = _compute(
+        start, folder, request.resources, repair_soft_modes=release.training.soft_mode_repair
+    )
     corrections = release.corrections(optimised.geometry, low.hessian)
     records.write_arrays(
         folder / CORRECTION_FILE,

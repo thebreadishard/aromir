@@ -100,6 +100,8 @@ class Training(BaseModel):
         max_atoms: The largest's.
         trained_smiles: Canonical SMILES of every molecule a seed fitted or stopped on.
         held_out_smiles: Canonical SMILES of the hold-out molecules, by hold-out.
+        soft_mode_repair: Whether the training Hessians had their soft modes repaired; a
+            molecule's Hessian is then prepared the same way before the network reads it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -110,6 +112,7 @@ class Training(BaseModel):
     max_atoms: int = Field(ge=1)
     trained_smiles: list[str]
     held_out_smiles: dict[str, list[str]]
+    soft_mode_repair: bool
 
 
 @dataclass(frozen=True, eq=False)

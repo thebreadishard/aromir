@@ -36,7 +36,7 @@ def test_the_optimised_geometry_is_a_minimum(
     assert result.geometry.symbols == distorted_water.symbols
     assert result.max_force < 5e-5
     assert result.n_steps >= 2
-    low = compute(result.geometry, RESOURCES, io.StringIO())
+    low = compute(result.geometry, RESOURCES, io.StringIO(), repair_soft_modes=False)
     assert low.energy == pytest.approx(result.energy, abs=1e-9)
     modes = vibrations.vibrational_modes(low.hessian, result.geometry)
     assert modes.n_imaginary == 0

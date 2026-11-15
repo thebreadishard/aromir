@@ -17,6 +17,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   translation sum rule.
 - Harmonic bands with double-harmonic intensities, the scaled-B3LYP baseline, and
   Lorentzian broadening.
+- The repair of soft modes: a Hessian's modes below 20 cm⁻¹ measured from gradients that
+  include the grid's response, for the baseline and for a release trained that way.
 - `aromir check` and `aromir baseline`.
 - The ΔH network (`aromir.network`): its inputs, the model, weights as safetensors with
   a recipe, and the conversion of a training checkpoint. Trained weights are not
