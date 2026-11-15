@@ -69,6 +69,10 @@ and says whether the molecule lies inside the sizes the network was trained on, 
 whether the network has seen it. Nothing it states about the network is typed into the
 package: every number comes from the release's records.
 
+`aromir card --release releases/v1.3` writes the release's model card the same way: what
+the network is, what it was trained on, its measured error per family, and where it
+stops being known.
+
 Two checks and a repair guard every result:
 
 - **The geometry is a minimum.** A geometry with an imaginary mode has no harmonic

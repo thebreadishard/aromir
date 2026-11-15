@@ -86,6 +86,12 @@ def save(state: dict[str, Tensor], folder: Path, name: str, recipe: Recipe) -> N
     os.replace(temporary, recipe_path)  # noqa: PTH105  the atomic move
 
 
+def recorded_sha256(recipe_path: Path) -> str:
+    """Return the sha256 a recipe file records for its tensor file."""
+    stored = _RecipeFile.model_validate_json(recipe_path.read_text(encoding="utf-8"))
+    return stored.sha256
+
+
 def load(recipe_path: Path) -> tuple[DeltaHessianNetwork, Recipe]:
     """Load a network from its recipe file and the tensor file beside it.
 

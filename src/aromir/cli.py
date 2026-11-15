@@ -10,7 +10,7 @@ from typing import Final
 from pydantic import ValidationError
 
 import aromir
-from aromir import pipeline, release
+from aromir import card, pipeline, records, release
 from aromir.dft import Resources
 from aromir.errors import AromirError, RefusedError
 
@@ -52,10 +52,29 @@ def _parser() -> argparse.ArgumentParser:
         )
         computing.add_argument("--threads", type=int, default=defaults.threads)
         computing.add_argument("--max-memory-mb", type=int, default=defaults.max_memory_mb)
+    model_card = commands.add_parser(
+        "card", help="write the model card of a network release from the release's own files"
+    )
+    model_card.add_argument(
+        "--release", type=Path, required=True, help="the folder of a network release"
+    )
+    model_card.add_argument("--out", type=Path, help="the file to write (default: print)")
     return parser
 
 
+def _write_card(arguments: argparse.Namespace) -> None:
+    text = card.to_markdown(release.load(arguments.release))
+    if arguments.out is None:
+        print(text, end="")  # noqa: T201  the command's answer
+        return
+    records.write_text(arguments.out, text)
+    print(f"done: model card in {arguments.out}")  # noqa: T201  the command's answer
+
+
 def _run(arguments: argparse.Namespace) -> None:
+    if arguments.command == "card":
+        _write_card(arguments)
+        return
     molecule = pipeline.MoleculeInput(smiles=arguments.smiles, xyz=arguments.xyz)
     if arguments.command == "check":
         admitted, _start = pipeline.admit(molecule)
@@ -82,7 +101,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _run(arguments)
     except ValidationError as invalid:
-        reasons = [str(error["msg"]) for error in invalid.errors()]
+        reasons = [
+            ": ".join([*(str(part) for part in error["loc"]), str(error["msg"])])
+            for error in invalid.errors()
+        ]
         print("refused:", *reasons, sep="\n  ", file=sys.stderr)  # noqa: T201  the command's answer
         return EXIT_REFUSED
     except RefusedError as refusal:

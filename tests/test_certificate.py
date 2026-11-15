@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -145,7 +146,7 @@ def test_a_molecule_outside_the_training_sizes_is_marked(
     low: lowlevel.LowLevel, benzene: Geometry, loaded: release.Release, tmp_path: Path
 ) -> None:
     small_training = loaded.training.model_copy(update={"min_atoms": 20})
-    narrow = release.Release(loaded.networks, loaded.recipes, loaded.evaluation, small_training)
+    narrow = replace(loaded, training=small_training)
     admitted = admission.admit(admission.parse_smiles("c1ccccc1"))
     corrections = narrow.corrections(benzene, low.hessian)
     record = certificate.build(admitted, benzene, low, corrections, narrow)

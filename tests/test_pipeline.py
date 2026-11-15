@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING, TextIO
 
 import numpy as np
@@ -204,6 +205,6 @@ def test_a_release_decides_whether_its_network_gets_a_repaired_hessian(
 ) -> None:
     loaded = release.load(write_release(tmp_path / "release"))
     training = loaded.training.model_copy(update={"soft_mode_repair": trained_on_repaired})
-    chosen = release.Release(loaded.networks, loaded.recipes, loaded.evaluation, training)
+    chosen = replace(loaded, training=training)
     pipeline.run_spectrum(_benzene(tmp_path / "benzene"), chosen)
     assert synthetic_chemistry == [trained_on_repaired]

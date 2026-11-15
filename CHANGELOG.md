@@ -27,3 +27,4 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A network release (seeds, measured errors, training set) and `aromir spectrum`: the
   corrected spectrum with each seed's ΔH and a certificate, in JSON and Markdown, that
   states each band's family, licence, measured error and spread over the seeds.
+- `aromir card`: a release's model card, written from the release's own files.

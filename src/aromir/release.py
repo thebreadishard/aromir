@@ -130,10 +130,11 @@ class Corrections:
 
 @dataclass(frozen=True, eq=False)
 class Release:
-    """A loaded release: its networks, their shared recipe settings and their records."""
+    """A loaded release: its networks, their recipes and file hashes, and its records."""
 
     networks: tuple[DeltaHessianNetwork, ...]
     recipes: tuple[weights.Recipe, ...]
+    tensor_sha256: tuple[str, ...]
     evaluation: Evaluation
     training: Training
 
@@ -179,9 +180,16 @@ def load(folder: Path) -> Release:
         (folder / EVALUATION_FILE).read_text(encoding="utf-8")
     )
     training = Training.model_validate_json((folder / TRAINING_FILE).read_text(encoding="utf-8"))
-    loaded = [weights.load(path) for path in sorted(folder.glob(SEED_FILES))]
+    seed_files = sorted(folder.glob(SEED_FILES))
+    loaded = [weights.load(path) for path in seed_files]
     recipes = tuple(recipe for _, recipe in loaded)
     reasons = _reasons_to_refuse(recipes, evaluation, training)
     if reasons:
         raise RefusedError([f"{folder}: {reason}" for reason in reasons])
-    return Release(tuple(network for network, _ in loaded), recipes, evaluation, training)
+    return Release(
+        networks=tuple(network for network, _ in loaded),
+        recipes=recipes,
+        tensor_sha256=tuple(weights.recorded_sha256(path) for path in seed_files),
+        evaluation=evaluation,
+        training=training,
+    )
