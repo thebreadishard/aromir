@@ -4,9 +4,9 @@ Infrared spectra of aromatic molecules: a cheap DFT Hessian, a learned correctio
 and a certificate that says how far each band can be trusted.
 
 > **Status: pre-alpha (0.1.0.dev0).** The whole chain is in the package and tested: the
-> low level, the network, the corrected spectrum and its certificate. The network's
-> trained weights are not published yet, so a corrected spectrum cannot be computed
-> without them, and the anharmonic step is not in this version; see
+> low level, the network, the corrected spectrum and its certificate. The trained
+> weights of network v1.3 ship inside the package. Positions are harmonic: the
+> anharmonic step is not in this version; see
 > [What works today](#what-works-today) and the [roadmap](#roadmap).
 
 ## The idea
@@ -21,7 +21,7 @@ SMILES or xyz
   → canonical atom order, start geometry        (RDKit)
   → geometry optimisation                       (pyscf + geomeTRIC)
   → analytic Hessian and dipole derivatives     (pyscf)
-  → ΔH, the learned correction to the Hessian   (code here; weights not published yet)
+  → ΔH, the learned correction to the Hessian   (network v1.3, inside the package)
   → band positions, heights, spectrum
   → certificate: what each band rests on
 ```
@@ -46,14 +46,16 @@ The result folder holds `geometry.json` (the optimised geometry), `lowlevel.npz`
 Hessian and the polar tensor), `baseline.json` (bands, checks and provenance) and
 `pyscf.log` (the quantum-chemistry log, written as the calculation runs).
 
-`aromir spectrum` adds the learned correction and the certificate. It needs a network
-release, which is not published yet:
+`aromir spectrum` adds the learned correction and the certificate, with the network
+release that ships inside the package (v1.3, in `src/aromir/releases/v1.3`, with its
+[model card](src/aromir/releases/v1.3/MODEL_CARD.md)):
 
 ```console
-$ aromir spectrum "c1ccccc1" --out results/benzene --release releases/v1.3
+$ aromir spectrum "c1ccccc1" --out results/benzene
 ```
 
-A release is a folder with one weight file and recipe per seed, `evaluation.json` (the
+`--release <folder>` names another release. A release is a folder with one weight file
+and recipe per seed, `evaluation.json` (the
 version's measured error per mode family and hold-out) and `training.json` (the elements,
 sizes and molecules it was trained on). The result folder then also holds
 `correction.npz` (each seed's ΔH and their mean) and the certificate, as
@@ -69,7 +71,7 @@ and says whether the molecule lies inside the sizes the network was trained on, 
 whether the network has seen it. Nothing it states about the network is typed into the
 package: every number comes from the release's records.
 
-`aromir card --release releases/v1.3` writes the release's model card the same way: what
+`aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it
 stops being known.
 
@@ -134,10 +136,11 @@ $ ruff check . && ruff format --check . && mypy
 
 | version | what it adds |
 |---|---|
-| 0.1 | the network's trained weights as a release, and its model card; positions are harmonic, and the certificate says so |
+| 0.1 (this version) | the network's trained weights as a release, and its model card; positions are harmonic, and the certificate says so |
 | 0.2 | anharmonic band positions as an optional extra: a learned shift per band from a GFN2-xTB force field, with its measured error |
-| 1.0 | an answer that does not depend on the atom order, the training code, a model card generated from the evaluation records, releases on PyPI and conda-forge |
+| 1.0 | an answer that does not depend on the atom order, the training code, releases on PyPI and conda-forge |
 
 ## Licence
 
-Code: [MIT](LICENSE). Weights and data, once published: CC BY 4.0.
+Code: [MIT](LICENSE). The weights and records of a network release
+(`src/aromir/releases/`): [CC BY 4.0](src/aromir/releases/LICENSE.md).

@@ -8,11 +8,15 @@ A release is a folder:
 
 The two JSON files are written from the training project's own records. Nothing the
 certificate states about a network is typed into this package.
+
+One release ships inside the package (``bundled``), so a corrected spectrum needs no
+download and works on a machine without a network connection.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Final, Self
 
 import numpy as np
@@ -23,8 +27,6 @@ from aromir.families import FAMILIES, Family
 from aromir.network import inputs, weights
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from aromir.molecule import FloatArray, Geometry
     from aromir.network.model import DeltaHessianNetwork
 
@@ -33,6 +35,8 @@ TRAINING_FILE: Final = "training.json"
 SEED_FILES: Final = "seed-*.json"
 MIN_SEEDS: Final = 2
 """A band's spread over the seeds needs at least two of them."""
+BUNDLED_VERSION: Final = "1.3"
+"""The network version whose release ships inside the package."""
 
 
 class Holdout(BaseModel):
@@ -200,6 +204,11 @@ def _reasons_to_refuse(
     if len({recipe.seed for recipe in recipes}) < len(recipes):
         reasons.append("two of its weight files are of the same seed")
     return reasons
+
+
+def bundled() -> Path:
+    """Return the folder of the release that ships inside the package."""
+    return Path(__file__).parent / "releases" / f"v{BUNDLED_VERSION}"
 
 
 def load(folder: Path) -> Release:

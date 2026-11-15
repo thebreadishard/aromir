@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,8 +7,8 @@ name = "aromir"
 dynamic = ["version"]
 description = "Infrared spectra of aromatic molecules: a cheap DFT Hessian, a learned correction, and a certificate that says how far to trust each band."
 readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
+license = "MIT AND CC-BY-4.0"
+license-files = ["LICENSE", "src/aromir/releases/LICENSE.md"]
 requires-python = ">=3.11"
 authors = [{ name = "Frederic Petrignani" }]
 keywords = ["infrared spectroscopy", "PAH", "quantum chemistry", "Hessian", "machine learning"]

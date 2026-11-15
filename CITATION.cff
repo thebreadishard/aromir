@@ -6,5 +6,7 @@ authors:
   - family-names: Petrignani
     given-names: Frederic
 repository-code: "https://github.com/thebreadishard/aromir"
-license: MIT
+license:
+  - MIT
+  - CC-BY-4.0
 version: 0.1.0.dev0

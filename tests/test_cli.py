@@ -101,7 +101,19 @@ def test_spectrum_reports_the_licensed_bands(
     )
 
 
-def test_spectrum_needs_a_release(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit):
-        cli.main(["spectrum", "c1ccccc1", "--out", "x"])
-    assert "--release" in capsys.readouterr().err
+def test_without_a_release_named_the_one_inside_the_package_is_used(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    loaded_from = []
+
+    def load(folder: Path) -> str:
+        loaded_from.append(folder)
+        return "the release"
+
+    def run(_request: pipeline.Request, _loaded: str) -> dict[str, Any]:
+        return {"bands": []}
+
+    monkeypatch.setattr(release, "load", load)
+    monkeypatch.setattr(pipeline, "run_spectrum", run)
+    assert cli.main(["spectrum", "c1ccccc1", "--out", str(tmp_path / "x")]) == cli.EXIT_DONE
+    assert loaded_from == [release.bundled()]

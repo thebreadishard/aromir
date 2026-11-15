@@ -21,10 +21,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   include the grid's response, for the baseline and for a release trained that way.
 - `aromir check` and `aromir baseline`.
 - The ΔH network (`aromir.network`): its inputs, the model, weights as safetensors with
-  a recipe, and the conversion of a training checkpoint. Trained weights are not
-  included yet.
+  a recipe, and the conversion of a training checkpoint.
 - The family of every mode (CH stretch, CH out-of-plane, ring in-plane, other).
 - A network release (seeds, measured errors, training set) and `aromir spectrum`: the
   corrected spectrum with each seed's ΔH and a certificate, in JSON and Markdown, that
   states each band's family, licence, measured error and spread over the seeds.
 - `aromir card`: a release's model card, written from the release's own files.
+- The trained weights of network v1.3 (three seeds) with their evaluation and training
+  records and model card, inside the package under CC BY 4.0; `aromir spectrum` and
+  `aromir card` use that release unless `--release` names another.

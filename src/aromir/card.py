@@ -266,8 +266,13 @@ def _use(release: Release) -> list[str]:
         "",
         "```console",
         f"$ pip install git+{REPOSITORY}",
-        '$ aromir spectrum "c1ccc2ccccc2c1" --out results/naphthalene --release <this folder>',
+        '$ aromir spectrum "c1ccc2ccccc2c1" --out results/naphthalene',
         "```",
+        "",
+        (
+            "aromir uses the release inside the package; `--release <folder>` names another, "
+            "such as a copy of this one."
+        ),
         "",
         "## Licence",
         "",
