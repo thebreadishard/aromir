@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "aromir: infrared spectra of aromatic molecules from a cheap Hessian and a learned correction"
+type: software
+authors:
+  - family-names: Petrignani
+    given-names: Frederic
+repository-code: "https://github.com/thebreadishard/aromir"
+license: MIT
+version: 0.1.0.dev0

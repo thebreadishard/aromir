@@ -1,0 +1,135 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aromir"
+dynamic = ["version"]
+description = "Infrared spectra of aromatic molecules: a cheap DFT Hessian, a learned correction, and a certificate that says how far to trust each band."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "Frederic Petrignani" }]
+keywords = ["infrared spectroscopy", "PAH", "quantum chemistry", "Hessian", "machine learning"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Typing :: Typed",
+]
+dependencies = [
+    "geometric>=1.1",
+    "numpy>=1.26",
+    "pydantic>=2.6",
+    "pyscf>=2.15,<2.16",
+    "rdkit>=2023.9",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.2",
+    "mypy>=1.11",
+    "pre-commit>=3.7",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+aromir = "aromir.cli:main"
+
+[project.urls]
+Repository = "https://github.com/thebreadishard/aromir"
+Issues = "https://github.com/thebreadishard/aromir/issues"
+Changelog = "https://github.com/thebreadishard/aromir/blob/main/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "src/aromir/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aromir"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812", # trailing commas are the formatter's business
+    "CPY001", # one LICENSE file, no notice per file
+    "D203",   # one blank line before a class docstring: D211 is the chosen twin
+    "D213",   # docstring summary on the second line: D212 is the chosen twin
+    "N803",   # argument names: H, B, F and P are the paper's matrices
+    "N806",   # variable names: the same notation inside functions
+    "PLR2004", # a physical constant in a formula is not a magic number
+    "RUF001", # −, × and Greek letters in strings are the formulas' own symbols
+    "RUF002", # the same in docstrings
+    "RUF003", # the same in comments
+]
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "D103",   # a test's name says what it checks
+    "INP001", # tests are not a package
+    "S101",   # assert is how pytest checks
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["aromir"]
+known-local-folder = ["support"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pylint]
+max-args = 6
+max-branches = 12
+max-statements = 50
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+mypy_path = "tests"
+
+[[tool.mypy.overrides]]
+module = ["geometric.*", "pyscf.*", "rdkit.*", "scipy.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+xfail_strict = true
+filterwarnings = [
+    "error",
+    # pyscf leaves an SCF object's checkpoint file to the garbage collector
+    "ignore:unclosed file:ResourceWarning",
+]
+markers = [
+    "quantum: runs a quantum-chemistry calculation (seconds on water; deselect with -m 'not quantum')",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["aromir"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under = 90
+exclude_also = ["if TYPE_CHECKING:"]
