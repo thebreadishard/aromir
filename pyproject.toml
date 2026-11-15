@@ -30,7 +30,9 @@ dependencies = [
     "pydantic>=2.6",
     "pyscf>=2.15,<2.16",
     "rdkit>=2023.9",
+    "safetensors>=0.4",
     "scipy>=1.11",
+    "torch>=2.2",
 ]
 
 [project.optional-dependencies]

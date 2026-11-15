@@ -1,0 +1,18 @@
+{
+ "ctor": {
+  "n_s": 16,
+  "n_v": 16,
+  "n_blocks": 2,
+  "hidden": 24,
+  "tensor_input": false,
+  "aggregation": "sum",
+  "sqm_scale": true,
+  "n_pair_features": 66,
+  "parity_odd": false
+ },
+ "head": "hybrid",
+ "pattern": "f",
+ "seed": 1,
+ "angle_choice": "canonical",
+ "dihedral_encoding": "cos"
+}

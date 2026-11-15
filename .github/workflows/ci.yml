@@ -12,6 +12,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # The network runs on the CPU; PyPI's default Linux wheel of torch bundles CUDA.
+  PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+
 jobs:
   quality:
     name: Lint, format, types
@@ -22,6 +26,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
@@ -41,6 +46,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e ".[dev]"
       - run: pytest --cov --cov-report=term-missing
 
@@ -54,4 +60,5 @@ jobs:
           python-version: "3.12"
       - run: pip install build
       - run: python -m build
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install dist/*.whl && aromir --version

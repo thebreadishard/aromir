@@ -1,10 +1,13 @@
-"""Helpers the tests share: a synthetic force field and a seeded rotation."""
+"""Helpers the tests share: synthetic Hessians, a seeded rotation, a random network."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 import numpy as np
+import torch
+
+from aromir.network.model import Architecture, DeltaHessianNetwork
 
 if TYPE_CHECKING:
     from aromir.molecule import FloatArray, Geometry
@@ -59,3 +62,30 @@ def rotation_matrix(seed: int) -> FloatArray:
     if np.linalg.det(matrix) < 0:
         matrix[:, 0] = -matrix[:, 0]
     return np.asarray(matrix, dtype=float)
+
+
+def random_hessian(n_atoms: int, seed: int) -> FloatArray:
+    """Return a seeded symmetric matrix with a stiff diagonal, the size of a Hessian.
+
+    The network's arithmetic does not care that it is not a real Hessian, and a test of
+    that arithmetic then needs no quantum chemistry.
+    """
+    noise = np.random.default_rng(seed).normal(scale=0.02, size=(3 * n_atoms, 3 * n_atoms))
+    return np.asarray(noise + noise.T + 0.5 * np.eye(3 * n_atoms), dtype=float)
+
+
+def random_network(architecture: Architecture, seed: int) -> DeltaHessianNetwork:
+    """Return a network with every parameter and buffer drawn, scales and spreads positive.
+
+    Nothing is left at its zero initialisation, so every input reaches the output.
+    """
+    torch.manual_seed(seed)
+    network = DeltaHessianNetwork(architecture)
+    positive = ("class_scale", "force_constant_scale", "pair_feature_std")
+    with torch.no_grad():
+        for name, value in network.state_dict().items():
+            if name.endswith("centres"):
+                continue
+            drawn = torch.randn_like(value) * 0.1
+            value.copy_(drawn.abs() + 0.5 if name in positive else drawn)
+    return network.eval()

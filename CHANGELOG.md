@@ -18,3 +18,6 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Harmonic bands with double-harmonic intensities, the scaled-B3LYP baseline, and
   Lorentzian broadening.
 - `aromir check` and `aromir baseline`.
+- The ΔH network (`aromir.network`): its inputs, the model, weights as safetensors with
+  a recipe, and the conversion of a training checkpoint. Trained weights are not
+  included yet.

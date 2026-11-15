@@ -1,0 +1,16 @@
+{
+ "ctor": {
+  "n_s": 16,
+  "n_v": 16,
+  "n_blocks": 2,
+  "hidden": 24,
+  "tensor_input": false,
+  "aggregation": "mean",
+  "sqm_scale": false,
+  "n_pair_features": 0,
+  "parity_odd": true
+ },
+ "head": "hybrid",
+ "pattern": "d",
+ "seed": 2
+}

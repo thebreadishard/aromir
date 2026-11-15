@@ -4,8 +4,10 @@ Infrared spectra of aromatic molecules: a cheap DFT Hessian, a learned correctio
 and a certificate that says how far each band can be trusted.
 
 > **Status: pre-alpha (0.1.0.dev0).** The low level works end to end and is tested. The
-> learned correction, the anharmonic step and the certificate are not in this version
-> yet; see [What works today](#what-works-today) and the [roadmap](#roadmap).
+> network's code is in the package and reproduces its training code's output, but its
+> trained weights are not published yet, so no corrected spectrum can be computed. The
+> anharmonic step and the certificate are not in this version; see
+> [What works today](#what-works-today) and the [roadmap](#roadmap).
 
 ## The idea
 
@@ -19,7 +21,7 @@ SMILES or xyz
   → canonical atom order, start geometry        (RDKit)
   → geometry optimisation                       (pyscf + geomeTRIC)
   → analytic Hessian and dipole derivatives     (pyscf)
-  → ΔH, the learned correction to the Hessian   (not in this version)
+  → ΔH, the learned correction to the Hessian   (code here; weights not published yet)
   → band positions, heights, spectrum
   → certificate: what each band rests on        (not in this version)
 ```
@@ -54,6 +56,25 @@ Two checks guard every result:
   coupled-perturbed equations, corrects it, and refuses the result if the residual stays
   above 1e-6 or the translation sum rule is violated by more than 5e-4 e.
 
+## The network
+
+`aromir.network` holds the ΔH network: the internal coordinates and the pair pattern it
+predicts on, the equivariant encoder, the pair head, and weights stored as safetensors
+with a JSON recipe. It is a rewrite of the code the weights are trained with, and
+regression pins hold the two to the same output: 16 molecule-and-configuration pairs
+agree to 3e-7 relative in ΔH, with every integer input identical.
+
+The correction is symmetric and free of translations and rotations by construction, and
+it turns with the molecule; the tests check each of those on random networks. With the
+`canonical` angle choice and `cos`-encoded dihedrals it also gives one answer for every
+atom order; that is tested on a molecule without symmetry-equivalent atoms.
+
+A checkpoint of the training code becomes weight files with
+
+```console
+$ python -m aromir.network.convert checkpoint.pt weights/ v1.3-seed0 --network-version 1.3
+```
+
 ## Install
 
 Linux and macOS; on Windows, use WSL (pyscf does not build natively there). pyscf's
@@ -80,7 +101,7 @@ $ ruff check . && ruff format --check . && mypy
 
 | version | what it adds |
 |---|---|
-| 0.1 | the ΔH network with its weights, the anharmonic band positions, the certificate, `aromir spectrum` |
+| 0.1 | the network's trained weights, the anharmonic band positions, the certificate, `aromir spectrum` |
 | 1.0 | an answer that does not depend on the atom order, the training code, a model card generated from the evaluation records, releases on PyPI and conda-forge |
 
 ## Licence
