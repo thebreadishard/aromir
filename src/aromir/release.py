@@ -44,6 +44,24 @@ class Holdout(BaseModel):
     n_molecules: int = Field(ge=1)
 
 
+class AtomOrderSpread(BaseModel):
+    """How far the corrected band positions move when a molecule's atoms are renumbered.
+
+    Attributes:
+        max_cm: The largest change of any band over all molecules and orders, cm⁻¹.
+        n_molecules: The molecules it was measured on.
+        n_orders: The atom orders tried per molecule, each as another SMILES writing gives.
+        source: The record the numbers were read from.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    max_cm: float = Field(ge=0)
+    n_molecules: int = Field(ge=1)
+    n_orders: int = Field(ge=1)
+    source: str
+
+
 class Evaluation(BaseModel):
     """A network version's measured error, as its evaluation records state it.
 
@@ -57,6 +75,7 @@ class Evaluation(BaseModel):
         seed_errors_cm: The same per seed.
         coupled_cluster: What is known at the coupled-cluster level.
         sources: The evaluation records the numbers were read from.
+        atom_order_spread: The measured spread between atom orders, when it was measured.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -69,6 +88,7 @@ class Evaluation(BaseModel):
     seed_errors_cm: dict[Family, dict[str, list[float]]]
     coupled_cluster: str
     sources: list[str]
+    atom_order_spread: AtomOrderSpread | None = None
 
     @model_validator(mode="after")
     def _every_family_on_every_holdout(self) -> Self:

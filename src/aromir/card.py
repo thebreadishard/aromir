@@ -134,20 +134,32 @@ def _training(release: Release) -> list[str]:
     ]
 
 
+def _measured_spread(release: Release) -> str:
+    spread = release.evaluation.atom_order_spread
+    if spread is None:
+        return "The spread between atom orders was not measured for this release."
+    return (
+        f"Measured: band positions move by up to {spread.max_cm:g} cm⁻¹ between atom orders "
+        f"({spread.n_molecules} molecules, {spread.n_orders} orders each; {spread.source})."
+    )
+
+
 def _order_statement(release: Release) -> str:
     primitives = release.recipes[0].inputs.primitives
     if primitives.angle_choice == "canonical" and primitives.dihedral_encoding != "raw":
-        return (
+        design = (
             "The internal coordinates are built on the atoms in a canonical order and "
             "dihedrals enter by their cosine, so the answer does not depend on how the "
             "molecule's atoms are numbered."
         )
-    return (
-        "**The answer depends on how the molecule's atoms are numbered**: the internal "
-        "coordinates are chosen by atom number, and a dihedral near ±180° enters by its raw "
-        "value. aromir therefore puts every input, SMILES or xyz, into one canonical atom "
-        "order first. Do not feed the network a molecule in another order."
-    )
+    else:
+        design = (
+            "**The answer depends on how the molecule's atoms are numbered**: the internal "
+            "coordinates are chosen by atom number, and a dihedral near ±180° enters by its "
+            "raw value. aromir therefore puts every input, SMILES or xyz, into one canonical "
+            "atom order first. Do not feed the network a molecule in another order."
+        )
+    return f"{design} {_measured_spread(release)}"
 
 
 def _limits(release: Release) -> list[str]:

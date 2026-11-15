@@ -103,3 +103,25 @@ def test_a_release_record_missing_a_field_names_it(
     (folder / "training.json").write_text(json.dumps(training), encoding="utf-8")
     assert cli.main(["card", "--release", str(folder)]) == cli.EXIT_REFUSED
     assert capsys.readouterr().err == "refused:\n  soft_mode_repair: Field required\n"
+
+
+def test_the_card_states_the_measured_spread_between_atom_orders(loaded: release.Release) -> None:
+    assert "The spread between atom orders was not measured for this release." in (
+        card.to_markdown(loaded)
+    )
+    spread = release.AtomOrderSpread(
+        max_cm=2.9, n_molecules=3, n_orders=5, source="order_spread_v1.3.json"
+    )
+    evaluation = loaded.evaluation.model_copy(update={"atom_order_spread": spread})
+    text = card.to_markdown(replace(loaded, evaluation=evaluation))
+    assert (
+        "Measured: band positions move by up to 2.9 cm⁻¹ between atom orders "
+        "(3 molecules, 5 orders each; order_spread_v1.3.json)." in text
+    )
+
+
+def test_a_spread_must_be_a_measurement() -> None:
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        release.AtomOrderSpread(max_cm=-1.0, n_molecules=3, n_orders=5, source="x.json")
+    with pytest.raises(ValueError, match="greater than or equal to 1"):
+        release.AtomOrderSpread(max_cm=1.0, n_molecules=0, n_orders=5, source="x.json")
