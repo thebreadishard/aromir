@@ -124,7 +124,8 @@ $ ruff check . && ruff format --check . && mypy
 
 | version | what it adds |
 |---|---|
-| 0.1 | the network's trained weights as a release, the anharmonic band positions, the low-mode repair of the Hessian |
+| 0.1 | the network's trained weights as a release, the low-mode repair of the Hessian; positions are harmonic, and the certificate says so |
+| 0.2 | anharmonic band positions as an optional extra: a learned shift per band from a GFN2-xTB force field, with its measured error |
 | 1.0 | an answer that does not depend on the atom order, the training code, a model card generated from the evaluation records, releases on PyPI and conda-forge |
 
 ## Licence
