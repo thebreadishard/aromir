@@ -120,6 +120,8 @@ filterwarnings = [
     "error",
     # pyscf leaves an SCF object's checkpoint file to the garbage collector
     "ignore:unclosed file:ResourceWarning",
+    # pyscf's macOS wheels are built without OpenMP and say so when threads are set
+    "ignore:OpenMP is not available:UserWarning",
 ]
 markers = [
     "quantum: runs a quantum-chemistry calculation (seconds on water; deselect with -m 'not quantum')",

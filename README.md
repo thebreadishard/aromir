@@ -56,7 +56,8 @@ Two checks guard every result:
 
 ## Install
 
-Linux and macOS; on Windows, use WSL (pyscf does not build natively there).
+Linux and macOS; on Windows, use WSL (pyscf does not build natively there). pyscf's
+macOS wheels run on one thread, whatever `--threads` says.
 
 ```console
 $ pip install git+https://github.com/thebreadishard/aromir
