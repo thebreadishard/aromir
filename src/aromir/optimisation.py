@@ -51,7 +51,9 @@ them (``geometric/params.py``, ``convergence_criteria``: 'convergence_drms' and
 'convergence_dmax' replace the set's values). Its test stays the one it always applies —
 energy change, rms and largest gradient, rms and largest displacement, all five
 (``geometric/optimize.py``, ``evaluateStep``: ``criteria_met``) — with the set's thresholds
-for the first three. pyscf hands the keywords through: ``geometric_solver.kernel`` passes
+for the first three. One more thing follows the displacement threshold inside geomeTRIC:
+its smallest trust radius, min(1e-4, a tenth of the rms threshold), is 4e-6 Å under the
+set and 1e-4 Å here. pyscf hands the keywords through: ``geometric_solver.kernel`` passes
 its ``**kwargs`` on to ``geometric.optimize.run_optimizer``."""
 
 ALL_CRITERIA: Final = "energy, forces and displacement"
@@ -91,7 +93,11 @@ class Optimisation:
             change between its last two gradients: of the energy (hartree), the rms and
             the largest atomic force (hartree/bohr) at the end, and the rms and the largest
             distance an atom moved (ångström). They describe the end for a reader; the
-            optimiser's own displacement is measured after aligning the two geometries.
+            optimiser's own displacement is measured after aligning the two geometries,
+            and its energy change from the last step it accepted.
+        gradients_without_displacement: The gradients taken without the displacement
+            criterion. Two — one step — means the energy and the forces were already
+            converged where the displacement was not; more means they were not.
     """
 
     geometry: Geometry
@@ -100,6 +106,7 @@ class Optimisation:
     n_steps: int
     criteria: str = ALL_CRITERIA
     last_step: dict[str, float] | None = None
+    gradients_without_displacement: int = 0
 
 
 class _Trail:
@@ -206,11 +213,11 @@ def optimise(
     """
     trail = _Trail(0 if taken_up is None else taken_up.n_steps, keep)
     at = start if taken_up is None else Geometry(start.symbols, np.array(taken_up.coords_bohr))
-    converged, criteria = False, ALL_CRITERIA
+    converged, criteria, under_all = False, ALL_CRITERIA, 0
     if trail.n_steps < MAX_STEPS:
         converged, at = _run(at, resources, log, trail, maxsteps=MAX_STEPS - trail.n_steps)
     if not converged:
-        criteria = ENERGY_AND_FORCES
+        criteria, under_all = ENERGY_AND_FORCES, trail.n_steps
         log.write(
             f"\naromir: not converged on {ALL_CRITERIA} after {trail.n_steps} gradients; "
             f"going on without the displacement criterion ({ENERGY_AND_FORCES})\n"
@@ -221,7 +228,8 @@ def optimise(
     if not converged:
         msg = (
             f"the geometry optimisation did not converge in {MAX_STEPS} steps, nor in "
-            f"{FLAT_STEPS} more on {ENERGY_AND_FORCES} alone ({trail.n_steps} gradients in all)"
+            f"{FLAT_STEPS} more on {ENERGY_AND_FORCES} alone ({trail.n_steps} gradients in all); "
+            "the same command goes on from the last geometry"
         )
         raise ConvergenceError(msg)
     final = converged_scf(build_molecule(at, resources, log))
@@ -233,4 +241,7 @@ def optimise(
         n_steps=trail.n_steps,
         criteria=criteria,
         last_step=trail.last_step() if criteria == ENERGY_AND_FORCES else None,
+        gradients_without_displacement=(
+            trail.n_steps - under_all if criteria == ENERGY_AND_FORCES else 0
+        ),
     )

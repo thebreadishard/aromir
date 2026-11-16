@@ -106,6 +106,7 @@ def test_an_optimisation_that_converges_is_asked_for_every_criterion(solver: _So
     assert "convergence_dmax" not in solver.calls[0]
     assert result.criteria == optimisation.ALL_CRITERIA
     assert result.last_step is None
+    assert result.gradients_without_displacement == 0
     assert result.n_steps == GRADIENTS
     np.testing.assert_allclose(
         result.geometry.coords_bohr, WATER.coords_bohr + GRADIENTS * STEP_BOHR
@@ -127,6 +128,7 @@ def test_one_that_does_not_goes_on_under_geometrics_own_test_of_energy_and_force
     np.testing.assert_allclose(second["start"], first["start"] + GRADIENTS * STEP_BOHR)
     assert result.criteria == optimisation.ENERGY_AND_FORCES
     assert result.n_steps == 2 * GRADIENTS
+    assert result.gradients_without_displacement == GRADIENTS
     assert "going on without the displacement criterion" in log.getvalue()
     last = result.last_step
     assert last is not None

@@ -153,11 +153,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     change and the rms and largest force, and the two displacement thresholds set so
     that any step meets them (geomeTRIC's own `convergence_drms` / `convergence_dmax`).
     The certificate then says 'converged on energy and forces; the displacement
-    criterion was not met on a flat coordinate', with the last step's numbers;
+    criterion was not met on a flat coordinate', with the last step's numbers, when
+    one step without the criterion was enough; when more were needed it says how many
+    and does not call the coordinate flat;
   - the step off a saddle point is sized from the imaginary mode's measured curvature,
     to lower the energy by 1e-5 hartree in the harmonic picture, and moves no atom by
-    more than 0.3 bohr, which is the step of every saddle point softer than about
-    100 cm⁻¹; it was 0.1 bohr for every saddle point. Both numbers are chosen;
+    more than 0.3 bohr; it was 0.1 bohr for every saddle point. Both numbers are
+    chosen;
   - a geometry that after that one step and a second optimisation still has an
     imaginary mode softer than 20 cm⁻¹ is printed, with that band named a flat
     coordinate, never licensed and named in the statement. An imaginary mode beyond

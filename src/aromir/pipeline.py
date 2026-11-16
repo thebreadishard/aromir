@@ -69,11 +69,10 @@ times geomeTRIC's energy criterion. A chosen value."""
 
 LARGEST_STEP_OFF_BOHR: Final = 0.3
 """The most the atom that moves most is moved by that step: a chosen value. A soft imaginary
-mode is the top of a shallow double well, not of a parabola; the harmonic picture asks
-for bohrs there, so every saddle point softer than about 100 cm⁻¹ gets this step, and
-with it a lowering far below ``SADDLE_ENERGY_LOWERING_HARTREE``. One case stands behind
-the size: 3-vinylfuran (a mode at -12 cm⁻¹, B3LYP/6-31G*), whose minimum the optimiser
-reached 0.22 bohr from its saddle point, 0.16 cm⁻¹ below it."""
+mode is the top of a shallow double well, not of a parabola, and the harmonic picture
+can ask for more than the well is wide. Where the cap binds depends on what moves: a
+soft mode carried by one or two hydrogens reaches it, a collective one of the same
+wavenumber gets a shorter step."""
 
 _LEFTOVERS: Final = (QUANTUM_LOG_FILE, f"{RUN_FILE}.tmp")
 """What a run killed before its first step leaves behind: no reason to refuse the folder."""
@@ -281,6 +280,7 @@ def _optimised(
             "n_steps": optimised.n_steps,
             "criteria": optimised.criteria,
             "last_step": optimised.last_step,
+            "gradients_without_displacement": optimised.gradients_without_displacement,
         },
         "attempt": state.attempt,
     }
@@ -506,6 +506,7 @@ def _computation_record(
             "n_steps": optimised.n_steps,
             "converged_on": optimised.criteria,
             "last_step": optimised.last_step,
+            "gradients_without_displacement": optimised.gradients_without_displacement,
             "left_saddle_point_at_cm": None if left is None else left.imaginary_cm,
         },
         "checks": {
@@ -632,9 +633,19 @@ def _convergence_note(optimised: optimisation.Optimisation) -> list[str]:
     if last is None:
         msg = "an optimisation converged on energy and forces holds no record of its last step"
         raise ValueError(msg)
+    # One step without the displacement criterion means the energy and the forces had
+    # converged where the displacement had not: that is a flat coordinate. More steps
+    # mean the optimisation was simply not done, and the note does not call it flat.
+    further = optimised.gradients_without_displacement
+    one_step = 2
+    how = (
+        "not met on a flat coordinate"
+        if further == one_step
+        else f"not met, and {further} more gradients were needed for the energy and the forces"
+    )
     note = (
         "the geometry is converged on energy and forces; the displacement criterion was "
-        f"not met on a flat coordinate in {optimisation.MAX_STEPS} steps and was not applied "
+        f"{how} in {optimisation.MAX_STEPS} steps and was not applied "
         f"after them ({optimised.n_steps} gradients in all; geomeTRIC's "
         f"{optimisation.CONVERGENCE_SET} thresholds for the energy change and for the rms and "
         "the largest force were met; between the last two gradients the energy changed by "

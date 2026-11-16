@@ -932,16 +932,54 @@ def test_the_first_attempts_progress_is_not_the_second_attempts(
 def test_a_saved_progress_without_a_gradient_is_a_damaged_run(
     n_steps: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def killed(start: Geometry, *_arguments: object, **progress: Any) -> None:  # noqa: ANN401
-        progress["keep"](optimisation.Progress(start.coords_bohr.tolist(), n_steps))
-        raise KeyboardInterrupt
+    class StoppedError(Exception):
+        """The stand-in's end: not an interrupt, which would end the test session if it escaped."""
 
-    monkeypatch.setattr(optimisation, "optimise", killed)
+    def stopped(start: Geometry, *_arguments: object, **progress: Any) -> None:  # noqa: ANN401
+        progress["keep"](optimisation.Progress(start.coords_bohr.tolist(), n_steps))
+        raise StoppedError
+
+    monkeypatch.setattr(optimisation, "optimise", stopped)
     folder = tmp_path / "benzene"
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(StoppedError):
         pipeline.run_baseline(_benzene(folder))
     with pytest.raises(RefusedError, match=r"optimisation_progress\.json in .* damaged run"):
         pipeline.run_baseline(_benzene(folder))
+
+
+def test_the_progress_of_the_optimisation_off_a_saddle_point_is_the_second_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    # The case the saved progress is for: a run stopped in the optimisation that follows
+    # the step off a saddle point goes on there, not at the first attempt's start.
+    _unstable_for(1, monkeypatch)
+    optimise = optimisation.optimise
+    taken_up_from: list[optimisation.Progress | None] = []
+
+    class StoppedError(Exception):
+        """The stand-in's end."""
+
+    def stopped_in_the_second(
+        start: Geometry,
+        resources: Resources,
+        log: TextIO,
+        **progress: Any,  # noqa: ANN401  the keywords under test
+    ) -> optimisation.Optimisation:
+        taken_up_from.append(progress["taken_up"])
+        if synthetic_chemistry["optimise"] == 1 and progress["taken_up"] is None:
+            progress["keep"](optimisation.Progress(start.coords_bohr.tolist(), 60))
+            raise StoppedError
+        return optimise(start, resources, log)
+
+    monkeypatch.setattr(optimisation, "optimise", stopped_in_the_second)
+    folder = tmp_path / "benzene"
+    with pytest.raises(StoppedError):
+        pipeline.run_baseline(_benzene(folder))
+    stored = json.loads((folder / pipeline.PROGRESS_FILE).read_text(encoding="utf-8"))
+    assert (stored["attempt"], stored["n_steps"]) == (2, 60)
+    pipeline.run_baseline(_benzene(folder))
+    assert [reached and reached.n_steps for reached in taken_up_from] == [None, None, 60]
+    assert synthetic_chemistry["optimise"] == 2
 
 
 def test_a_flat_coordinate_gets_its_spectrum_with_that_band_named_and_unlicensed(
@@ -974,8 +1012,20 @@ def test_the_baseline_names_a_flat_coordinate(
     assert record["harmonic"]["bands"][0]["wavenumber_cm"] == pytest.approx(-10.0, abs=0.05)
 
 
+@pytest.mark.parametrize(
+    ("further", "how"),
+    [
+        (2, "not met on a flat coordinate"),
+        (9, "not met, and 9 more gradients were needed for the energy and the forces"),
+    ],
+    ids=["one step was enough", "more were needed"],
+)
 def test_a_geometry_converged_on_energy_and_forces_says_so_with_its_numbers(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+    further: int,
+    how: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_chemistry: Counter[str],
 ) -> None:
     last_step = {
         "energy_change_hartree": -6.7e-10,
@@ -990,7 +1040,7 @@ def test_a_geometry_converged_on_energy_and_forces_says_so_with_its_numbers(
     ) -> optimisation.Optimisation:
         synthetic_chemistry["optimise"] += 1
         return optimisation.Optimisation(
-            start, -1.0, 1e-6, 104, optimisation.ENERGY_AND_FORCES, last_step
+            start, -1.0, 1e-6, 104, optimisation.ENERGY_AND_FORCES, last_step, further
         )
 
     monkeypatch.setattr(optimisation, "optimise", crawled)
@@ -1000,9 +1050,10 @@ def test_a_geometry_converged_on_energy_and_forces_says_so_with_its_numbers(
     assert synthetic_chemistry["optimise"] == 1
     assert loaded_back["optimisation"]["converged_on"] == optimisation.ENERGY_AND_FORCES
     assert loaded_back["optimisation"]["last_step"] == last_step
+    assert loaded_back["optimisation"]["gradients_without_displacement"] == further
     said = (
-        "the geometry is converged on energy and forces; the displacement criterion was not "
-        "met on a flat coordinate in 100 steps and was not applied after them (104 gradients "
+        "the geometry is converged on energy and forces; the displacement criterion was "
+        f"{how} in 100 steps and was not applied after them (104 gradients "
         "in all; geomeTRIC's GAU_TIGHT thresholds for the energy change and for the rms and "
         "the largest force were met; between the last two gradients the energy changed by "
         "-6.7e-10 hartree and the atoms moved by 4.2e-04 rms and 9.1e-04 Å at most, with "
