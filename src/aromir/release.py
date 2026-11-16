@@ -5,8 +5,10 @@ A release is a folder:
     seed-0.safetensors, seed-0.json    one pair per seed (``aromir.network.weights``)
     evaluation.json                    the version's measured error per family and hold-out
     training.json                      the elements, sizes and molecules it was trained on
+    invariance.json                    how far its answer moves under a rotation, a
+                                       reflection and another atom listing (optional)
 
-The two JSON files are written from the training project's own records. Nothing the
+The JSON files are written from the training project's own records. Nothing the
 certificate states about a network is typed into this package.
 
 One release ships inside the package (``bundled``), so a corrected spectrum needs no
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
 
 EVALUATION_FILE: Final = "evaluation.json"
 TRAINING_FILE: Final = "training.json"
+INVARIANCE_FILE: Final = "invariance.json"
 SEED_FILES: Final = "seed-*.json"
 MIN_SEEDS: Final = 2
 """A band's spread over the seeds needs at least two of them."""
@@ -139,6 +142,62 @@ class Training(BaseModel):
     soft_mode_repair: bool
 
 
+class MeasuredSpread(BaseModel):
+    """How far the corrected band positions move under one change that leaves a molecule itself.
+
+    Attributes:
+        with_linear_group_cm: The largest change of any band, cm⁻¹, over the molecules
+            measured that have a linear group (a nitrile, an alkyne).
+        without_linear_group_cm: The same over the molecules without one.
+        n_molecules: The molecules it was measured on.
+        n_trials: The changes tried per molecule.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    with_linear_group_cm: float = Field(ge=0)
+    without_linear_group_cm: float = Field(ge=0)
+    n_molecules: int = Field(ge=1)
+    n_trials: int = Field(ge=1)
+
+    def of(self, *, linear_group: bool) -> float:
+        """Return the spread that applies to a molecule with or without a linear group."""
+        return self.with_linear_group_cm if linear_group else self.without_linear_group_cm
+
+
+class Invariance(BaseModel):
+    """What a network version's answer depends on that the molecule does not.
+
+    A molecule turned in space, its mirror image and another listing of its atoms are the
+    same molecule with the same spectrum. A network whose inputs are not built to respect
+    that gives each a somewhat different answer; this record says by how much.
+
+    Attributes:
+        network_version: The version the numbers belong to.
+        rotation: Under a rigid rotation of geometry and Hessian.
+        mirror_image: Under a reflection of both.
+        xyz_atom_order: Between listings of one geometry's atoms in another order, each
+            put into aromir's canonical order.
+        source: The record the numbers were read from.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    network_version: str
+    rotation: MeasuredSpread
+    mirror_image: MeasuredSpread
+    xyz_atom_order: MeasuredSpread
+    source: str
+
+    def spreads(self) -> dict[str, MeasuredSpread]:
+        """Return each measured spread under the words a document names it by."""
+        return {
+            "a rigid rotation of the molecule": self.rotation,
+            "the molecule's mirror image": self.mirror_image,
+            "another listing of the same atoms in an xyz file": self.xyz_atom_order,
+        }
+
+
 def error_text(error_cm: float) -> str:
     """Write a measured error for a table: two decimals always, so 2.50 reads like 2.12."""
     return f"{error_cm:.2f}"
@@ -176,6 +235,7 @@ class Release:
     tensor_sha256: tuple[str, ...]
     evaluation: Evaluation
     training: Training
+    invariance: Invariance | None = None
 
     @property
     def network_version(self) -> str:
@@ -190,13 +250,18 @@ class Release:
 
 
 def _reasons_to_refuse(
-    recipes: tuple[weights.Recipe, ...], evaluation: Evaluation, training: Training
+    recipes: tuple[weights.Recipe, ...],
+    evaluation: Evaluation,
+    training: Training,
+    invariance: Invariance | None,
 ) -> list[str]:
     reasons = []
     if len(recipes) < MIN_SEEDS:
         reasons.append(f"{len(recipes)} seed(s): a release needs at least {MIN_SEEDS}")
     versions = {recipe.network_version for recipe in recipes}
     versions |= {evaluation.network_version, training.network_version}
+    if invariance is not None:
+        versions.add(invariance.network_version)
     if len(versions) > 1:
         reasons.append(f"its parts are of different network versions: {sorted(versions)}")
     if len({(recipe.architecture, recipe.inputs) for recipe in recipes}) > 1:
@@ -224,10 +289,15 @@ def load(folder: Path) -> Release:
         (folder / EVALUATION_FILE).read_text(encoding="utf-8")
     )
     training = Training.model_validate_json((folder / TRAINING_FILE).read_text(encoding="utf-8"))
+    invariance = None
+    if (folder / INVARIANCE_FILE).is_file():
+        invariance = Invariance.model_validate_json(
+            (folder / INVARIANCE_FILE).read_text(encoding="utf-8")
+        )
     seed_files = sorted(folder.glob(SEED_FILES))
     loaded = [weights.load(path) for path in seed_files]
     recipes = tuple(recipe for _, recipe in loaded)
-    reasons = _reasons_to_refuse(recipes, evaluation, training)
+    reasons = _reasons_to_refuse(recipes, evaluation, training, invariance)
     if reasons:
         raise RefusedError([f"{folder}: {reason}" for reason in reasons])
     return Release(
@@ -236,4 +306,5 @@ def load(folder: Path) -> Release:
         tensor_sha256=tuple(weights.recorded_sha256(path) for path in seed_files),
         evaluation=evaluation,
         training=training,
+        invariance=invariance,
     )

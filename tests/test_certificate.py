@@ -129,7 +129,11 @@ def test_the_record_and_its_text(
         "higher_level": loaded.evaluation.higher_level,
     }
     assert record["accuracy"]["licensed_families"] == ["ring-ip", "CH-stretch", "CH-oop"]
-    assert "Licensed for ring-ip, CH-stretch, CH-oop" in record["statement"]
+    n_licensed = sum(band["licensed"] for band in record["bands"])
+    assert 0 < n_licensed < N_BANDS
+    assert f"{n_licensed} of {N_BANDS} bands are licensed" in record["statement"]
+    assert "on every hold-out (ring-ip, CH-stretch, CH-oop)" in record["statement"]
+    assert "Not in that error" not in record["statement"]
     assert "harmonic" in record["positions"]
     assert record["warnings"] == []
     assert json.loads(json.dumps(record)) == record
@@ -157,7 +161,11 @@ def test_a_molecule_outside_the_training_sizes_is_marked(
     corrections = narrow.corrections(benzene, low.hessian)
     record = certificate.build(admitted, benzene, low, corrections, narrow)
     assert record["molecule"]["inside_training_sizes"] is False
-    assert "20–30 atoms: OUTSIDE" in certificate.to_markdown(record)
+    assert "20–30 atoms: OUTSIDE: no band is licensed" in certificate.to_markdown(record)
+    assert not any(band["licensed"] for band in record["bands"])
+    notes = {band["licence_note"] for band in record["bands"] if band["family"] != "other"}
+    assert notes == {"the molecule is outside the training sizes"}
+    assert "0 of 30 bands are licensed" in record["statement"]
     assert tmp_path.exists()
 
 
@@ -172,6 +180,9 @@ def test_an_imaginary_corrected_band_is_a_warning(
     corrections = release.Corrections(unstable, (unstable, unstable))
     record = certificate.build(admitted, benzene, low, corrections, loaded)
     assert record["bands"][0]["wavenumber_cm"] < 0
+    assert record["bands"][0]["licensed"] is False
+    assert record["bands"][0]["licence_note"] == "imaginary position"
+    assert "| no: imaginary position |" in certificate.to_markdown(record)
     assert record["warnings"] == [
         (
             "1 corrected band(s) have an imaginary (negative) position: the correction made a "

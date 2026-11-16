@@ -1,6 +1,7 @@
 """From one molecule to its spectrum, written to a result folder.
 
-Every refusal comes before the first computation, and a result is never overwritten.
+A molecule outside the domain is refused before the first computation, and a result is
+never overwritten.
 """
 
 from __future__ import annotations

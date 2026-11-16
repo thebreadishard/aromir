@@ -61,7 +61,7 @@ carry the weight:
   dipole; the Hessian against pyscf's own.
 
 Tests that run quantum chemistry are marked `quantum` and use water, which takes
-seconds. `pytest -m "not quantum"` runs the rest in under a second.
+seconds. `pytest -m "not quantum"` runs the rest in seconds.
 
 ## Claims
 

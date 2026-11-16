@@ -97,7 +97,7 @@ def _run(arguments: argparse.Namespace) -> None:
     record = pipeline.run_spectrum(request, _release(arguments))
     n_licensed = sum(band["licensed"] for band in record["bands"])
     print(  # noqa: T201  the command's answer
-        f"done: {len(record['bands'])} bands, {n_licensed} of them in a licensed family; "
+        f"done: {len(record['bands'])} bands, {n_licensed} of them licensed; "
         f"certificate in {request.out / pipeline.CERTIFICATE_TEXT_FILE}"
     )
 

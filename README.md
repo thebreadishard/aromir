@@ -3,8 +3,9 @@
 Infrared spectra of aromatic molecules: a cheap DFT Hessian, a learned correction to it,
 and a certificate that says how far each band can be trusted.
 
-> **Status: pre-alpha (0.1.0.dev0).** The whole chain is in the package and tested: the
-> low level, the network, the corrected spectrum and its certificate. The trained
+> **Status: pre-alpha (0.1.0.dev0).** The whole chain is in the package: the low level,
+> the network, the corrected spectrum and its certificate. Each step is tested on its
+> own; no test yet runs the full chain with a release on a real molecule. The trained
 > weights of network v1.3 ship inside the package. Positions are harmonic: the
 > anharmonic step is not in this version; see
 > [What works today](#what-works-today) and the [roadmap](#roadmap).
@@ -18,11 +19,11 @@ corrects it with a neural network trained on the difference to a better function
 
 ```
 SMILES or xyz
-  → canonical atom order, start geometry        (RDKit)
+  → atom order from the bond graph, start geometry (RDKit)
   → geometry optimisation                       (pyscf + geomeTRIC)
   → analytic Hessian and dipole derivatives     (pyscf)
   → ΔH, the learned correction to the Hessian   (network v1.3, inside the package)
-  → band positions, heights, spectrum
+  → band positions and heights
   → certificate: what each band rests on
 ```
 
@@ -33,7 +34,7 @@ and Cl. A molecule outside that domain is refused with the reasons, not answered
 
 `aromir baseline` runs the pipeline up to and including the low level and writes the
 B3LYP harmonic spectrum, with the conventional scaled-B3LYP positions beside it. That
-scaled spectrum is the baseline the learned correction will be compared with.
+scaled spectrum is the baseline the certificate prints beside every corrected band.
 
 ```console
 $ aromir check "c1ccc2ccccc2c1"
@@ -56,26 +57,34 @@ $ aromir spectrum "c1ccccc1" --out results/benzene
 
 `--release <folder>` names another release. A release is a folder with one weight file
 and recipe per seed, `evaluation.json` (the
-version's measured error per mode family and hold-out) and `training.json` (the elements,
-sizes and molecules it was trained on). The result folder then also holds
+version's measured error per mode family and hold-out), `training.json` (the elements,
+sizes and molecules it was trained on) and, where it was measured, `invariance.json`
+(how far the answer moves when the same molecule is turned, mirrored or listed in
+another atom order). The result folder then also holds
 `correction.npz` (each seed's ΔH and their mean) and the certificate, as
 `certificate.json` and `certificate.md`. The certificate lists every band with
 
 - its corrected position and height, and how far the seeds disagree about the position;
 - the uncorrected B3LYP band that moves most like it, plain and scaled;
-- its family (CH stretch, CH out-of-plane, ring in-plane, other), the error measured for
-  that family on molecules the network never saw, and whether the family is licensed: its
-  error is within the licence line on every hold-out;
+- its family (CH-stretch, CH-oop, ring-ip or other: the evaluation's names for rules on a
+  mode's position and motion, which the certificate spells out) and the error measured
+  for that family on molecules the network never saw;
+- whether the band is licensed: the family's error is within the licence line on every
+  hold-out, the molecule lies inside the training sizes, and the band is real and of the
+  kind the family names (an O–H stretch falls under the CH-stretch rule and is not
+  licensed);
 
-and says whether the molecule lies inside the sizes the network was trained on, and
-whether the network has seen it. Nothing it states about the network is typed into the
+and says whether the molecule lies inside the sizes the network was trained on, whether
+the network has seen it, and what the measured error does not cover: how far the
+positions move when the same molecule is turned, mirrored or listed in another atom
+order. Nothing it states about the network is typed into the
 package: every number comes from the release's records.
 
 `aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it
 stops being known.
 
-Two checks and a repair guard every result:
+Two checks guard every result, and a repair the results it applies to:
 
 - **The geometry is a minimum.** A geometry with an imaginary mode has no harmonic
   spectrum, and none is written.
@@ -99,10 +108,15 @@ with a JSON recipe. It is a rewrite of the code the weights are trained with, an
 regression pins hold the two to the same output: 16 molecule-and-configuration pairs
 agree to 3e-7 relative in ΔH, with every integer input identical.
 
-The correction is symmetric and free of translations and rotations by construction, and
-it turns with the molecule; the tests check each of those on random networks. With the
-`canonical` angle choice and `cos`-encoded dihedrals it also gives one answer for every
-atom order; that is tested on a molecule without symmetry-equivalent atoms.
+The correction is symmetric and free of translations by construction. It is free of
+rotations and turns with the molecule where the internal coordinates hold no linear
+angle; the tests check that on biphenyl with random networks. A nitrile or an alkyne
+has linear angles, which are measured against a fixed axis in space: release v1.3 moves
+such a molecule's bands by up to 5.34 cm⁻¹ when it is turned, and its model card and
+every certificate state the measured spreads. With the `canonical` angle choice and
+`cos`-encoded dihedrals the network also gives one answer for every atom order; that
+is tested on a molecule without symmetry-equivalent atoms, and v1.3 was not trained
+with those settings.
 
 A checkpoint of the training code becomes weight files with
 

@@ -51,14 +51,19 @@ Sources: E7_rungC_chain35_analytic_eval_frozenb_seed0.json; E7_rungC_chain35_ana
 - **The level is ωB97X/6-31G*.** The errors above are against that level, not against experiment.
 - **Positions are harmonic.** No anharmonic shift is applied.
 - **Neutral, closed-shell, aromatic molecules only**, of the elements C, Cl, F, H, N, O, S. aromir refuses anything else before computing.
-- **Sizes outside 8 to 30 atoms are extrapolation.** aromir computes them and marks the certificate.
+- **Sizes outside 8 to 30 atoms are extrapolation.** aromir computes them, and its certificate licenses none of their bands.
 - **Not licensed: other.** Bands of an unlicensed family are printed with their measured error and marked.
-- **The answer depends on how the molecule's atoms are numbered**: the internal coordinates are chosen by atom number, and a dihedral near ±180° enters by its raw value. aromir therefore puts every input, SMILES or xyz, into one canonical atom order first. Do not feed the network a molecule in another order. Measured: band positions move by up to 10.73 cm⁻¹ between atom orders (3 molecules, 5 orders each; order_spread_smiles.json).
+- **The answer depends on how the molecule's atoms are numbered**: the internal coordinates are chosen by atom number, and a dihedral near ±180° enters by its raw value. aromir orders the atoms of every input by the bond graph first, so every SMILES of a molecule gets one order; atoms the graph cannot tell apart keep the order of an xyz file, so two listings of one geometry can still differ. Do not feed the network a molecule in another order. Measured: band positions move by up to 10.73 cm⁻¹ between atom orders (3 molecules, 5 orders each; order_spread_smiles.json).
+- **A rigid rotation of the molecule** moves band positions by up to 5.34 cm⁻¹ in a molecule with a linear group (a nitrile, an alkyne) and 0.00 cm⁻¹ in one without (7 molecules, 8 each).
+- **The molecule's mirror image** moves band positions by up to 5.22 cm⁻¹ in a molecule with a linear group (a nitrile, an alkyne) and 2.60 cm⁻¹ in one without (7 molecules, 1 each).
+- **Another listing of the same atoms in an xyz file** moves band positions by up to 5.27 cm⁻¹ in a molecule with a linear group (a nitrile, an alkyne) and 3.07 cm⁻¹ in one without (7 molecules, 12 each).
+  A linear angle is measured against a fixed axis in space, and a dihedral enters with its sign; the hold-out errors hold none of this. Source: probes/results_m1/aromir_audit_fixes_2026-11-16/rerun/e3_invariance.log of thebreadishard/udacity-capstone-plan (plan 05), aromir at 8a0afa7: benzonitrile, phenylacetylene and diphenylacetylene with a linear group; benzene, biphenyl, 2-methylnaphthalene and phenol without; stored B3LYP geometries and Hessians.
 - **Band heights are the cheap level's.** The dipole derivatives are not corrected.
+- **A family is a rule, not a kind of bond.** ring-ip: between 950 and 1750 cm⁻¹ and in the molecular plane: ring stretches and in-plane bends, and with them every other mode there, such as a C=O stretch or a CH₃ deformation; in a non-planar molecule every mode in that window. CH-stretch: above 2800 cm⁻¹ with most of its motion on hydrogens: the C–H stretches, and by the same rule an O–H or N–H stretch. CH-oop: between 600 and 1050 cm⁻¹, out of the molecular plane and on hydrogens; a non-planar molecule has none, and its C–H wags fall under other or ring-ip. other: every mode the three rules above do not take. aromir's certificate licenses a band only when it is of the kind its family names and the molecule lies inside the training sizes.
 
 ## What it is
 
-An equivariant message-passing encoder (PaiNN type) over the atoms, and a head that predicts one number per pair of internal coordinates: an entry of ΔF. The Cartesian correction is ΔH = Bᵀ ΔF B with B the Wilson matrix, so it is symmetric, free of translations and rotations, and turns with the molecule by construction.
+An equivariant message-passing encoder (PaiNN type) over the atoms, and a head that predicts one number per pair of internal coordinates: an entry of ΔF. The Cartesian correction is ΔH = Bᵀ ΔF B with B the Wilson matrix, so it is symmetric and free of translations. It is free of rotations and turns with the molecule only where no linear angle is among the internal coordinates: see the limits above.
 
 - Encoder: 3 blocks, 64 scalar and 64 vector channels, sum pooling.
 - Head: hidden width 256, with the pair features, a learned share of the low level's own force constant.

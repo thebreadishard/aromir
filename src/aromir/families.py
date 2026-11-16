@@ -31,6 +31,25 @@ _OOP_HYDROGEN_SHARE: Final = 0.3
 _RING_WINDOW: Final = (950.0, 1750.0)
 _RING_OOP_SHARE: Final = 0.3
 
+RULES: Final[dict[Family, str]] = {
+    "ring-ip": (
+        "between 950 and 1750 cm⁻¹ and in the molecular plane: ring stretches and in-plane "
+        "bends, and with them every other mode there, such as a C=O stretch or a CH₃ "
+        "deformation; in a non-planar molecule every mode in that window"
+    ),
+    "CH-stretch": (
+        "above 2800 cm⁻¹ with most of its motion on hydrogens: the C–H stretches, and by "
+        "the same rule an O–H or N–H stretch"
+    ),
+    "CH-oop": (
+        "between 600 and 1050 cm⁻¹, out of the molecular plane and on hydrogens; a "
+        "non-planar molecule has none, and its C–H wags fall under other or ring-ip"
+    ),
+    "other": "every mode the three rules above do not take",
+}
+"""What each family's name stands for: the rule, in the words a reader of a band needs.
+The names are the evaluation's; the rule decides."""
+
 
 def _plane_normal(geometry: Geometry) -> FloatArray | None:
     """Return the molecular plane's normal, or None for a molecule that is not planar.
@@ -48,6 +67,32 @@ def _plane_normal(geometry: Geometry) -> FloatArray | None:
     if float(np.abs(centred @ normal).max()) >= PLANAR_WITHIN_BOHR:
         return None
     return np.asarray(normal, dtype=float)
+
+
+def is_planar(geometry: Geometry) -> bool:
+    """Tell whether the family rule treats the molecule as planar."""
+    return _plane_normal(geometry) is not None
+
+
+def hydrogen_carriers(geometry: Geometry, modes: Modes) -> list[str]:
+    """Return, per mode, the element whose hydrogens carry most of the mode's hydrogen motion.
+
+    A hydrogen belongs to the heavy atom nearest to it. The answer tells a C–H stretch from
+    an O–H or N–H stretch, which the family rule does not; it is "" for a molecule without
+    hydrogens.
+    """
+    symbols = np.array(geometry.symbols)
+    hydrogens = np.flatnonzero(symbols == "H")
+    heavy = np.flatnonzero(symbols != "H")
+    if not len(hydrogens) or not len(heavy):
+        return [""] * modes.vectors.shape[1]
+    x = geometry.coords_bohr
+    distances = np.linalg.norm(x[hydrogens][:, None, :] - x[heavy][None, :, :], axis=-1)
+    carrier = symbols[heavy[np.argmin(distances, axis=1)]]
+    amplitude = (modes.vectors.reshape(geometry.n_atoms, 3, -1) ** 2).sum(axis=1)[hydrogens]
+    elements = sorted(set(carrier))
+    shares = np.array([amplitude[carrier == element].sum(axis=0) for element in elements])
+    return [elements[int(index)] for index in np.argmax(shares, axis=0)]
 
 
 def classify(geometry: Geometry, modes: Modes) -> list[Family]:

@@ -174,10 +174,41 @@ def _order_statement(release: Release) -> str:
         design = (
             "**The answer depends on how the molecule's atoms are numbered**: the internal "
             "coordinates are chosen by atom number, and a dihedral near ±180° enters by its "
-            "raw value. aromir therefore puts every input, SMILES or xyz, into one canonical "
-            "atom order first. Do not feed the network a molecule in another order."
+            "raw value. aromir orders the atoms of every input by the bond graph first, so "
+            "every SMILES of a molecule gets one order; atoms the graph cannot tell apart "
+            "keep the order of an xyz file, so two listings of one geometry can still "
+            "differ. Do not feed the network a molecule in another order."
         )
     return f"{design} {_measured_spread(release)}"
+
+
+def _sameness(release: Release) -> list[str]:
+    """Return what the answer depends on that the molecule does not, as measured."""
+    invariance = release.invariance
+    if invariance is None:
+        unmeasured = (
+            "- **The same molecule turned or mirrored** may get another answer; by how much "
+            "was not measured for this release."
+        )
+        return [unmeasured]
+    lines = []
+    for name, spread in invariance.spreads().items():
+        lines.append(
+            f"- **{name[0].upper()}{name[1:]}** moves band positions by up to "
+            f"{spread.with_linear_group_cm:.2f} cm⁻¹ in a molecule with a linear group (a "
+            f"nitrile, an alkyne) and {spread.without_linear_group_cm:.2f} cm⁻¹ in one without "
+            f"({spread.n_molecules} molecules, {spread.n_trials} each)."
+        )
+    reason = (
+        "A linear angle is measured against a fixed axis in space, and a dihedral enters "
+        "with its sign"
+        if release.recipes[0].inputs.primitives.dihedral_encoding == "raw"
+        else "A linear angle is measured against a fixed axis in space"
+    )
+    return [
+        *lines,
+        f"  {reason}; the hold-out errors hold none of this. Source: {invariance.source}.",
+    ]
 
 
 def _limits(release: Release) -> list[str]:
@@ -197,14 +228,22 @@ def _limits(release: Release) -> list[str]:
         ),
         (
             f"- **Sizes outside {training.min_atoms} to {training.max_atoms} atoms are "
-            "extrapolation.** aromir computes them and marks the certificate."
+            "extrapolation.** aromir computes them, and its certificate licenses none of "
+            "their bands."
         ),
         (
             f"- **Not licensed: {', '.join(unlicensed) or 'no family'}.** Bands of an unlicensed "
             "family are printed with their measured error and marked."
         ),
         f"- {_order_statement(release)}",
+        *_sameness(release),
         "- **Band heights are the cheap level's.** The dipole derivatives are not corrected.",
+        (
+            "- **A family is a rule, not a kind of bond.** "
+            + " ".join(f"{family}: {rule}." for family, rule in families.RULES.items())
+            + " aromir's certificate licenses a band only when it is of the kind its family "
+            "names and the molecule lies inside the training sizes."
+        ),
     ]
 
 
@@ -227,8 +266,9 @@ def _architecture(release: Release) -> list[str]:
         (
             "An equivariant message-passing encoder (PaiNN type) over the atoms, and a head that "
             "predicts one number per pair of internal coordinates: an entry of ΔF. The Cartesian "
-            "correction is ΔH = Bᵀ ΔF B with B the Wilson matrix, so it is symmetric, free of "
-            "translations and rotations, and turns with the molecule by construction."
+            "correction is ΔH = Bᵀ ΔF B with B the Wilson matrix, so it is symmetric and free "
+            "of translations. It is free of rotations and turns with the molecule only where "
+            "no linear angle is among the internal coordinates: see the limits above."
         ),
         "",
         (

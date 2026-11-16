@@ -97,7 +97,7 @@ def test_spectrum_reports_the_licensed_bands(
     assert cli.main(arguments) == cli.EXIT_DONE
     assert loaded_from == [tmp_path / "r"]
     assert capsys.readouterr().out == (
-        f"done: 3 bands, 2 of them in a licensed family; certificate in {out / 'certificate.md'}\n"
+        f"done: 3 bands, 2 of them licensed; certificate in {out / 'certificate.md'}\n"
     )
 
 

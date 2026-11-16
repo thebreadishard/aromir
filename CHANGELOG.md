@@ -10,13 +10,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Admission: a molecule is parsed from a SMILES or an xyz file and refused, with every
   reason, unless it is one neutral, closed-shell aromatic molecule of H, C, N, O, F, S
   and Cl.
-- A start geometry in one canonical atom order for every writing of a molecule.
+- A start geometry with the atoms ordered by the bond graph: one order for every SMILES
+  of a molecule; atoms the graph cannot tell apart keep the order of an xyz file.
 - Geometry optimisation at B3LYP/6-31G* with pyscf and geomeTRIC.
 - The analytic B3LYP Hessian and the atomic polar tensor from one orbital response, with
   the response checked against its own equations and the polar tensor against the
   translation sum rule.
-- Harmonic bands with double-harmonic intensities, the scaled-B3LYP baseline, and
-  Lorentzian broadening.
+- Harmonic bands with double-harmonic intensities, the scaled-B3LYP baseline, and a
+  Lorentzian broadening function (no command writes a curve yet).
 - The repair of soft modes: a Hessian's modes below 20 cm⁻¹ measured from gradients that
   include the grid's response, for the baseline and for a release trained that way.
 - `aromir check` and `aromir baseline`.
@@ -30,6 +31,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The trained weights of network v1.3 (three seeds) with their evaluation and training
   records and model card, inside the package under CC BY 4.0; `aromir spectrum` and
   `aromir card` use that release unless `--release` names another.
+
+### Changed
+
+- A band is licensed for the molecule it belongs to, not for its family alone: the
+  family's error must be within the licence line on every hold-out, the molecule inside
+  the training sizes, and the band real and of the kind the family names. An O–H or N–H
+  stretch, which the family rule counts as CH-stretch, a band of a molecule outside the
+  training sizes and an imaginary band are printed as `no` with the reason
+  (`licence_note` in `certificate.json`).
+- The certificate states what the measured error does not cover: how far the positions
+  move for another atom order, a rotation, the mirror image and another listing of an
+  xyz file, each marked where it exceeds the licence line; that the heights are
+  B3LYP's; that one conformer was computed; and each family's rule in words.
+- A release can hold `invariance.json`, the measured spreads under a rotation, a
+  reflection and another atom listing; v1.3's is measured and shipped: up to 5.34 cm⁻¹
+  under a rotation of a molecule with a nitrile or an alkyne (0.00 without one),
+  5.22 / 2.60 cm⁻¹ for the mirror image, 5.27 / 3.07 cm⁻¹ between listings of one xyz
+  geometry. The model card and the README no longer say that the correction turns with
+  the molecule by construction, or that every input gets one canonical atom order.
 
 ### Fixed
 
