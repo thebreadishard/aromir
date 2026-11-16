@@ -32,6 +32,7 @@ from rdkit import Chem
 
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.network import graph
+from aromir.vibrations import N_RIGID_MOTIONS
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -50,6 +51,13 @@ LINEAR_ANGLE: Final = 4
 OTHER: Final = 5
 
 _PARITY_TOLERANCE: Final = 1e-6
+
+_SMALLEST_REAL: Final = 1e-4
+_LARGEST_NULL: Final = 1e-5
+"""Where the singular values on either side of the rank 3N − 6 must lie, relative to the
+largest. Over the 1,240 molecules of the networks' training corpus the smallest real value
+is 1.0e-2 (E-stilbene) and the largest null one 3.5e-8 (diphenylacetylene, whose linear
+angles let a rotation through at that size); every other null value is below 4e-15."""
 
 
 class PrimitiveSettings(BaseModel):
@@ -135,10 +143,55 @@ def build(geometry: Geometry, settings: PrimitiveSettings) -> Primitives:
     return Primitives(list(coordinates.Internals), built_on, order, wilson_b)
 
 
+def pseudo_inverse(wilson_b: FloatArray) -> FloatArray:
+    """Return B⁺ from exactly the 3N − 6 largest singular values of a Wilson B matrix.
+
+    The rows of B do not change under the six rigid motions, so of its 3N columns 3N − 6
+    are independent and every further singular value is rounding residue. A cutoff relative
+    to the largest value sits inside that residue — at ``np.linalg.pinv``'s default of
+    1e-15 one LAPACK build returns a null value of 9e-16 and drops it, another returns
+    7e-15 for the same matrix and inverts it to 1e14. The count is known, so the count
+    decides, and the two values next to it are checked against where they belong.
+
+    Args:
+        wilson_b: (K, 3N), the derivatives of K primitives to the Cartesian coordinates of
+            a non-linear molecule.
+
+    Raises:
+        ValueError: The primitives span fewer than 3N − 6 directions, or more: B is then
+            not the matrix of a non-linear molecule's internal coordinates.
+    """
+    n_primitives, n_cartesian = wilson_b.shape
+    n_internal = n_cartesian - N_RIGID_MOTIONS
+    if n_internal < 1 or n_primitives < n_internal:
+        msg = (
+            f"{n_primitives} primitives on {n_cartesian} Cartesian coordinates span fewer "
+            f"than 3N − 6 = {n_internal} directions"
+        )
+        raise ValueError(msg)
+    left, values, right = np.linalg.svd(wilson_b, full_matrices=False)
+    if values[n_internal - 1] < _SMALLEST_REAL * values[0]:
+        msg = (
+            f"the primitives span fewer than 3N − 6 = {n_internal} directions: singular "
+            f"value {n_internal} of B is {values[n_internal - 1]:.1e}, the largest "
+            f"{values[0]:.1e}"
+        )
+        raise ValueError(msg)
+    if len(values) > n_internal and values[n_internal] > _LARGEST_NULL * values[0]:
+        msg = (
+            f"the primitives span more than 3N − 6 = {n_internal} directions: singular "
+            f"value {n_internal + 1} of B is {values[n_internal]:.1e}, the largest "
+            f"{values[0]:.1e}; a linear molecule, or a B that changes under a rotation"
+        )
+        raise ValueError(msg)
+    kept = (right[:n_internal].T / values[:n_internal]) @ left[:, :n_internal].T
+    return np.asarray(kept, dtype=float)
+
+
 def internal_force_constants(hessian: FloatArray, wilson_b: FloatArray) -> FloatArray:
     """Return F = B⁺ᵀ H B⁺, the minimum-norm internal form of a Cartesian Hessian."""
-    pseudo_inverse = np.linalg.pinv(wilson_b)
-    return np.asarray(pseudo_inverse.T @ hessian @ pseudo_inverse, dtype=float)
+    inverse = pseudo_inverse(wilson_b)
+    return np.asarray(inverse.T @ hessian @ inverse, dtype=float)
 
 
 def parities(primitives: Primitives) -> tuple[NDArray[np.bool_], FloatArray]:

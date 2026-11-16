@@ -30,3 +30,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The trained weights of network v1.3 (three seeds) with their evaluation and training
   records and model card, inside the package under CC BY 4.0; `aromir spectrum` and
   `aromir card` use that release unless `--release` names another.
+
+### Fixed
+
+- The network's correction no longer depends on the LAPACK build. The pseudo-inverse of
+  the Wilson B matrix was `np.linalg.pinv` at its default cutoff, which lies inside the
+  rounding residue of B's six null singular values: on numpy 2.5.4's Linux wheels one of
+  them came back above the cutoff for 72 of the 1,240 molecules of the training corpus
+  (4-cyanobiphenyl among them), B⁺ reached 1e13 and the corrected spectrum was
+  meaningless, while another build gave the right answer for the same input. For
+  diphenylacetylene, whose linear angles let a rotation into B at 1e-7, it failed on every
+  build. `aromir.network.primitives.pseudo_inverse` now keeps exactly the 3N − 6 largest
+  singular values and refuses a B whose values on either side of that count are not where
+  they belong (a linear molecule, primitives that miss a direction). With it the Linux
+  build's ΔH for 76 of those molecules agrees with the Windows build's to 2.4e-7
+  hartree/bohr² (bands to 2e-4 cm⁻¹), and where the old call was right nothing changes.
