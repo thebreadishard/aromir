@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import zlib
 from collections import Counter
 from dataclasses import replace
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Any, TextIO
 
 import numpy as np
 import pytest
@@ -551,13 +552,16 @@ def test_the_same_start_geometry_is_the_same_request_whatever_the_sign_of_zero(
     assert synthetic_chemistry["optimise"] == 1
 
 
-def test_a_folder_with_somebody_elses_temporary_file_is_not_taken(tmp_path: Path) -> None:
+def test_a_folder_with_somebody_elses_temporary_file_is_not_taken(
+    tmp_path: Path, synthetic_chemistry: Counter[str]
+) -> None:
     folder = tmp_path / "work"
     folder.mkdir()
     (folder / "thesis.tmp").write_text("mine", encoding="utf-8")
     with pytest.raises(RefusedError, match="is not empty: a result is never overwritten"):
         pipeline.run_baseline(_benzene(folder))
     assert (folder / "thesis.tmp").read_text(encoding="utf-8") == "mine"
+    assert not synthetic_chemistry
 
 
 def test_a_run_without_a_soft_mode_is_not_measured_twice(
@@ -616,15 +620,27 @@ def test_a_step_names_the_run_that_made_it_in_its_own_file(
     assert synthetic_chemistry["optimise"] == 1
 
 
-def test_a_certificate_without_its_record_is_a_run_to_take_up(
-    tmp_path: Path, synthetic_chemistry: Counter[str]
+def test_a_run_killed_before_the_certificates_record_is_taken_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
 ) -> None:
-    # The record is written last. A folder that holds the text and not the record is an
-    # unfinished run: the same request finishes it without any quantum chemistry.
+    # The record is what makes a folder a result, so it is written last: a kill at the
+    # record leaves the text and an unfinished run, which the same request finishes
+    # without any quantum chemistry.
     loaded = release.load(write_release(tmp_path / "release"))
     folder = tmp_path / "benzene"
-    pipeline.run_spectrum(_benzene(folder), loaded)
-    (folder / "certificate.json").unlink()
+    write_json = records.write_json
+
+    def killed_at_the_record(path: Path, record: dict[str, Any]) -> None:
+        if path.name == pipeline.CERTIFICATE_FILE:
+            raise KeyboardInterrupt
+        write_json(path, record)
+
+    monkeypatch.setattr(records, "write_json", killed_at_the_record)
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.run_spectrum(_benzene(folder), loaded)
+    assert (folder / "certificate.md").is_file()
+    assert not (folder / "certificate.json").exists()
+    monkeypatch.setattr(records, "write_json", write_json)
     pipeline.run_spectrum(_benzene(folder), loaded)
     assert (folder / "certificate.json").is_file()
     assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
@@ -642,3 +658,78 @@ def test_the_start_geometry_is_named_the_same_whatever_the_sign_of_its_zeros() -
     elsewhere = flat.copy()
     elsewhere[0, 0] += 1e-4
     assert asked != pipeline._asked("baseline", admitted, Geometry(start.symbols, elsewhere))  # noqa: SLF001
+
+
+def _stopped_before_the_repair(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leave a run with its optimisation and its analytic Hessian saved."""
+
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    working = repair.repair
+    monkeypatch.setattr(repair, "repair", stop)
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    monkeypatch.setattr(repair, "repair", working)
+
+
+@pytest.mark.parametrize(
+    ("change", "said"),
+    [
+        ({"hessian": np.zeros((3, 3))}, "arrays of shape (3, 3)"),
+        ({"soft_modes_measured": np.array(True)}, "contradicts itself"),  # noqa: FBT003  a stored flag
+        ({"made_with": np.array("{}")}, "contradicts itself"),
+        ({"made_with": np.array("[]")}, "not a record"),
+    ],
+    ids=["another shape", "measured without a run", "no low-level run", "no record"],
+)
+def test_a_low_level_file_that_cannot_be_this_runs_is_a_damaged_run(
+    change: dict[str, FloatArray],
+    said: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_chemistry: Counter[str],
+) -> None:
+    folder = tmp_path / "benzene"
+    _stopped_before_the_repair(folder, monkeypatch)
+    with np.load(folder / "lowlevel.npz") as arrays:
+        saved = {name: np.array(arrays[name]) for name in arrays.files}
+    records.write_arrays(folder / "lowlevel.npz", saved | change)
+    with pytest.raises(RefusedError, match="holds a damaged run") as refusal:
+        pipeline.run_baseline(_benzene(folder))
+    assert said in refusal.value.reasons[0]
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1}
+
+
+def test_a_low_level_file_that_does_not_decompress_is_a_damaged_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    folder = tmp_path / "benzene"
+    _stopped_before_the_repair(folder, monkeypatch)
+
+    def does_not_decompress(*_arguments: object) -> None:
+        msg = "Error -3 while decompressing data: invalid stored block lengths"
+        raise zlib.error(msg)
+
+    monkeypatch.setattr(np, "load", does_not_decompress)
+    with pytest.raises(RefusedError, match=r"lowlevel.npz in .* \(error: Error -3") as refusal:
+        pipeline.run_baseline(_benzene(folder))
+    assert "holds a damaged run" in refusal.value.reasons[0]
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1}
+
+
+def test_a_geometry_file_that_does_not_name_its_run_is_refused_before_the_next_step(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    # A folder of an earlier aromir: nothing is computed on top of a step that cannot go
+    # into the record, or every later resume would end at the same missing name.
+    folder = tmp_path / "benzene"
+    _stopped_before_the_repair(folder, monkeypatch)
+    stored = json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    del stored["made_with"]
+    (folder / "geometry.json").write_text(json.dumps(stored), encoding="utf-8")
+    (folder / "lowlevel.npz").unlink()
+    with pytest.raises(RefusedError, match=r"geometry\.json in .* holds a damaged run"):
+        pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1}
+    assert not (folder / "lowlevel.npz").exists()

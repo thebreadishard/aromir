@@ -156,3 +156,16 @@ def test_a_recipe_under_another_seeds_name_is_refused(tmp_path: Path) -> None:
     weights.save(random_network(SMALL_ARCHITECTURE, seed=1).state_dict(), folder, "seed-9", again)
     with pytest.raises(RefusedError, match="holds the recipe of seed 1"):
         release.load(folder)
+
+
+def test_an_evaluation_of_another_number_of_seeds_is_refused(tmp_path: Path) -> None:
+    folder = write_release(tmp_path)
+    record = json.loads((folder / "evaluation.json").read_text(encoding="utf-8"))
+    for per_holdout in record["first_order_error_per_seed_cm"].values():
+        for name, errors in per_holdout.items():
+            per_holdout[name] = [*errors, sum(errors) / len(errors)]
+    (folder / "evaluation.json").write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(
+        RefusedError, match=r"first-order error of \[3\] seed\(s\), the release holds 2"
+    ):
+        release.load(folder)

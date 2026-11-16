@@ -25,10 +25,12 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # The upper bounds are the series the package is tested with (README, Install): the
-    # atom order comes from RDKit, the internal coordinates from geomeTRIC, and the
-    # pseudo-inverse incident of November 2026 was one numpy build's. A newer series
-    # is allowed after tests/test_order_pins.py and the release pins pass with it.
+    # The upper bounds of geometric, numpy, pyscf, rdkit, scipy and torch are the series
+    # the package is tested with (README, Install): the atom order comes from RDKit, the
+    # internal coordinates from geomeTRIC, and the pseudo-inverse incident of November
+    # 2026 was one numpy build's. A newer series is allowed after
+    # tests/test_order_pins.py and the release pins pass with it. pydantic and
+    # safetensors are bounded at their next major version.
     "geometric>=1.1,<1.2",
     "numpy>=1.26,<2.6",
     "pydantic>=2.6,<3",

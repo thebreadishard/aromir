@@ -155,10 +155,15 @@ def test_the_record_and_its_text(
     seeds = loaded.evaluation.first_order_error_per_seed_cm["other"]
     in_brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
     assert "| other | 2.78 [1.68–3.76], 156 bands | 3.89 [3.50–4.20], 1225 bands | no |" in text
-    assert f"| other | 3.62 ({in_brackets['a']}) | 3.89 ({in_brackets['b']}) |" in text
+    means = loaded.evaluation.first_order_error_per_seed_mean_cm["other"]
+    assert (
+        f"| other | {means['a']:.2f} ({in_brackets['a']}) | {means['b']:.2f} ({in_brackets['b']}) |"
+        in text
+    )
     assert "It is not the error of what is printed above." in text
     assert "The licence is read on the band error of the seeds' mean" in text
-    assert ") | 2.73 (" in text
+    wag_on_b = loaded.evaluation.first_order_error_per_seed_mean_cm["CH-oop"]["b"]
+    assert f") | {wag_on_b:.2f} (" in text
     assert "(the DFT proxy" in record["statement"]
     assert text.count("(the DFT proxy") == 1
     band_rows = [line for line in text.split("\n") if line.count("|") == 9 and "–" in line]

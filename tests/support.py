@@ -122,14 +122,20 @@ def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = 
     """Write a release folder: v1.3's evaluation record, ``TRAINING`` and random small seeds.
 
     The evaluation's hold-out counts are set to ``TRAINING``'s one molecule each: a release
-    whose two records count differently does not load. The family 'other' is put above
-    the licence line and the atom-order spread is left unmeasured.
+    whose two records count differently does not load, and neither does one whose
+    evaluation names another number of seeds than it holds. The family 'other' is put
+    above the licence line and the atom-order spread is left unmeasured.
     """
     folder.mkdir(parents=True, exist_ok=True)
     evaluation = json.loads((RELEASE_DATA / "evaluation_v1.3.json").read_text(encoding="utf-8"))
     for name, held_out in TRAINING["held_out_smiles"].items():
         evaluation["holdouts"][name]["n_molecules"] = len(held_out)
     evaluation["band_error_seed_mean_cm"]["other"]["b"] |= UNLICENSED_OTHER
+    means = evaluation["first_order_error_per_seed_mean_cm"]
+    for family, per_holdout in evaluation["first_order_error_per_seed_cm"].items():
+        for name, errors in per_holdout.items():
+            per_holdout[name] = errors[: len(seeds)]
+            means[family][name] = round(sum(per_holdout[name]) / len(seeds), 2)
     evaluation.pop("atom_order_spread")
     (folder / "evaluation.json").write_text(json.dumps(evaluation), encoding="utf-8")
     (folder / "training.json").write_text(json.dumps(TRAINING), encoding="utf-8")

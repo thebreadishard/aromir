@@ -421,7 +421,24 @@ def _reasons_to_refuse(
         reasons.append(f"its parts are of different network versions: {sorted(versions)}")
     if len({(recipe.architecture, recipe.inputs) for recipe in recipes}) > 1:
         reasons.append("its seeds differ in architecture or input settings")
+    reasons += _seeds_that_disagree(recipes, evaluation)
     return reasons + _records_that_disagree(evaluation, training)
+
+
+def _seeds_that_disagree(recipes: tuple[weights.Recipe, ...], evaluation: Evaluation) -> list[str]:
+    """Name an evaluation that was measured on another number of seeds than the release holds."""
+    counted = {
+        len(seeds)
+        for per_holdout in evaluation.first_order_error_per_seed_cm.values()
+        for seeds in per_holdout.values()
+    }
+    if counted == {len(recipes)}:
+        return []
+    reason = (
+        f"{EVALUATION_FILE} gives the first-order error of {sorted(counted)} seed(s), the "
+        f"release holds {len(recipes)}: the record was measured on another set of seeds"
+    )
+    return [reason]
 
 
 def _records_that_disagree(evaluation: Evaluation, training: Training) -> list[str]:

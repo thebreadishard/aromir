@@ -34,7 +34,11 @@ def test_the_card_states_the_releases_own_numbers(loaded: release.Release) -> No
     brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
     assert "| ring-ip | 1.43 [1.13–1.70], 199 bands | 1.91 [1.84–2.00], 1164 bands | yes |" in text
     assert "| other | 2.78 [1.68–3.76], 156 bands | 3.89 [3.50–4.20], 1225 bands | no |" in text
-    assert f"| ring-ip | 1.77 ({brackets['a']}) | 2.12 ({brackets['b']}) |" in text
+    means = loaded.evaluation.first_order_error_per_seed_mean_cm["ring-ip"]
+    assert (
+        f"| ring-ip | {means['a']:.2f} ({brackets['a']}) | {means['b']:.2f} ({brackets['b']}) |"
+        in text
+    )
     assert "It is not the error of what aromir prints." in text
     assert "chosen on 16 November 2026" in text
     assert "- Elements: C, H, N, O." in text

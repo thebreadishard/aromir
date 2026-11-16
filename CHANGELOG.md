@@ -141,14 +141,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- The dependencies have upper bounds, the series the package is tested with; the atom
-  order and the primitives of seven molecules are pinned, so a new RDKit or geomeTRIC
-  that changes either fails a test before it changes an answer.
+- The dependencies have upper bounds, the series the package is tested with; the
+  internal coordinates of seven molecules are pinned atom by atom (a digest of
+  geomeTRIC's own description of every primitive), so a new RDKit or geomeTRIC that
+  numbers or chooses differently for one of them fails a test.
+- A step file that does not name the run that made it, a `lowlevel.npz` whose arrays
+  have another molecule's shape, whose record contradicts itself or that does not
+  decompress: each is a damaged run, said in words before anything is computed on it.
 - Three tests that are expected to fail, strictly, state what release v1.3 does not do
   yet: a turned nitrile, a mirror image and another listing of one xyz geometry each
   get another spectrum. The day a release answers alike, they pass and must be unmarked.
 - One molecule of hold-out (a), benzene, is evaluated in the tests: the family rule, the
   network and the evaluation are tied to the numbers the record was made from.
+- A release whose evaluation record gives the first-order error of another number of
+  seeds than the release holds is refused: the record was measured on another set.
 - Release v1.3 ships `measured.json`, what `aromir evaluate` wrote on its two hold-outs,
   and a test holds `evaluation.json`'s tables to it: the record's numbers can be followed
   to their measurement inside the package.

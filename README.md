@@ -166,11 +166,14 @@ and builds the package with hatchling, which pip fetches from PyPI; everything a
 imports is declared and installed with it, and the weights of the bundled release are
 inside the package.
 
-Tested with Python 3.11 to 3.13 and with RDKit 2026.9, geomeTRIC 1.1, numpy 2.5, scipy
-1.18, torch 2.14 and 2.15, pyscf 2.15. The upper bounds in `pyproject.toml` are those
-series; the lower bounds are not tested. RDKit decides the atom order and geomeTRIC the
-internal coordinates, and release v1.3's answer depends on both, so a newer series of
-either is allowed only after the pins in `tests/test_order_pins.py` pass with it.
+The tests run on Linux and macOS with RDKit 2026.9, geomeTRIC 1.1, pyscf 2.15 and torch
+2.15 (2.14 on the development machine); on Python 3.12 and 3.13 with numpy 2.5 and scipy
+1.18, on Python 3.11 with numpy 2.4 and scipy 1.17, the last series that support it. The
+upper bounds in `pyproject.toml` are those series; the lower bounds are not tested. RDKit
+decides the atom order and geomeTRIC the internal coordinates, and release v1.3's answer
+depends on both, so a newer series of either is allowed only after the pins in
+`tests/test_order_pins.py` pass with it. Those pins hold seven molecules' internal
+coordinates atom by atom; they are no proof for a molecule that is not among them.
 
 ## Develop
 

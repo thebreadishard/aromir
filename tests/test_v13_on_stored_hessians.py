@@ -87,8 +87,10 @@ def test_a_molecule_without_a_linear_group_turns_with_its_spectrum(
 
 @pytest.mark.xfail(
     strict=True,
-    reason="a linear angle is measured against a fixed axis: a turned nitrile gets bands "
-    "up to 4.3 cm⁻¹ away (the audit's W1); frame-free linear bends need a retrain",
+    raises=AssertionError,
+    reason="a linear angle is measured against a fixed axis: turned benzonitrile gets bands "
+    "up to 3.7 cm⁻¹ away here, 5.34 over the molecules of invariance.json (the audit's "
+    "W1); frame-free linear bends need a retrain",
 )
 def test_a_nitrile_turns_with_its_spectrum(bundled: release.Release) -> None:
     assert _largest_change(bundled, "benzonitrile", ROTATIONS) < SAME_CM
@@ -96,6 +98,7 @@ def test_a_nitrile_turns_with_its_spectrum(bundled: release.Release) -> None:
 
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="a dihedral enters with its sign: the mirror image of twisted biphenyl gets bands "
     "up to 2.6 cm⁻¹ away (the audit's W3); the cos encoding needs a retrain",
 )
@@ -116,6 +119,7 @@ def _as_listed(molecule: Geometry, listing: list[int], path: Path) -> list[int]:
 
 @pytest.mark.xfail(
     strict=True,
+    raises=AssertionError,
     reason="atoms the bond graph cannot tell apart keep the file's order, and the primitives "
     "are chosen by atom number: listings of one biphenyl geometry get bands up to 3.1 cm⁻¹ "
     "apart (the audit's W2); the canonical angle choice needs a retrain",

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import zipfile
+import zlib
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Self, TextIO
@@ -62,6 +63,17 @@ leads the optimiser to the skew minimum; a flatter saddle may need more, and the
 ends as not a minimum, with everything kept."""
 
 _LEFTOVERS: Final = (QUANTUM_LOG_FILE, f"{RUN_FILE}.tmp")
+_UNREADABLE: Final = (
+    OSError,
+    ValueError,
+    KeyError,
+    TypeError,
+    EOFError,
+    zipfile.BadZipFile,
+    zlib.error,
+)
+"""What reading a damaged step file raises. A file changed in a way its archive's checksum
+and these checks do not see is read as it stands."""
 """What a run killed before its first step leaves behind: no reason to refuse the folder."""
 
 
@@ -147,6 +159,14 @@ def _asked(command: str, admitted: admission.Admission, start: Geometry) -> dict
     }
 
 
+def _a_record(made_with: object) -> dict[str, Any]:
+    """Return what a step file says made it; anything but a record is a damaged file."""
+    if not isinstance(made_with, dict):
+        msg = f"what made it is {made_with!r}, not a record"
+        raise TypeError(msg)
+    return made_with
+
+
 def _damaged(folder: Path, what: str, error: Exception) -> RefusedError:
     reason = (
         f"{what} in {folder} cannot be read ({type(error).__name__}: {error}): the folder "
@@ -197,9 +217,12 @@ def _optimised(
         try:
             stored = json.loads(path.read_text(encoding="utf-8"))
             if stored["attempt"] == state.attempt:
+                # A step that does not name its run cannot go into a record: said now,
+                # before the next step is computed on top of it.
+                _a_record(stored["made_with"])
                 minimum = Geometry(tuple(stored["symbols"]), np.array(stored["coords_bohr"]))
                 return optimisation.Optimisation(minimum, **stored["optimisation"])
-        except (OSError, ValueError, KeyError, TypeError) as error:
+        except _UNREADABLE as error:
             raise _damaged(folder, GEOMETRY_FILE, error) from error
     optimised = optimisation.optimise(start, resources, log)
     record = optimised.geometry.to_dict() | {
@@ -279,15 +302,16 @@ def _saved_low_level(
             soft_modes=soft_modes,
             analytic_hessian=saved.get("analytic_hessian"),
         )
-        made_with: dict[str, Any] = json.loads(str(saved["made_with"]))
+        made_with = _a_record(json.loads(str(saved["made_with"])))
         expected = (3 * minimum.n_atoms, 3 * minimum.n_atoms)
         if low.hessian.shape != expected or low.polar_tensor.shape != (3, expected[0]):
             msg = f"arrays of shape {low.hessian.shape} and {low.polar_tensor.shape}"
-            raise ValueError(msg)  # noqa: TRY301  a damaged file like the others below
-        if bool(saved["soft_modes_measured"]) != ("soft modes" in made_with):
+            raise ValueError(msg)
+        measured = bool(saved["soft_modes_measured"])
+        if "low level" not in made_with or measured != ("soft modes" in made_with):
             msg = "its record of the soft-mode step contradicts itself"
-            raise ValueError(msg)  # noqa: TRY301  the same
-    except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as error:
+            raise ValueError(msg)
+    except _UNREADABLE as error:
         raise _damaged(folder, LOW_LEVEL_FILE, error) from error
     return low, made_with
 
@@ -381,11 +405,14 @@ def _made_with(folder: Path) -> dict[str, Any]:
         geometry_file = folder / f"{prefix}{GEOMETRY_FILE}"
         if not geometry_file.is_file():
             continue
-        stored = json.loads(geometry_file.read_text(encoding="utf-8"))
-        attempt = stored["attempt"]
-        steps[f"optimisation {attempt}"] = stored["made_with"]
-        with np.load(folder / f"{prefix}{LOW_LEVEL_FILE}") as arrays:
-            made_with = json.loads(str(arrays["made_with"]))
+        try:
+            stored = json.loads(geometry_file.read_text(encoding="utf-8"))
+            attempt = stored["attempt"]
+            steps[f"optimisation {attempt}"] = _a_record(stored["made_with"])
+            with np.load(folder / f"{prefix}{LOW_LEVEL_FILE}") as arrays:
+                made_with = _a_record(json.loads(str(arrays["made_with"])))
+        except _UNREADABLE as error:
+            raise _damaged(folder, f"a step file ({prefix}*)", error) from error
         steps |= {f"{name} {attempt}": made for name, made in made_with.items()}
     return steps
 
