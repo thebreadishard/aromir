@@ -83,6 +83,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   0.1 bohr along the mode and optimises once more.
 - What the network cannot read is found on the start geometry, before the quantum
   chemistry, not after it.
+- The scaled-B3LYP baseline uses the scale factors of the basis set the Hessian is
+  computed with. Bauschlicher et al. (2018, ApJS 234, 32) fit them per basis set
+  (Table 2): 0.979, 0.969 and 0.960 for 6-31G*. aromir used the row of 4-31G (0.956,
+  0.952, 0.960), which put every baseline band below 1111 cm⁻¹ 2.3 % too low (20.7 cm⁻¹
+  at 900 cm⁻¹) and those up to 2500 cm⁻¹ 1.7 % too low. The region edge is 1111.1 cm⁻¹
+  (9 µm), not 1111.0.
+- A band's printed position lies inside its printed range: the range is over the seeds
+  and their mean, whose position is an eigenvalue of its own and can lie outside the
+  seeds'.
+- `--threads` also bounds the network's threads (torch took every core); the help says
+  what `--max-memory-mb` is.
 - `aromir spectrum` exits with 3, not 0, when a corrected band is imaginary for the
   seeds' mean; the result is still written. A band imaginary for one seed only is
   not licensed and named in a warning.

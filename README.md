@@ -39,7 +39,8 @@ environment an unforeseen one keeps its traceback, for a bug report.
 ## What works today
 
 `aromir baseline` runs the pipeline up to and including the low level and writes the
-B3LYP harmonic spectrum, with the conventional scaled-B3LYP positions beside it. That
+B3LYP harmonic spectrum, with the conventional scaled-B3LYP positions beside it (the
+three scale factors of Bauschlicher et al. 2018 for B3LYP/6-31G*). That
 scaled spectrum is the baseline the certificate prints beside every corrected band.
 
 ```console

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, TextIO
 
 import numpy as np
 import pytest
+import torch
 from pydantic import ValidationError
 
 from aromir import (
@@ -22,6 +23,7 @@ from aromir import (
     spectrum,
     vibrations,
 )
+from aromir.dft import Resources
 from aromir.errors import InternalCoordinatesError, NotAMinimumError, RefusedError
 
 from support import BENZENE_XYZ, bond_force_field, write_release
@@ -29,7 +31,6 @@ from support import BENZENE_XYZ, bond_force_field, write_release
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from aromir.dft import Resources
     from aromir.molecule import FloatArray, Geometry
 
 
@@ -369,3 +370,19 @@ def test_the_network_reads_the_kind_of_hessian_it_was_trained_on(
     assert "*Soft modes:* 2 mode(s) below 20 cm⁻¹" in (folder / "certificate.md").read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.usefixtures("synthetic_chemistry")
+def test_the_network_runs_on_the_threads_the_request_allows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[int] = []
+    monkeypatch.setattr(torch, "set_num_threads", asked.append)
+    loaded = release.load(write_release(tmp_path / "release"))
+    request = pipeline.Request(
+        molecule=pipeline.MoleculeInput(smiles="c1ccccc1"),
+        out=tmp_path / "benzene",
+        resources=Resources(threads=3),
+    )
+    pipeline.run_spectrum(request, loaded)
+    assert asked == [3]

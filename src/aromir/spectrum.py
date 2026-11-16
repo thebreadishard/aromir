@@ -29,11 +29,14 @@ FWHM: Final = 10.0
 GRID: Final = (500.0, 3500.0, 1.0)
 """The drawn range: first wavenumber, end (exclusive) and step, cm⁻¹."""
 
-SCALING_REGION_EDGES: Final = (1111.0, 2500.0)
-"""cm⁻¹; the regions of Bauschlicher et al. (2018): below, between (edges included), above."""
+SCALING_REGION_EDGES: Final = (10000.0 / 9.0, 2500.0)
+"""cm⁻¹; the regions of Bauschlicher, Ricca, Boersma & Allamandola (2018), ApJS 234, 32,
+section 3: below 1111.1 cm⁻¹ (9 µm), between (edges included), and above 2500 cm⁻¹ (4 µm)."""
 
-SCALING_FACTORS: Final = (0.956, 0.952, 0.960)
-"""The NASA Ames PAH database's B3LYP scale factor of each region."""
+SCALING_FACTORS: Final = (0.979, 0.969, 0.960)
+"""The scale factor of each region for B3LYP/6-31G*, the level of ``aromir.dft``: Table 2
+of the same paper, row 6-31G*. The factors depend on the basis set; the NASA Ames PAH
+database's own spectra are B3LYP/4-31G, whose row is (0.956, 0.952, 0.960)."""
 
 
 @dataclass(frozen=True, eq=False)

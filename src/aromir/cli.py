@@ -65,8 +65,19 @@ def _parser() -> argparse.ArgumentParser:
         computing.add_argument(
             "--out", type=Path, required=True, help="the result folder (empty or new)"
         )
-        computing.add_argument("--threads", type=int, default=defaults.threads)
-        computing.add_argument("--max-memory-mb", type=int, default=defaults.max_memory_mb)
+        computing.add_argument(
+            "--threads",
+            type=int,
+            default=defaults.threads,
+            help="threads for the quantum chemistry and the network",
+        )
+        computing.add_argument(
+            "--max-memory-mb",
+            type=int,
+            default=defaults.max_memory_mb,
+            help="what pyscf plans its arrays for: a target of the quantum chemistry, not a "
+            "cap the operating system enforces",
+        )
     model_card = commands.add_parser(
         "card", help="write the model card of a network release from the release's own files"
     )

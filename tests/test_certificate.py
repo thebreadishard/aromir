@@ -96,11 +96,16 @@ def test_the_seeds_range_is_their_lowest_and_highest_position(
         vib.vibrational_modes(low.hessian + delta, benzene).wavenumbers
         for delta in corrections.per_seed
     ]
+    positions = np.array([row.wavenumber_cm for row in rows])
     np.testing.assert_allclose(
-        [row.seed_range_cm[0] for row in rows], np.minimum(*per_seed), atol=0.05
+        [row.seed_range_cm[0] for row in rows],
+        np.minimum(np.minimum(*per_seed), positions),
+        atol=0.05,
     )
     np.testing.assert_allclose(
-        [row.seed_range_cm[1] for row in rows], np.maximum(*per_seed), atol=0.05
+        [row.seed_range_cm[1] for row in rows],
+        np.maximum(np.maximum(*per_seed), positions),
+        atol=0.05,
     )
     assert max(row.seed_range_cm[1] - row.seed_range_cm[0] for row in rows) > 0
 
@@ -196,3 +201,27 @@ def test_an_imaginary_corrected_band_is_a_warning(
         )
     ]
     assert "**Warning:** 1 corrected band(s)" in certificate.to_markdown(record)
+
+
+def test_the_printed_position_lies_inside_its_range(
+    benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
+) -> None:
+    # Two seeds that couple the two softest modes with opposite signs: each seed pushes
+    # the two bands apart, their mean leaves them where they were, outside both seeds'.
+    vectors = vib.vibrational_modes(low.hessian, benzene).vectors
+    weights_ = vib.mass_weights(benzene.masses_amu)
+    first, second = vectors[:, 0] * weights_, vectors[:, 1] * weights_
+    coupling = 0.05 * (np.outer(first, second) + np.outer(second, first))
+    corrections = release.Corrections(np.zeros_like(coupling), (coupling, -coupling))
+    per_seed = [
+        vib.vibrational_modes(low.hessian + delta, benzene).wavenumbers
+        for delta in corrections.per_seed
+    ]
+    plain = vib.vibrational_modes(low.hessian, benzene).wavenumbers
+    np.testing.assert_allclose(per_seed[0], per_seed[1], atol=1e-6)
+    assert float(np.abs(plain - per_seed[0]).max()) > 1.0
+    rows = certificate.bands(
+        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True
+    )
+    for row in rows:
+        assert row.seed_range_cm[0] <= row.wavenumber_cm <= row.seed_range_cm[1]

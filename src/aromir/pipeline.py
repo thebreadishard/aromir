@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Self, TextIO
 
 import numpy as np
+import torch
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from aromir import (
@@ -392,6 +393,8 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     if reasons:
         raise RefusedError(reasons)
     launched = records.provenance()
+    # pyscf is told its threads by the resources; torch takes every core unless told too.
+    torch.set_num_threads(request.resources.threads)
     optimised, low = _compute(start, folder, state, request.resources)
     as_trained = low.as_trained(soft_modes_measured=release.training.soft_mode_repair)
     corrections = release.corrections(optimised.geometry, as_trained)

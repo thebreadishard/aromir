@@ -56,7 +56,9 @@ class Band:
     Attributes:
         wavenumber_cm: The corrected harmonic position.
         intensity_km_mol: The double-harmonic height.
-        seed_range_cm: The lowest and highest position of this band over the seeds.
+        seed_range_cm: The lowest and highest position of this band over the seeds and
+            their mean. The printed position is an eigenvalue of the Hessian with the mean
+            correction, which can lie outside the seeds' own positions.
         b3lyp_cm: The position of the uncorrected mode that moves most like it.
         scaled_b3lyp_cm: That mode's position under the conventional scale factors.
         family: The mode family, by the rule the network's error is measured in.
@@ -147,8 +149,8 @@ def bands(
                 wavenumber_cm=round(mode.position_cm, 1),
                 intensity_km_mol=round(float(corrected.intensities[index]), 2),
                 seed_range_cm=(
-                    round(float(ranges[index, 0]), 1),
-                    round(float(ranges[index, 1]), 1),
+                    round(min(float(ranges[index, 0]), mode.position_cm), 1),
+                    round(max(float(ranges[index, 1]), mode.position_cm), 1),
                 ),
                 b3lyp_cm=round(float(low_modes.wavenumbers[low_index]), 1),
                 scaled_b3lyp_cm=round(float(scaled.wavenumbers[low_index]), 1),
@@ -372,7 +374,8 @@ def _band_lines(record: dict[str, Any]) -> list[str]:
     error_header = " / ".join(f"({name})" for name in holdouts)
     lines = [
         (
-            "| position (cm⁻¹) | height (km/mol) | seeds' range | B3LYP | scaled B3LYP | family "
+            "| position (cm⁻¹) | height (km/mol) | range over seeds and mean | B3LYP "
+            "| scaled B3LYP | family "
             f"| licensed | family's measured error {error_header}, cm⁻¹ |"
         ),
         "|---|---|---|---|---|---|---|---|",
