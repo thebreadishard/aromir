@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Final
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
+from aromir.admission import without_hydrogens
 from aromir.errors import RefusedError
 from aromir.molecule import Geometry
 
@@ -38,7 +39,7 @@ def canonical_order(molecule: Mol) -> list[int]:
             bridging or isotope-labelled hydrogen), so the order has no place for it.
     """
     heavy = [atom.GetIdx() for atom in molecule.GetAtoms() if atom.GetAtomicNum() > 1]
-    skeleton = Chem.RemoveHs(molecule)
+    skeleton = without_hydrogens(molecule)
     if skeleton.GetNumAtoms() != len(heavy):
         msg = "a hydrogen is not an ordinary one on a single heavy atom: it cannot be ordered"
         raise ValueError(msg)

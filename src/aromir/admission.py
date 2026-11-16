@@ -68,9 +68,11 @@ def parse_xyz(path: Path) -> Mol:
         RefusedError: The file does not parse, or no neutral bonding pattern fits it.
     """
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as error:
-        raise RefusedError([f"{path} cannot be read as UTF-8 text: {error}"]) from error
+        # The comment line is free text and often not UTF-8 (a name, an Å): nothing of it
+        # is used, so a byte that does not decode is replaced, not refused.
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        raise RefusedError([f"{path} cannot be read: {error}"]) from error
     molecule = Chem.MolFromXYZBlock(text)
     if molecule is None:
         raise RefusedError([f"{path} does not parse as an xyz file"])
@@ -78,15 +80,25 @@ def parse_xyz(path: Path) -> Mol:
         rdDetermineBonds.DetermineBonds(molecule, charge=0)
     except ValueError as error:
         raise RefusedError([f"{path}: no neutral bonding pattern fits the geometry"]) from error
-    Chem.AssignStereochemistryFrom3D(molecule)
     return molecule
+
+
+def without_hydrogens(molecule: Mol) -> Mol:
+    """Return a molecule's heavy-atom skeleton.
+
+    RDKit keeps a hydrogen that defines a double bond's stereo, as on the N–H of an imine
+    or an amidine read from an xyz file; the skeleton has none.
+    """
+    parameters: Any = Chem.RemoveHsParameters()  # RDKit's stubs mistype its attributes
+    parameters.removeDefiningBondStereo = True
+    return Chem.RemoveHs(molecule, parameters)
 
 
 def _unassigned_stereo(molecule: Mol) -> tuple[str, ...]:
     """Name the double bonds and stereocentres an input does not assign."""
     open_elements = [
         element.type
-        for element in Chem.FindPotentialStereo(Chem.RemoveHs(molecule))
+        for element in Chem.FindPotentialStereo(molecule)
         if element.specified == Chem.StereoSpecified.Unspecified
     ]
     counts = {
@@ -107,7 +119,7 @@ def _reasons_to_refuse(molecule: Mol) -> list[str]:
     if labelled:
         reasons.append(
             f"isotope label(s) {', '.join(labelled)}: every atom is computed with the mass of "
-            "its most abundant isotope, so an isotopologue's spectrum would be wrong"
+            "its most abundant isotope, and no label is read"
         )
     n_fragments = len(Chem.GetMolFrags(molecule))
     if n_fragments > 1:
@@ -137,7 +149,7 @@ def admit(molecule: Mol) -> Admission:
     if reasons:
         raise RefusedError(reasons)
     return Admission(
-        smiles=Chem.MolToSmiles(Chem.RemoveHs(molecule)),
+        smiles=Chem.MolToSmiles(without_hydrogens(molecule)),
         formula=CalcMolFormula(molecule),
         n_atoms=molecule.GetNumAtoms(),
         unassigned_stereo=_unassigned_stereo(molecule),

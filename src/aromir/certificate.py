@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from rdkit import Chem
 
-from aromir import families, spectrum, vibrations
+from aromir import families, repair, spectrum, vibrations
 from aromir.network import primitives
 from aromir.release import error_text, level_name
 
@@ -81,7 +81,14 @@ class Band:
 
 @dataclass(frozen=True)
 class Mode:
-    """What the licence reads of one band before rounding."""
+    """What the licence reads of one band before rounding.
+
+    Attributes:
+        family: The band's mode family.
+        position_cm: The corrected position of the seeds' mean.
+        lowest_seed_cm: The lowest position of the band over the seeds.
+        off_carbon: The share of its hydrogen motion on hydrogens not bound to carbon.
+    """
 
     family: families.Family
     position_cm: float
@@ -225,7 +232,8 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
     group = "with" if molecule["linear_group"] else "without"
     lines = []
     for name, (value, n) in spreads_cm(release, linear_group=molecule["linear_group"]).items():
-        which = "" if name == ATOM_ORDER else f" {group} a linear group"
+        # The atom orders tried were arbitrary ones; aromir itself writes a SMILES one way.
+        which = " in arbitrary orders" if name == ATOM_ORDER else f" {group} a linear group"
         above = f"; that is more than the licence line of {line:g} cm⁻¹" if value > line else ""
         lines.append(
             f"{name} moved a position by up to {value:.2f} cm⁻¹, the largest seen on {n} "
@@ -249,8 +257,8 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
     lines += [HEIGHTS_NOTE, CONFORMER_NOTE]
     if molecule["unassigned_stereo"]:
         lines.append(
-            f"the SMILES leaves {' and '.join(molecule['unassigned_stereo'])} unassigned: one "
-            "isomer was computed, the one aromir's start geometry happened to take"
+            f"the input leaves {' and '.join(molecule['unassigned_stereo'])} unassigned: one "
+            "isomer was computed, the one the start geometry happened to be"
         )
     if not molecule["planar"]:
         lines.append(NOT_PLANAR_NOTE)
@@ -280,10 +288,29 @@ def _statement(
         f"saw. {sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every hold-out "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
-        "the band is real for every seed, and a band of a C–H family moves carbon-bound "
+        "the band is real for the seeds' mean and for every seed, and a band of a C–H "
+        "family moves carbon-bound "
         f"hydrogens. {beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. The scaled B3LYP positions are a "
         "baseline for comparison only."
+    )
+
+
+def _soft_mode_note(low: LowLevel, release: Release) -> str:
+    """Say what the soft-mode repair did to this molecule's Hessian, or "" for nothing."""
+    measured = low.soft_modes
+    if measured is None:
+        return ""
+    note = (
+        f"{measured.n_directions} mode(s) below {repair.SOFT_BELOW_CM:g} cm⁻¹ were measured from "
+        "gradients that include the integration grid's response; the lowest moved from "
+        f"{measured.lowest_before_cm:.1f} to {measured.lowest_after_cm:.1f} cm⁻¹"
+    )
+    if release.training.soft_mode_repair:
+        return note
+    return (
+        f"{note}. The network read the Hessian without that repair, the kind it was trained "
+        "on, and its correction was added to the measured one"
     )
 
 
@@ -332,6 +359,7 @@ def build(
             "higher_level": evaluation.higher_level,
         },
         "positions": POSITIONS_NOTE,
+        "soft_modes": _soft_mode_note(low, release),
         "warnings": _warnings(rows),
         "bands": [asdict(row) | {"seed_range_cm": list(row.seed_range_cm)} for row in rows],
         "not_in_the_error": _not_in_the_error(release, molecule),
@@ -408,6 +436,7 @@ def to_markdown(record: dict[str, Any]) -> str:
         *_band_lines(record),
         "",
         f"*Positions:* {record['positions']}.",
+        *([f"*Soft modes:* {record['soft_modes']}."] if record["soft_modes"] else []),
         *(f"**Warning:** {warning}." for warning in record["warnings"]),
         "",
         "## What the measured error does not cover",

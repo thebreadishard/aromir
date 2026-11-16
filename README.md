@@ -33,7 +33,8 @@ so is an isotope label, a SMILES with anything after it, and, for `aromir spectr
 molecule smaller or larger than the training molecules unless
 `--outside-training-sizes` asks for it. The command's exit code is 0 for a result, 2
 for a refusal, 1 for a failure, and 3 for a corrected spectrum that was written but
-holds an imaginary band.
+holds an imaginary band. A failure is one line; with `AROMIR_TRACEBACK=1` in the
+environment an unforeseen one keeps its traceback, for a bug report.
 
 ## What works today
 
@@ -75,8 +76,9 @@ another atom order). The result folder then also holds
   mode's position and motion, which the certificate spells out) and the error measured
   for that family on molecules the network never saw;
 - whether the band is licensed: the family's error is within the licence line on every
-  hold-out, the molecule lies inside the training sizes, the band is real for every
-  seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens (an O–H stretch
+  hold-out, the molecule lies inside the training sizes, the band is real for the seeds'
+  mean and for every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens
+  (an O–H stretch
   falls under the CH-stretch rule and is not licensed), with the reason where it is not;
 
 and says whether the molecule lies inside the sizes the network was trained on, whether
@@ -89,10 +91,11 @@ package: every number comes from the release's records.
 the network is, what it was trained on, its measured error per family, and where it
 stops being known.
 
-Two checks guard every result; a repair guards the results it applies to:
+Two checks and a repair guard every result:
 
 - **The geometry is a minimum.** A geometry with an imaginary mode has no harmonic
-  spectrum, and none is written.
+  spectrum. aromir steps along the mode once and optimises again; if an imaginary mode
+  remains, no spectrum is written, and the geometry and the Hessian stay in the folder.
 - **The dipole derivatives satisfy their own equations.** pyscf's response solver can
   stop early ([pyscf#2702](https://github.com/pyscf/pyscf/issues/2702)), which a Hessian
   barely feels and a band height does. aromir checks the response against the
@@ -101,9 +104,14 @@ Two checks guard every result; a repair guards the results it applies to:
 - **Soft modes are measured.** pyscf's analytic DFT Hessian leaves out the response of
   the integration grid, which can move a mode below 20 cm⁻¹ by several cm⁻¹ or make it
   imaginary. For those modes aromir replaces the Hessian's columns by central
-  differences of gradients that include the grid's response. `aromir baseline` always
-  does this; `aromir spectrum` does it when the release says its network was trained on
-  Hessians repaired the same way, because a network must be given what it was trained on.
+  differences of gradients that include the grid's response. Whether the geometry is a
+  minimum is read from the measured Hessian, and the positions are printed from it. A
+  network must be given what it was trained on, so a release trained on analytic
+  Hessians (v1.3) reads the analytic one; its correction is added to the measured one.
+
+Each step is saved when it ends: `geometry.json`, then `lowlevel.npz`, with `run.json`
+recording what was asked and what is done. A run that fails after hours of quantum
+chemistry, or is stopped, is taken up by the same command into the same folder.
 
 ## The network
 

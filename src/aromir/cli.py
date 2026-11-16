@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Final
@@ -17,6 +18,8 @@ from aromir.errors import AromirError, RefusedError
 EXIT_DONE: Final = 0
 EXIT_FAILED: Final = 1
 EXIT_REFUSED: Final = 2
+TRACEBACK_VARIABLE: Final = "AROMIR_TRACEBACK"
+"""Set in the environment, an unforeseen error keeps its traceback: for a bug report."""
 EXIT_UNPHYSICAL: Final = 3
 """The result is written, but a corrected band is imaginary: not a spectrum to use."""
 
@@ -142,7 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     """Run the command line; return the process's exit code.
 
     No failure a user can cause leaves as a traceback: a refusal names its reasons (exit
-    2), anything else is one line with the error's kind (exit 1).
+    2), anything else is one line with the error's kind (exit 1), unless the environment
+    variable AROMIR_TRACEBACK asks for the traceback.
     """
     arguments = _parser().parse_args(argv)
     try:
@@ -161,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"failed: {failure}", file=sys.stderr)  # noqa: T201  the command's answer
         return EXIT_FAILED
     except (OSError, ValueError, ArithmeticError) as failure:
+        if os.environ.get(TRACEBACK_VARIABLE):
+            raise
         # A file that cannot be read or written, or a numerical step that broke: the
         # kind is named because the message alone may not say what happened.
         print(f"failed: {type(failure).__name__}: {failure}", file=sys.stderr)  # noqa: T201  the command's answer

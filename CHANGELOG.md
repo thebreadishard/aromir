@@ -61,12 +61,31 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   for `aromir spectrum`, a molecule outside the release's training sizes unless
   `--outside-training-sizes` is given.
 - No failure a user can cause ends in a traceback: no 3D start geometry, `--out` naming
-  a file, an xyz file or a release record that is not UTF-8, a missing, truncated or
-  damaged weight file and a recipe under another seed's name are refusals (exit 2);
-  any other file or numerical error is one line with its kind (exit 1).
+  a file, a release record that is not UTF-8, a missing, truncated or damaged weight
+  file, weights that do not fit their recipe and a recipe under another seed's name
+  are refusals (exit 2); any other file or numerical error is one line with its kind
+  (exit 1), or its traceback when `AROMIR_TRACEBACK` is set. An xyz file whose comment
+  line is not UTF-8 is read, and so is the xyz file of an imine or an amidine, whose
+  N–H hydrogen RDKit keeps as a stereo mark.
 - `aromir card --out` refuses an existing file and a missing folder.
+- A run no longer loses its quantum chemistry to a failure that comes after it. The
+  optimised geometry, the analytic Hessian and the measured soft modes are each saved
+  when they end, with `run.json` saying what was asked; the same command into the same
+  folder takes the run up. A Hessian with an imaginary mode is kept, not discarded.
+- A folder left by a failed run no longer blocks the next one: it is resumed by the
+  same request and refused, with the request it holds, for another.
+- `aromir spectrum` with a release trained on analytic Hessians (v1.3) no longer skips
+  the soft-mode repair and then refuses the molecule for a mode the repair would have
+  measured (an audit counted 41 of 1,154 molecules of the training corpus with an
+  imaginary lowest mode in the analytic Hessian). The soft modes are always measured; the minimum is decided
+  and the positions are printed from the measured Hessian; the network reads the kind
+  it was trained on; the certificate says so. From a real saddle point aromir steps
+  0.1 bohr along the mode and optimises once more.
+- What the network cannot read is found on the start geometry, before the quantum
+  chemistry, not after it.
 - `aromir spectrum` exits with 3, not 0, when a corrected band is imaginary for the
-  seeds' mean or for one seed; the result is still written.
+  seeds' mean; the result is still written. A band imaginary for one seed only is
+  not licensed and named in a warning.
 - A release is refused when its records disagree or cannot be true: an error that is
   negative or not finite, an element the package does not know, a smallest molecule
   larger than the largest, hold-outs named differently in the two records, or a

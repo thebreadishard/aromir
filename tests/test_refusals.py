@@ -51,11 +51,10 @@ def test_an_xyz_file_without_atoms_is_told_so(tmp_path: Path) -> None:
     )
 
 
-def test_an_xyz_file_that_is_not_utf8_is_refused(tmp_path: Path) -> None:
+def test_an_xyz_file_whose_comment_is_not_utf8_is_read(tmp_path: Path) -> None:
     path = tmp_path / "latin1.xyz"
-    path.write_bytes(BENZENE_XYZ.replace("benzene", "benzène").encode("latin-1"))
-    with pytest.raises(RefusedError, match="cannot be read as UTF-8 text"):
-        admission.parse_xyz(path)
+    path.write_bytes(BENZENE_XYZ.replace("benzene", "benzène, Å").encode("latin-1"))
+    assert admission.admit(admission.parse_xyz(path)).formula == "C6H6"
 
 
 def test_an_xyz_geometry_names_its_double_bonds_isomer(tmp_path: Path) -> None:
@@ -207,6 +206,10 @@ def _edit(name: str, change: Callable[[dict[str, Any]], None]) -> Callable[[Path
     return damage
 
 
+def _wider_network(record: dict[str, Any]) -> None:
+    record["recipe"]["architecture"]["n_features"] *= 2
+
+
 def _negative_error(record: dict[str, Any]) -> None:
     record["errors_cm"]["other"]["a"] = -1.0
 
@@ -226,6 +229,12 @@ def _another_holdout(record: dict[str, Any]) -> None:
         (lambda folder: (folder / "seed-0.safetensors").unlink(), "seed-0.safetensors"),
         (_damage_with_matching_hash, "seed-1.json: "),
         (_latin1_record, "evaluation.json cannot be read as UTF-8 text"),
+        (_edit("seed-0.json", _wider_network), "seed-0.json: Error(s) in loading state_dict"),
+        (
+            _edit("training.json", lambda record: record.update(elements=[])),
+            "training.json: elements",
+        ),
+        (lambda folder: (folder / "invariance.json").mkdir(), "invariance.json cannot be read"),
         (_edit("evaluation.json", _negative_error), "an rms error is negative or not a finite"),
         (_edit("evaluation.json", _too_many), "counts 3900 molecules, training.json lists 1"),
         (_edit("training.json", _another_holdout), "has the hold-outs ['a', 'b'], training.json"),
@@ -278,3 +287,52 @@ def test_an_error_nobody_foresaw_is_one_line_with_its_kind(
     code, error = _main(["check", "c1ccccc1"], capsys)
     assert code == cli.EXIT_FAILED
     assert error == "failed: OSError: the disk is gone\n"
+
+
+def test_the_xyz_file_of_an_amidine_is_admitted_and_ordered(tmp_path: Path) -> None:
+    # RDKit keeps the imine hydrogen as the mark of the C=N bond's stereo when it removes
+    # the others; the heavy-atom skeleton the atom order is built on must not hold it.
+    from aromir import geometry  # noqa: PLC0415  only this test embeds a molecule
+    from aromir.constants import ANGSTROM_PER_BOHR  # noqa: PLC0415
+
+    start = geometry.start_from_smiles("N=C(N)c1ccccc1")
+    lines = [str(start.n_atoms), "benzamidine"]
+    for symbol, position in zip(start.symbols, start.coords_bohr * ANGSTROM_PER_BOHR, strict=True):
+        lines.append(f"{symbol} {position[0]:.8f} {position[1]:.8f} {position[2]:.8f}")
+    path = tmp_path / "benzamidine.xyz"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    admitted, ordered = pipeline.admit(pipeline.MoleculeInput(xyz=path))
+    assert admitted.smiles == "N=C(N)c1ccccc1"
+    assert admitted.unassigned_stereo == ()
+    n_heavy = sum(symbol != "H" for symbol in ordered.symbols)
+    assert set(ordered.symbols[:n_heavy]) == {"C", "N"}
+    assert set(ordered.symbols[n_heavy:]) == {"H"}
+
+
+@pytest.mark.parametrize("error", [ValueError("a shape is wrong"), ZeroDivisionError("by zero")])
+def test_a_numerical_error_is_one_line_unless_the_traceback_is_asked_for(
+    error: Exception, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(_molecule: pipeline.MoleculeInput) -> None:
+        raise error
+
+    monkeypatch.setattr(pipeline, "admit", broken)
+    monkeypatch.delenv(cli.TRACEBACK_VARIABLE, raising=False)
+    code, said = _main(["check", "c1ccccc1"], capsys)
+    assert code == cli.EXIT_FAILED
+    assert said == f"failed: {type(error).__name__}: {error}\n"
+    monkeypatch.setenv(cli.TRACEBACK_VARIABLE, "1")
+    with pytest.raises(type(error)):
+        cli.main(["check", "c1ccccc1"])
+
+
+def test_an_error_in_the_code_itself_is_not_dressed_as_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def bug(_molecule: pipeline.MoleculeInput) -> None:
+        msg = "a key the code forgot"
+        raise KeyError(msg)
+
+    monkeypatch.setattr(pipeline, "admit", bug)
+    with pytest.raises(KeyError):
+        cli.main(["check", "c1ccccc1"])

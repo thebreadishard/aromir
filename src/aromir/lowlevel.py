@@ -26,6 +26,8 @@ class LowLevel:
         sum_rule_violation: The polar tensor's translation sum rule, in e.
         seconds: Wall time of the calculation.
         soft_modes: The record of the soft-mode repair; None when none was needed or asked.
+        analytic_hessian: pyscf's analytic Hessian as it was before the repair changed it;
+            None when ``hessian`` is that Hessian.
     """
 
     energy: float
@@ -35,6 +37,17 @@ class LowLevel:
     sum_rule_violation: float
     seconds: float
     soft_modes: repair.Repair | None = None
+    analytic_hessian: FloatArray | None = None
+
+    def as_trained(self, *, soft_modes_measured: bool) -> FloatArray:
+        """Return the Hessian of the kind a network was trained on.
+
+        A network trained on analytic Hessians reads the analytic one, also where the
+        repair has since measured this molecule's soft modes.
+        """
+        if soft_modes_measured or self.analytic_hessian is None:
+            return self.hessian
+        return self.analytic_hessian
 
 
 def _failed_checks(refinement: response.Refinement, violation: float) -> list[str]:

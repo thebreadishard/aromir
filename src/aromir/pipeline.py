@@ -1,14 +1,18 @@
 """From one molecule to its spectrum, written to a result folder.
 
 A molecule outside the domain is refused before the first computation, and a result is
-never overwritten.
+never overwritten. Each step is saved when it ends — the optimised geometry, the Hessian,
+the measured soft modes — so that a failure after hours of quantum chemistry loses none of
+them: the same request into the same folder takes up where the run stopped.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict
+import hashlib
+import json
+from dataclasses import asdict, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Self
+from typing import TYPE_CHECKING, Any, Final, Self, TextIO
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -20,14 +24,16 @@ from aromir import (
     lowlevel,
     optimisation,
     records,
+    repair,
+    response,
     spectrum,
     vibrations,
 )
 from aromir.dft import BASIS, FUNCTIONAL, GRID, Resources
-from aromir.errors import NotAMinimumError, RefusedError
+from aromir.errors import AromirError, NotAMinimumError, RefusedError
+from aromir.molecule import Geometry
 
 if TYPE_CHECKING:
-    from aromir.molecule import Geometry
     from aromir.release import Release
 
 GEOMETRY_FILE: Final = "geometry.json"
@@ -37,6 +43,12 @@ BASELINE_FILE: Final = "baseline.json"
 CERTIFICATE_FILE: Final = "certificate.json"
 CERTIFICATE_TEXT_FILE: Final = "certificate.md"
 QUANTUM_LOG_FILE: Final = "pyscf.log"
+RUN_FILE: Final = "run.json"
+"""What the run was asked and which steps have ended: the record a later run resumes from."""
+
+OFF_THE_SADDLE_BOHR: Final = 0.1
+"""How far the atom that moves most is displaced along an imaginary mode before the one
+second optimisation: far enough to leave a saddle point's flat top, small beside a bond."""
 
 
 class MoleculeInput(BaseModel):
@@ -82,45 +94,179 @@ def admit(molecule: MoleculeInput) -> tuple[admission.Admission, Geometry]:
     return admission.admit(parsed), geometry.start_from_xyz(parsed)
 
 
-def _new_folder(out: Path) -> Path:
+def _asked(command: str, admitted: admission.Admission, start: Geometry) -> dict[str, Any]:
+    """Return what identifies a run: the command, the molecule, its start and the level."""
+    coordinates = np.round(start.coords_bohr, 6).tobytes()
+    start_hash = hashlib.sha256(" ".join(start.symbols).encode() + coordinates).hexdigest()
+    return {
+        "command": command,
+        "smiles": admitted.smiles,
+        "start_geometry_sha256": start_hash,
+        "level": {"functional": FUNCTIONAL, "basis": BASIS, "grid": list(GRID)},
+    }
+
+
+def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    """Return the result folder and the state of the run it holds, new or to be resumed.
+
+    Raises:
+        RefusedError: The folder holds a result, another request's run or other files.
+    """
     folder = out.resolve()
     if folder.exists() and not folder.is_dir():
         raise RefusedError([f"{folder} is a file: --out names a folder"])
-    if folder.exists() and any(folder.iterdir()):
+    if not folder.exists() or not any(folder.iterdir()):
+        return folder, {"asked": asked}
+    if any((folder / name).exists() for name in (BASELINE_FILE, CERTIFICATE_FILE)):
+        raise RefusedError([f"{folder} holds a result: a result is never overwritten"])
+    if not (folder / RUN_FILE).is_file():
         raise RefusedError([f"{folder} is not empty: a result is never overwritten"])
-    return folder
+    state: dict[str, Any] = json.loads((folder / RUN_FILE).read_text(encoding="utf-8"))
+    if state.get("asked") != asked:
+        before = state.get("asked", {})
+        reason = (
+            f"{folder} holds the unfinished run of another request "
+            f"({before.get('command')} {before.get('smiles')}): only the same command on the "
+            "same molecule and start geometry takes it up"
+        )
+        raise RefusedError([reason])
+    return folder, state
+
+
+def _optimised(
+    start: Geometry, folder: Path, state: dict[str, Any], resources: Resources, log: TextIO
+) -> optimisation.Optimisation:
+    """Return the optimised geometry: the saved one, or a new one that is saved at once."""
+    saved = state.get("optimisation")
+    if saved is not None and (folder / GEOMETRY_FILE).is_file():
+        stored = json.loads((folder / GEOMETRY_FILE).read_text(encoding="utf-8"))
+        minimum = Geometry(tuple(stored["symbols"]), np.array(stored["coords_bohr"], float))
+        return optimisation.Optimisation(minimum, **saved)
+    optimised = optimisation.optimise(start, resources, log)
+    records.write_json(folder / GEOMETRY_FILE, optimised.geometry.to_dict())
+    state["optimisation"] = {
+        "energy": optimised.energy,
+        "max_force": optimised.max_force,
+        "n_steps": optimised.n_steps,
+    }
+    records.write_json(folder / RUN_FILE, state)
+    return optimised
+
+
+def _save_low_level(
+    folder: Path, state: dict[str, Any], low: lowlevel.LowLevel, *, soft_modes_measured: bool
+) -> None:
+    arrays = {"hessian": low.hessian, "polar_tensor": low.polar_tensor}
+    if low.analytic_hessian is not None:
+        arrays["analytic_hessian"] = low.analytic_hessian
+    records.write_arrays(folder / LOW_LEVEL_FILE, arrays)
+    state["low_level"] = {
+        "energy": low.energy,
+        "refinement": asdict(low.refinement),
+        "sum_rule_violation": low.sum_rule_violation,
+        "seconds": low.seconds,
+        "soft_modes_measured": soft_modes_measured,
+        "soft_modes": None if low.soft_modes is None else asdict(low.soft_modes),
+    }
+    records.write_json(folder / RUN_FILE, state)
+
+
+def _saved_low_level(folder: Path, saved: dict[str, Any]) -> lowlevel.LowLevel:
+    with np.load(folder / LOW_LEVEL_FILE) as arrays:
+        hessian, polar_tensor = np.array(arrays["hessian"]), np.array(arrays["polar_tensor"])
+        analytic = np.array(arrays["analytic_hessian"]) if "analytic_hessian" in arrays else None
+    soft_modes = saved["soft_modes"]
+    return lowlevel.LowLevel(
+        energy=saved["energy"],
+        hessian=hessian,
+        polar_tensor=polar_tensor,
+        refinement=response.Refinement(**saved["refinement"]),
+        sum_rule_violation=saved["sum_rule_violation"],
+        seconds=saved["seconds"],
+        soft_modes=None if soft_modes is None else repair.Repair(**soft_modes),
+        analytic_hessian=analytic,
+    )
+
+
+def _low_level(
+    minimum: Geometry, folder: Path, state: dict[str, Any], resources: Resources, log: TextIO
+) -> lowlevel.LowLevel:
+    """Return the low level with its soft modes measured, saving each of the two steps.
+
+    The analytic Hessian is on disk before the repair starts, so a repair that fails —
+    for want of memory, say — costs the repair alone.
+    """
+    saved = state.get("low_level")
+    if saved is not None and (folder / LOW_LEVEL_FILE).is_file():
+        low = _saved_low_level(folder, saved)
+    else:
+        low = lowlevel.compute(minimum, resources, log, repair_soft_modes=False)
+        _save_low_level(folder, state, low, soft_modes_measured=False)
+    if not state["low_level"]["soft_modes_measured"]:
+        repaired, record = repair.repair(minimum, low.hessian, resources, log)
+        if record is not None:
+            low = replace(low, hessian=repaired, analytic_hessian=low.hessian, soft_modes=record)
+        _save_low_level(folder, state, low, soft_modes_measured=True)
+    return low
 
 
 def _compute(
-    start: Geometry, folder: Path, resources: Resources, *, repair_soft_modes: bool
+    start: Geometry, folder: Path, state: dict[str, Any], resources: Resources
 ) -> tuple[optimisation.Optimisation, lowlevel.LowLevel]:
-    """Optimise, compute the low level and write both; refuse a geometry that is no minimum."""
+    """Optimise and compute the low level, each step saved; step off a saddle point once.
+
+    Whether the geometry is a minimum is read from the Hessian with its soft modes
+    measured: the analytic one can make a soft mode imaginary that is not.
+
+    Raises:
+        NotAMinimumError: The geometry still has an imaginary mode after one step along it
+            and a second optimisation.
+    """
     folder.mkdir(parents=True, exist_ok=True)
-    with (folder / QUANTUM_LOG_FILE).open("w", encoding="utf-8") as log:
-        optimised = optimisation.optimise(start, resources, log)
-        records.write_json(folder / GEOMETRY_FILE, optimised.geometry.to_dict())
-        low = lowlevel.compute(
-            optimised.geometry, resources, log, repair_soft_modes=repair_soft_modes
+    records.write_json(folder / RUN_FILE, state)
+    with (folder / QUANTUM_LOG_FILE).open("a", encoding="utf-8") as log:
+        for _attempt in range(2):
+            left = state.get("left_saddle_point")
+            begin = start if left is None else Geometry(start.symbols, np.array(left["restart"]))
+            optimised = _optimised(begin, folder, state, resources, log)
+            low = _low_level(optimised.geometry, folder, state, resources, log)
+            modes = vibrations.vibrational_modes(low.hessian, optimised.geometry)
+            if not modes.n_imaginary or left is not None:
+                break
+            step, _ = vibrations.displacement(
+                modes.vectors[:, 0], optimised.geometry.masses_amu, OFF_THE_SADDLE_BOHR
+            )
+            # The saddle point's own files stay, under another name; the steps start over.
+            for name in (GEOMETRY_FILE, LOW_LEVEL_FILE):
+                (folder / name).replace(folder / f"saddle_point_{name}")
+            state.pop("optimisation")
+            state.pop("low_level")
+            state["left_saddle_point"] = {
+                "imaginary_cm": float(modes.wavenumbers[0]),
+                "restart": (optimised.geometry.coords_bohr + step).tolist(),
+            }
+            records.write_json(folder / RUN_FILE, state)
+    if modes.n_imaginary:
+        msg = (
+            f"{modes.n_imaginary} imaginary mode(s), the lowest at {modes.wavenumbers[0]:.0f} "
+            "cm⁻¹, also after one step along it and a second optimisation: no minimum was "
+            f"found. The geometry and the Hessian are kept in {folder}"
         )
-    n_imaginary = vibrations.vibrational_modes(low.hessian, optimised.geometry).n_imaginary
-    if n_imaginary:
-        msg = f"{n_imaginary} imaginary mode(s): the optimised geometry is not a minimum"
         raise NotAMinimumError(msg)
-    records.write_arrays(
-        folder / LOW_LEVEL_FILE, {"hessian": low.hessian, "polar_tensor": low.polar_tensor}
-    )
     return optimised, low
 
 
 def _computation_record(
-    optimised: optimisation.Optimisation, low: lowlevel.LowLevel
+    optimised: optimisation.Optimisation, low: lowlevel.LowLevel, state: dict[str, Any]
 ) -> dict[str, Any]:
+    left = state.get("left_saddle_point")
     return {
         "level": {"functional": FUNCTIONAL, "basis": BASIS, "grid": list(GRID)},
         "optimisation": {
             "energy_hartree": optimised.energy,
             "max_force_hartree_per_bohr": optimised.max_force,
             "n_steps": optimised.n_steps,
+            "left_saddle_point_at_cm": None if left is None else left["imaginary_cm"],
         },
         "checks": {
             "response_residual_before": low.refinement.residual_before,
@@ -148,15 +294,16 @@ def run_baseline(request: Request) -> dict[str, Any]:
         The record written to ``baseline.json``.
 
     Raises:
-        RefusedError: The molecule is outside the domain, or the folder holds a result.
+        RefusedError: The molecule is outside the domain, or the folder holds a result or
+            another request's unfinished run.
         ConvergenceError: The SCF or the optimisation did not converge.
-        NotAMinimumError: The optimised geometry has an imaginary mode.
+        NotAMinimumError: No minimum was found.
         ResponseError: The dipole derivatives failed their checks.
     """
     admitted, start = admit(request.molecule)
-    folder = _new_folder(request.out)
+    folder, state = _open_folder(request.out, _asked("baseline", admitted, start))
     launched = records.provenance()
-    optimised, low = _compute(start, folder, request.resources, repair_soft_modes=True)
+    optimised, low = _compute(start, folder, state, request.resources)
     bands = spectrum.harmonic_bands(low.hessian, optimised.geometry, low.polar_tensor)
     record = {
         "molecule": {
@@ -164,7 +311,7 @@ def run_baseline(request: Request) -> dict[str, Any]:
             "formula": admitted.formula,
             "n_atoms": admitted.n_atoms,
         },
-        **_computation_record(optimised, low),
+        **_computation_record(optimised, low, state),
         "harmonic": {
             "note": "B3LYP harmonic positions, uncorrected",
             "bands": _bands_record(bands),
@@ -201,17 +348,37 @@ def _untrained_size(start: Geometry, release: Release) -> list[str]:
     return [reason]
 
 
+def _no_network_inputs(start: Geometry, release: Release) -> list[str]:
+    """Name why the network could not read the molecule, found on its start geometry.
+
+    The internal coordinates and their pseudo-inverse need no Hessian to fail, so they are
+    built once on the start geometry, before hours of quantum chemistry are spent on a
+    molecule the network would then refuse.
+    """
+    try:
+        release.corrections(start, np.eye(3 * start.n_atoms))
+    except (AromirError, ValueError) as error:
+        return [f"the network cannot read this molecule's start geometry: {error}"]
+    return []
+
+
 def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     """Compute a molecule's corrected spectrum and certificate and write its result folder.
+
+    The network reads the kind of Hessian it was trained on: with its soft modes measured
+    when the release says so, pyscf's analytic one otherwise. Its correction is added to
+    the Hessian with the soft modes measured, which is also the one that says whether the
+    geometry is a minimum.
 
     Returns:
         The record written to ``certificate.json``.
 
     Raises:
-        RefusedError: The molecule is outside the domain or the network's training
-            elements, or the folder holds a result.
+        RefusedError: The molecule is outside the domain, the network's training elements
+            or sizes, the network cannot read it, or the folder holds a result or another
+            request's unfinished run.
         ConvergenceError: The SCF or the optimisation did not converge.
-        NotAMinimumError: The optimised geometry has an imaginary mode.
+        NotAMinimumError: No minimum was found.
         ResponseError: The dipole derivatives failed their checks.
     """
     admitted, start = admit(request.molecule)
@@ -220,18 +387,20 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
         reasons += _untrained_size(start, release)
     if reasons:
         raise RefusedError(reasons)
-    folder = _new_folder(request.out)
+    folder, state = _open_folder(request.out, _asked("spectrum", admitted, start))
+    reasons = _no_network_inputs(start, release)
+    if reasons:
+        raise RefusedError(reasons)
     launched = records.provenance()
-    optimised, low = _compute(
-        start, folder, request.resources, repair_soft_modes=release.training.soft_mode_repair
-    )
-    corrections = release.corrections(optimised.geometry, low.hessian)
+    optimised, low = _compute(start, folder, state, request.resources)
+    as_trained = low.as_trained(soft_modes_measured=release.training.soft_mode_repair)
+    corrections = release.corrections(optimised.geometry, as_trained)
     records.write_arrays(
         folder / CORRECTION_FILE,
         {"mean": corrections.mean, "per_seed": np.stack(corrections.per_seed)},
     )
     record = certificate.build(admitted, optimised.geometry, low, corrections, release) | {
-        "computation": _computation_record(optimised, low),
+        "computation": _computation_record(optimised, low, state),
         "provenance": launched,
     }
     records.write_json(folder / CERTIFICATE_FILE, record)

@@ -99,7 +99,8 @@ def _evaluation(release: Release) -> list[str]:
         (
             "A family is licensed when its seed-mean error is within "
             f"{evaluation.licence_line_cm:g} cm⁻¹ on every hold-out. aromir's certificate marks "
-            "each band with its family, that family's error and whether it is licensed."
+            "each band with its family, that family's error and whether the band itself is "
+            "licensed, which asks more: see the limits below."
         ),
         "",
         f"Coupled cluster: {evaluation.coupled_cluster}.",
@@ -146,8 +147,10 @@ def _training(release: Release) -> list[str]:
         f"- Sizes: {training.min_atoms} to {training.max_atoms} atoms.",
         f"- Held out and never trained on: {held_out}.",
         (
-            f"- The training Hessians were used {prepared}; aromir prepares a molecule's Hessian "
-            "the same way before the network reads it."
+            f"- The training Hessians were used {prepared}; aromir gives the network a "
+            "molecule's Hessian prepared the same way. It measures the soft modes in either "
+            "case, to decide whether the geometry is a minimum and for the positions it "
+            "prints: the correction is added to the Hessian with its soft modes measured."
         ),
     ]
 
@@ -203,7 +206,7 @@ def _sameness(release: Release) -> list[str]:
         )
         lines.append(
             f"- **{name[0].upper()}{name[1:]}** moved band positions by up to {seen} "
-            f"({spread.n_trials} each). These are the largest seen, not bounds."
+            f"({spread.n_trials} trial(s) per molecule). These are the largest seen, not bounds."
         )
     reason = (
         "A linear angle (in a nitrile, an alkyne) is measured against a fixed axis in "
@@ -234,7 +237,8 @@ def _limits(release: Release) -> list[str]:
         ),
         (
             f"- **Sizes outside {training.min_atoms} to {training.max_atoms} atoms are "
-            "extrapolation.** aromir computes them, and its certificate licenses none of "
+            "extrapolation.** `aromir spectrum` refuses them unless "
+            "`--outside-training-sizes` is given; its certificate then licenses none of "
             "their bands."
         ),
         (
@@ -249,7 +253,8 @@ def _limits(release: Release) -> list[str]:
             + " ".join(f"{family}: {rule}." for family, rule in families.RULES.items())
             + " aromir's certificate licenses a band only when its family is within the "
             "licence line, the molecule lies inside the training sizes, the band is real for "
-            "every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens. A "
+            "the seeds' mean and for every seed, and a CH-stretch or CH-oop band moves "
+            "carbon-bound hydrogens. A "
             "ring-ip band is licensed as the rule takes it, C=O stretches included."
         ),
     ]

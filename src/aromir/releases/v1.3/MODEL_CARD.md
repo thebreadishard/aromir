@@ -32,7 +32,7 @@ The rms error of the corrected band positions against ωB97X/6-31G*, in cm⁻¹,
 - (a): eight molecules set aside on 19 September 2026, before any network was trained, and never trained on in any form (two more molecules of that set, 2-naphthoic acid and benzonitrile, are left out of this read because the network had trained on them under another identifier)
 - (b): every substituted molecule of two ring scaffolds, set aside on 8 October 2026; the network trained on no molecule of either scaffold
 
-A family is licensed when its seed-mean error is within 3 cm⁻¹ on every hold-out. aromir's certificate marks each band with its family, that family's error and whether it is licensed.
+A family is licensed when its seed-mean error is within 3 cm⁻¹ on every hold-out. aromir's certificate marks each band with its family, that family's error and whether the band itself is licensed, which asks more: see the limits below.
 
 Coupled cluster: not measured for this network version.
 
@@ -44,22 +44,22 @@ Sources: E7_rungC_chain35_analytic_eval_frozenb_seed0.json; E7_rungC_chain35_ana
 - Elements: C, Cl, F, H, N, O, S.
 - Sizes: 8 to 30 atoms.
 - Held out and never trained on: 39 in (b); 8 in (a), not counting 2 the network also trained on.
-- The training Hessians were used as pyscf's analytic Hessians, without the soft-mode repair; aromir prepares a molecule's Hessian the same way before the network reads it.
+- The training Hessians were used as pyscf's analytic Hessians, without the soft-mode repair; aromir gives the network a molecule's Hessian prepared the same way. It measures the soft modes in either case, to decide whether the geometry is a minimum and for the positions it prints: the correction is added to the Hessian with its soft modes measured.
 
 ## Where it stops being known
 
 - **The level is ωB97X/6-31G*.** The errors above are against that level, not against experiment.
 - **Positions are harmonic.** No anharmonic shift is applied.
 - **Neutral, closed-shell, aromatic molecules only**, of the elements C, Cl, F, H, N, O, S. aromir refuses anything else before computing.
-- **Sizes outside 8 to 30 atoms are extrapolation.** aromir computes them, and its certificate licenses none of their bands.
+- **Sizes outside 8 to 30 atoms are extrapolation.** `aromir spectrum` refuses them unless `--outside-training-sizes` is given; its certificate then licenses none of their bands.
 - **Not licensed: other.** Bands of an unlicensed family are printed with their measured error and marked.
 - **The answer depends on how the molecule's atoms are numbered**: the internal coordinates are chosen by atom number, and a dihedral near ±180° enters by its raw value. aromir orders the atoms of every input by the bond graph first, so every SMILES of a molecule gets one order; atoms the graph cannot tell apart keep the order of an xyz file, so two listings of one geometry can still differ. Do not feed the network a molecule in another order. Measured: band positions move by up to 10.73 cm⁻¹ between atom orders (3 molecules, 5 orders each; order_spread_smiles.json).
-- **A rigid rotation of the molecule** moved band positions by up to 5.34 cm⁻¹ on 3 molecule(s) with a linear group and 0.00 cm⁻¹ on 4 molecule(s) without a linear group (8 each). These are the largest seen, not bounds.
-- **The molecule's mirror image** moved band positions by up to 5.22 cm⁻¹ on 3 molecule(s) with a linear group and 2.60 cm⁻¹ on 4 molecule(s) without a linear group (1 each). These are the largest seen, not bounds.
-- **Another listing of the same atoms in an xyz file** moved band positions by up to 5.27 cm⁻¹ on 3 molecule(s) with a linear group and 3.07 cm⁻¹ on 4 molecule(s) without a linear group (12 each). These are the largest seen, not bounds.
+- **A rigid rotation of the molecule** moved band positions by up to 5.34 cm⁻¹ on 3 molecule(s) with a linear group and 0.00 cm⁻¹ on 4 molecule(s) without a linear group (8 trial(s) per molecule). These are the largest seen, not bounds.
+- **The molecule's mirror image** moved band positions by up to 5.22 cm⁻¹ on 3 molecule(s) with a linear group and 2.60 cm⁻¹ on 4 molecule(s) without a linear group (1 trial(s) per molecule). These are the largest seen, not bounds.
+- **Another listing of the same atoms in an xyz file** moved band positions by up to 5.27 cm⁻¹ on 3 molecule(s) with a linear group and 3.07 cm⁻¹ on 4 molecule(s) without a linear group (12 trial(s) per molecule). These are the largest seen, not bounds.
   A linear angle (in a nitrile, an alkyne) is measured against a fixed axis in space, and a dihedral enters with its sign; the hold-out errors hold none of this. Source: probes/results_m1/aromir_audit_fixes_2026-11-16/rerun/e3_invariance.log of thebreadishard/udacity-capstone-plan (plan 05), aromir at 8a0afa7: benzonitrile, phenylacetylene and diphenylacetylene with a linear group; benzene, biphenyl, 2-methylnaphthalene and phenol without; stored B3LYP geometries and Hessians.
 - **Band heights are the cheap level's.** The dipole derivatives are not corrected.
-- **A family is a rule, not a kind of bond.** ring-ip: between 950 and 1750 cm⁻¹ and in the molecular plane: ring stretches and in-plane bends, and with them every other mode there, such as a C=O stretch or a CH₃ deformation; in a non-planar molecule every mode in that window. CH-stretch: above 2800 cm⁻¹ with most of its motion on hydrogens: the C–H stretches, and by the same rule an O–H or N–H stretch. CH-oop: between 600 and 1050 cm⁻¹, out of the molecular plane and on hydrogens; a non-planar molecule has none, and its C–H wags fall under other or ring-ip. other: every mode the three rules above do not take. aromir's certificate licenses a band only when its family is within the licence line, the molecule lies inside the training sizes, the band is real for every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens. A ring-ip band is licensed as the rule takes it, C=O stretches included.
+- **A family is a rule, not a kind of bond.** ring-ip: between 950 and 1750 cm⁻¹ and in the molecular plane: ring stretches and in-plane bends, and with them every other mode there, such as a C=O stretch or a CH₃ deformation; in a non-planar molecule every mode in that window. CH-stretch: above 2800 cm⁻¹ with most of its motion on hydrogens: the C–H stretches, and by the same rule an O–H or N–H stretch. CH-oop: between 600 and 1050 cm⁻¹, out of the molecular plane and on hydrogens; a non-planar molecule has none, and its C–H wags fall under other or ring-ip. other: every mode the three rules above do not take. aromir's certificate licenses a band only when its family is within the licence line, the molecule lies inside the training sizes, the band is real for the seeds' mean and for every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens. A ring-ip band is licensed as the rule takes it, C=O stretches included.
 
 ## What it is
 

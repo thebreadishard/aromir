@@ -226,6 +226,7 @@ def test_a_spread_no_molecule_of_the_kind_was_measured_on_is_said_to_be_missing(
         _spread(None, 3, 0.0, 4),
         _spread(5.0, 0, 0.0, 4),
         _spread(5.0, 3, 0.0, 4) | {"extra": 1},
+        _spread(None, 0, None, 0),
     ],
 )
 def test_a_spread_that_cannot_be_a_measurement_is_refused(spread: dict[str, Any]) -> None:
@@ -241,7 +242,8 @@ def test_the_atom_order_spread_of_the_evaluation_is_on_the_certificate(
     record = _record("c1ccccc1", "random", replace(loaded, evaluation=evaluation))
     assert (
         "another atom order of the same molecule moved a position by up to 10.73 cm⁻¹, the "
-        "largest seen on 3 molecule(s); that is more than the licence line of 3 cm⁻¹"
+        "largest seen on 3 molecule(s) in arbitrary orders; that is more than the licence line "
+        "of 3 cm⁻¹"
     ) in record["not_in_the_error"]
     assert "positions up to 10.73 cm⁻¹ away" in record["statement"]
 
@@ -272,7 +274,7 @@ def test_stereo_the_smiles_leaves_open_is_on_the_certificate(loaded: release.Rel
     stilbene = _record("C(=Cc1ccccc1)c1ccccc1", "random", loaded)
     assert stilbene["molecule"]["unassigned_stereo"] == ["1 double bond"]
     assert any(
-        line.startswith("the SMILES leaves 1 double bond unassigned: one isomer was computed")
+        line.startswith("the input leaves 1 double bond unassigned: one isomer was computed")
         for line in stilbene["not_in_the_error"]
     )
     assigned = _record("C(=C/c1ccccc1)\\c1ccccc1", "random", loaded)
@@ -296,7 +298,7 @@ def test_the_card_states_the_measured_spreads_and_claims_no_more(
     assert (
         "- **A rigid rotation of the molecule** moved band positions by up to 5.34 cm⁻¹ on 3 "
         "molecule(s) with a linear group and 0.00 cm⁻¹ on 4 molecule(s) without a linear group "
-        "(8 each). These are the largest seen, not bounds."
+        "(8 trial(s) per molecule). These are the largest seen, not bounds."
     ) in text
     assert "- **The molecule's mirror image** moved band positions by up to 5.22 cm⁻¹" in text
     assert "and a dihedral enters with its sign; the hold-out errors" in text

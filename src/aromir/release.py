@@ -152,7 +152,7 @@ class Training(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     network_version: str
-    elements: list[str]
+    elements: list[str] = Field(min_length=1)
     min_atoms: int = Field(ge=1)
     max_atoms: int = Field(ge=1)
     trained_smiles: list[str]
@@ -207,6 +207,9 @@ class MeasuredSpread(BaseModel):
             if (value is None) != (count == 0):
                 msg = "a spread is given exactly when at least one molecule was measured"
                 raise ValueError(msg)
+        if self.n_with_linear_group + self.n_without_linear_group == 0:
+            msg = "a spread measured on no molecule is no measurement"
+            raise ValueError(msg)
         return self
 
     def of(self, *, linear_group: bool) -> tuple[float | None, int]:
@@ -366,7 +369,8 @@ def _load_seeds(folder: Path) -> list[tuple[Path, DeltaHessianNetwork, weights.R
             network, recipe = weights.load(path)
         except ValidationError as invalid:
             raise RefusedError(_field_reasons(path, invalid)) from invalid
-        except (OSError, ValueError, SafetensorError) as error:
+        except (OSError, ValueError, RuntimeError, SafetensorError) as error:
+            # torch reports tensors that do not fit the recipe's network as a RuntimeError
             raise RefusedError([f"{path}: {error}"]) from error
         if path.name != f"seed-{recipe.seed}.json":
             raise RefusedError([f"{path} holds the recipe of seed {recipe.seed}"])
@@ -391,7 +395,7 @@ def load(folder: Path) -> Release:
     evaluation = _record(Evaluation, folder, EVALUATION_FILE)
     training = _record(Training, folder, TRAINING_FILE)
     invariance = None
-    if (folder / INVARIANCE_FILE).is_file():
+    if (folder / INVARIANCE_FILE).exists():
         invariance = _record(Invariance, folder, INVARIANCE_FILE)
     loaded = _load_seeds(folder)
     recipes = tuple(recipe for _, _, recipe in loaded)

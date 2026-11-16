@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import replace
 from typing import TYPE_CHECKING, TextIO
 
@@ -10,8 +11,18 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from aromir import certificate, lowlevel, optimisation, pipeline, release, response, spectrum
-from aromir.errors import NotAMinimumError, RefusedError
+from aromir import (
+    certificate,
+    lowlevel,
+    optimisation,
+    pipeline,
+    release,
+    repair,
+    response,
+    spectrum,
+    vibrations,
+)
+from aromir.errors import InternalCoordinatesError, NotAMinimumError, RefusedError
 
 from support import BENZENE_XYZ, bond_force_field, write_release
 
@@ -19,7 +30,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from aromir.dft import Resources
-    from aromir.molecule import Geometry
+    from aromir.molecule import FloatArray, Geometry
 
 
 def _ring_force_field(geometry: Geometry) -> tuple[tuple[int, int, float], ...]:
@@ -28,34 +39,47 @@ def _ring_force_field(geometry: Geometry) -> tuple[tuple[int, int, float], ...]:
     return tuple((i, j, 0.3) for i in range(n) for j in range(i + 1, n))
 
 
-@pytest.fixture
-def synthetic_chemistry(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
-    """Replace the optimisation and the low level by instant, synthetic results.
+def _synthetic_low_level(geometry: Geometry) -> lowlevel.LowLevel:
+    return lowlevel.LowLevel(
+        energy=-1.0,
+        hessian=bond_force_field(geometry, _ring_force_field(geometry)),
+        polar_tensor=np.random.default_rng(0).normal(size=(3, 3 * geometry.n_atoms)),
+        refinement=response.Refinement(1e-9, 1e-9, 0, 0),
+        sum_rule_violation=1e-7,
+        seconds=0.1,
+    )
 
-    Returns the list that records, per low-level call, whether the soft-mode repair was asked for.
+
+@pytest.fixture
+def synthetic_chemistry(monkeypatch: pytest.MonkeyPatch) -> Counter[str]:
+    """Replace the optimisation, the low level and the repair by instant, synthetic results.
+
+    Returns the count of calls of each of the three steps.
     """
-    asked_for_repair: list[bool] = []
+    calls: Counter[str] = Counter()
 
     def optimise(start: Geometry, _resources: Resources, log: TextIO) -> optimisation.Optimisation:
+        calls["optimise"] += 1
         log.write("optimised\n")
         return optimisation.Optimisation(start, energy=-1.0, max_force=1e-6, n_steps=3)
 
     def compute(
         geometry: Geometry, _resources: Resources, _log: TextIO, *, repair_soft_modes: bool
     ) -> lowlevel.LowLevel:
-        asked_for_repair.append(repair_soft_modes)
-        return lowlevel.LowLevel(
-            energy=-1.0,
-            hessian=bond_force_field(geometry, _ring_force_field(geometry)),
-            polar_tensor=np.random.default_rng(0).normal(size=(3, 3 * geometry.n_atoms)),
-            refinement=response.Refinement(1e-9, 1e-9, 0, 0),
-            sum_rule_violation=1e-7,
-            seconds=0.1,
-        )
+        assert not repair_soft_modes, "the pipeline saves the analytic Hessian first"
+        calls["low level"] += 1
+        return _synthetic_low_level(geometry)
+
+    def measure(
+        _geometry: Geometry, hessian: FloatArray, _resources: Resources, _log: TextIO
+    ) -> tuple[FloatArray, repair.Repair | None]:
+        calls["repair"] += 1
+        return hessian, None
 
     monkeypatch.setattr(optimisation, "optimise", optimise)
     monkeypatch.setattr(lowlevel, "compute", compute)
-    return asked_for_repair
+    monkeypatch.setattr(repair, "repair", measure)
+    return calls
 
 
 def _benzene(out: Path) -> pipeline.Request:
@@ -98,6 +122,7 @@ def test_a_run_writes_its_result_folder(tmp_path: Path) -> None:
         "geometry.json",
         "lowlevel.npz",
         "pyscf.log",
+        "run.json",
     ]
     assert json.loads((folder / "baseline.json").read_text(encoding="utf-8")) == record
     assert record["molecule"] == {"smiles": "c1ccccc1", "formula": "C6H6", "n_atoms": 12}
@@ -136,27 +161,133 @@ def test_a_refused_molecule_leaves_no_folder(tmp_path: Path) -> None:
     assert not (tmp_path / "x").exists()
 
 
-@pytest.mark.usefixtures("synthetic_chemistry")
-def test_a_saddle_point_gets_no_spectrum(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _unstable_for(n_calls: int, monkeypatch: pytest.MonkeyPatch) -> list[Geometry]:
+    """Make the low level's first ``n_calls`` Hessians all-imaginary; return where it was asked."""
     stable = lowlevel.compute
+    asked_at: list[Geometry] = []
 
-    def unstable(
+    def compute(
         geometry: Geometry, resources: Resources, log: TextIO, *, repair_soft_modes: bool
     ) -> lowlevel.LowLevel:
+        asked_at.append(geometry)
         result = stable(geometry, resources, log, repair_soft_modes=repair_soft_modes)
-        return lowlevel.LowLevel(
-            result.energy,
-            -result.hessian,
-            result.polar_tensor,
-            result.refinement,
-            result.sum_rule_violation,
-            result.seconds,
-        )
+        if len(asked_at) > n_calls:
+            return result
+        return replace(result, hessian=-result.hessian)
 
-    monkeypatch.setattr(lowlevel, "compute", unstable)
-    with pytest.raises(NotAMinimumError, match="imaginary mode"):
-        pipeline.run_baseline(_benzene(tmp_path / "benzene"))
-    assert not (tmp_path / "benzene" / "baseline.json").exists()
+    monkeypatch.setattr(lowlevel, "compute", compute)
+    return asked_at
+
+
+def test_a_saddle_point_that_stays_gets_no_spectrum_and_keeps_its_hessian(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    _unstable_for(2, monkeypatch)
+    folder = tmp_path / "benzene"
+    with pytest.raises(NotAMinimumError, match="also after one step along it"):
+        pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "geometry.json",
+        "lowlevel.npz",
+        "pyscf.log",
+        "run.json",
+        "saddle_point_geometry.json",
+        "saddle_point_lowlevel.npz",
+    ]
+    with np.load(folder / "lowlevel.npz") as arrays:
+        assert arrays["hessian"].shape == (36, 36)
+
+
+def test_a_saddle_point_is_left_along_its_mode_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    asked_at = _unstable_for(1, monkeypatch)
+    record = pipeline.run_baseline(_benzene(tmp_path / "benzene"))
+    assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
+    assert record["optimisation"]["left_saddle_point_at_cm"] < 0
+    moved = np.linalg.norm(asked_at[1].coords_bohr - asked_at[0].coords_bohr, axis=1)
+    assert float(np.max(moved)) == pytest.approx(pipeline.OFF_THE_SADDLE_BOHR)
+    assert (
+        vibrations.vibrational_modes(
+            _synthetic_low_level(asked_at[1]).hessian, asked_at[1]
+        ).n_imaginary
+        == 0
+    )
+
+
+def test_a_run_that_failed_is_taken_up_where_it_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    working = repair.repair
+
+    def out_of_memory(*_arguments: object) -> None:
+        msg = "the grid-response gradient needs more memory"
+        raise repair.GridResponseMemoryError(msg)
+
+    monkeypatch.setattr(repair, "repair", out_of_memory)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "geometry.json",
+        "lowlevel.npz",
+        "pyscf.log",
+        "run.json",
+    ]
+    monkeypatch.setattr(repair, "repair", working)
+    record = pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
+    assert (folder / "baseline.json").is_file()
+    assert record["optimisation"]["n_steps"] == 3
+    assert record["checks"]["sum_rule_violation_e"] == 1e-7
+    fresh = pipeline.run_baseline(_benzene(tmp_path / "fresh"))
+    assert record["harmonic"] == fresh["harmonic"]
+
+
+def test_an_unfinished_run_is_not_taken_up_by_another_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    monkeypatch.setattr(repair, "repair", stop)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    other = pipeline.Request(molecule=pipeline.MoleculeInput(smiles="c1ccncc1"), out=folder)
+    with pytest.raises(
+        RefusedError, match=r"unfinished run of another request \(baseline c1ccccc1\)"
+    ):
+        pipeline.run_baseline(other)
+    loaded = release.load(write_release(tmp_path / "release"))
+    with pytest.raises(RefusedError, match="unfinished run of another request"):
+        pipeline.run_spectrum(_benzene(folder), loaded)
+    assert synthetic_chemistry["optimise"] == 1
+
+
+def test_a_folder_with_other_files_is_not_a_result_folder(tmp_path: Path) -> None:
+    folder = tmp_path / "notes"
+    folder.mkdir()
+    (folder / "todo.txt").write_text("mine", encoding="utf-8")
+    with pytest.raises(RefusedError, match="is not empty: a result is never overwritten"):
+        pipeline.run_baseline(_benzene(folder))
+
+
+def test_what_the_network_cannot_read_is_refused_before_the_quantum_chemistry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    loaded = release.load(write_release(tmp_path / "release"))
+
+    def unreadable(_self: release.Release, _geometry: Geometry, _hessian: FloatArray) -> None:
+        msg = "the primitives span more than 3N − 6 = 30 directions"
+        raise InternalCoordinatesError(msg)
+
+    monkeypatch.setattr(release.Release, "corrections", unreadable)
+    with pytest.raises(RefusedError, match="cannot read this molecule's start geometry: the prim"):
+        pipeline.run_spectrum(_benzene(tmp_path / "benzene"), loaded)
+    assert synthetic_chemistry == {}
+    assert not (tmp_path / "benzene").exists()
 
 
 @pytest.mark.usefixtures("synthetic_chemistry")
@@ -171,6 +302,7 @@ def test_a_spectrum_run_writes_the_correction_and_the_certificate(tmp_path: Path
         "geometry.json",
         "lowlevel.npz",
         "pyscf.log",
+        "run.json",
     ]
     assert json.loads((folder / "certificate.json").read_text(encoding="utf-8")) == record
     assert len(record["bands"]) == 3 * 12 - 6
@@ -193,18 +325,47 @@ def test_an_element_the_network_never_trained_on_is_refused(tmp_path: Path) -> N
     assert not (tmp_path / "x").exists()
 
 
-def test_the_baseline_asks_for_the_repair(tmp_path: Path, synthetic_chemistry: list[bool]) -> None:
+def test_the_baseline_asks_for_the_repair(
+    tmp_path: Path, synthetic_chemistry: Counter[str]
+) -> None:
     record = pipeline.run_baseline(_benzene(tmp_path / "benzene"))
-    assert synthetic_chemistry == [True]
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
     assert record["soft_mode_repair"] is None  # the synthetic low level repaired nothing
 
 
 @pytest.mark.parametrize("trained_on_repaired", [False, True])
-def test_a_release_decides_whether_its_network_gets_a_repaired_hessian(
-    tmp_path: Path, synthetic_chemistry: list[bool], *, trained_on_repaired: bool
+@pytest.mark.usefixtures("synthetic_chemistry")
+def test_the_network_reads_the_kind_of_hessian_it_was_trained_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, trained_on_repaired: bool
 ) -> None:
+    def measure(
+        geometry: Geometry, hessian: FloatArray, _resources: Resources, _log: TextIO
+    ) -> tuple[FloatArray, repair.Repair]:
+        stiffer = vibrations.project_rigid_motions(0.01 * np.eye(len(hessian)), geometry)
+        return hessian + stiffer, repair.Repair(2, -8.0, 14.0, 22.0)
+
+    monkeypatch.setattr(repair, "repair", measure)
+    read: list[FloatArray] = []
+    corrections = release.Release.corrections
+
+    def spy(self: release.Release, geometry: Geometry, hessian: FloatArray) -> release.Corrections:
+        read.append(hessian)
+        return corrections(self, geometry, hessian)
+
+    monkeypatch.setattr(release.Release, "corrections", spy)
     loaded = release.load(write_release(tmp_path / "release"))
     training = loaded.training.model_copy(update={"soft_mode_repair": trained_on_repaired})
-    chosen = replace(loaded, training=training)
-    pipeline.run_spectrum(_benzene(tmp_path / "benzene"), chosen)
-    assert synthetic_chemistry == [trained_on_repaired]
+    folder = tmp_path / "benzene"
+    record = pipeline.run_spectrum(_benzene(folder), replace(loaded, training=training))
+    with np.load(folder / "lowlevel.npz") as arrays:
+        measured, analytic = arrays["hessian"], arrays["analytic_hessian"]
+    assert float(np.abs(measured - analytic).max()) > 1e-3
+    np.testing.assert_array_equal(read[-1], measured if trained_on_repaired else analytic)
+    assert record["computation"]["soft_mode_repair"]["n_directions"] == 2
+    assert record["soft_modes"].startswith("2 mode(s) below 20 cm⁻¹ were measured")
+    assert ("The network read the Hessian without that repair" in record["soft_modes"]) is (
+        not trained_on_repaired
+    )
+    assert "*Soft modes:* 2 mode(s) below 20 cm⁻¹" in (folder / "certificate.md").read_text(
+        encoding="utf-8"
+    )
