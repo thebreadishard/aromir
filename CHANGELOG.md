@@ -94,7 +94,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a file, a release record that is not UTF-8, a missing, truncated or damaged weight
   file, weights that do not fit their recipe and a recipe under another seed's name
   are refusals (exit 2); any other file or numerical error is one line with its kind
-  (exit 1), or its traceback when `AROMIR_TRACEBACK` is set. An xyz file whose comment
+  (exit 1), or its traceback when `AROMIR_TRACEBACK` is set to anything but 0. An xyz file whose comment
   line is not UTF-8 is read, and so is the xyz file of an imine or an amidine, whose
   N–H hydrogen RDKit keeps as a stereo mark.
 - `aromir card --out` refuses an existing file and a missing folder.
@@ -141,6 +141,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The dependencies have upper bounds, the series the package is tested with; the atom
+  order and the primitives of seven molecules are pinned, so a new RDKit or geomeTRIC
+  that changes either fails a test before it changes an answer.
+- Three tests that are expected to fail, strictly, state what release v1.3 does not do
+  yet: a turned nitrile, a mirror image and another listing of one xyz geometry each
+  get another spectrum. The day a release answers alike, they pass and must be unmarked.
+- One molecule of hold-out (a), benzene, is evaluated in the tests: the family rule, the
+  network and the evaluation are tied to the numbers the record was made from.
+- Release v1.3 ships `measured.json`, what `aromir evaluate` wrote on its two hold-outs,
+  and a test holds `evaluation.json`'s tables to it: the record's numbers can be followed
+  to their measurement inside the package.
+- Whether a molecule is in the training set is decided by its canonical SMILES; a test
+  holds every SMILES of v1.3's lists to RDKit's present canonical form, so an RDKit that
+  writes one of them differently fails a test instead of answering 'not seen'.
 - The network's correction no longer depends on the LAPACK build. The pseudo-inverse of
   the Wilson B matrix was `np.linalg.pinv` at its default cutoff, which lies inside the
   rounding residue of B's six null singular values: on numpy 2.5.4's Linux wheels one of

@@ -25,14 +25,18 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "geometric>=1.1",
-    "numpy>=1.26",
-    "pydantic>=2.6",
+    # The upper bounds are the series the package is tested with (README, Install): the
+    # atom order comes from RDKit, the internal coordinates from geomeTRIC, and the
+    # pseudo-inverse incident of November 2026 was one numpy build's. A newer series
+    # is allowed after tests/test_order_pins.py and the release pins pass with it.
+    "geometric>=1.1,<1.2",
+    "numpy>=1.26,<2.6",
+    "pydantic>=2.6,<3",
     "pyscf>=2.15,<2.16",
-    "rdkit>=2023.9",
-    "safetensors>=0.4",
-    "scipy>=1.11",
-    "torch>=2.2",
+    "rdkit>=2023.9,<2026.10",
+    "safetensors>=0.4,<1",
+    "scipy>=1.11,<1.19",
+    "torch>=2.2,<2.16",
 ]
 
 [project.optional-dependencies]

@@ -120,8 +120,10 @@ Two checks and a repair guard every result:
   network must be given what it was trained on, so a release trained on analytic
   Hessians (v1.3) reads the analytic one; its correction is added to the measured one.
 
-Each step is saved when it ends: `geometry.json`, then `lowlevel.npz`, with `run.json`
-recording what was asked and what is done. A run that fails after hours of quantum
+Each step is saved when it ends: `geometry.json`, then `lowlevel.npz`, each naming the
+run that made it, with `run.json` recording what was asked. After a step off a saddle
+point the saddle's two files are kept as `saddle_point_geometry.json` and
+`saddle_point_lowlevel.npz`. A run that fails after hours of quantum
 chemistry, or is stopped, is taken up by the same command into the same folder.
 
 ## The network
@@ -154,8 +156,21 @@ Linux and macOS; on Windows, use WSL (pyscf does not build natively there). pysc
 macOS wheels run on one thread, whatever `--threads` says.
 
 ```console
+$ pip install torch --index-url https://download.pytorch.org/whl/cpu   # Linux: see below
 $ pip install git+https://github.com/thebreadishard/aromir
 ```
+
+The network runs on the CPU. On Linux, PyPI's default torch wheel bundles CUDA (a few
+GB); installing the CPU wheel first, as above, avoids it. The second command needs git
+and builds the package with hatchling, which pip fetches from PyPI; everything aromir
+imports is declared and installed with it, and the weights of the bundled release are
+inside the package.
+
+Tested with Python 3.11 to 3.13 and with RDKit 2026.9, geomeTRIC 1.1, numpy 2.5, scipy
+1.18, torch 2.14 and 2.15, pyscf 2.15. The upper bounds in `pyproject.toml` are those
+series; the lower bounds are not tested. RDKit decides the atom order and geomeTRIC the
+internal coordinates, and release v1.3's answer depends on both, so a newer series of
+either is allowed only after the pins in `tests/test_order_pins.py` pass with it.
 
 ## Develop
 

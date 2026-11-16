@@ -61,7 +61,7 @@ second optimisation. On hydrogen peroxide's planar saddle point (B3LYP/6-31G*) t
 leads the optimiser to the skew minimum; a flatter saddle may need more, and the run then
 ends as not a minimum, with everything kept."""
 
-_LEFTOVERS: Final = (QUANTUM_LOG_FILE,)
+_LEFTOVERS: Final = (QUANTUM_LOG_FILE, f"{RUN_FILE}.tmp")
 """What a run killed before its first step leaves behind: no reason to refuse the folder."""
 
 
@@ -109,8 +109,6 @@ class _Run(BaseModel):
 
     asked: dict[str, Any]
     left_saddle_point: _SaddlePoint | None = None
-    steps: dict[str, dict[str, Any]] = {}
-    """What made each step: the time, command and package versions of the run that ran it."""
 
     @property
     def attempt(self) -> int:
@@ -168,7 +166,7 @@ def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, _Run]:
     if folder.exists() and not folder.is_dir():
         raise RefusedError([f"{folder} is a file: --out names a folder"])
     held = [] if not folder.exists() else [path.name for path in folder.iterdir()]
-    if all(name in _LEFTOVERS or name.endswith(".tmp") for name in held):
+    if all(name in _LEFTOVERS for name in held):
         return folder, _Run(asked=asked)
     if BASELINE_FILE in held or CERTIFICATE_FILE in held:
         raise RefusedError([f"{folder} holds a result: a result is never overwritten"])
@@ -205,6 +203,7 @@ def _optimised(
             raise _damaged(folder, GEOMETRY_FILE, error) from error
     optimised = optimisation.optimise(start, resources, log)
     record = optimised.geometry.to_dict() | {
+        "made_with": records.provenance(),
         "optimisation": {
             "energy": optimised.energy,
             "max_force": optimised.max_force,
@@ -213,15 +212,22 @@ def _optimised(
         "attempt": state.attempt,
     }
     records.write_json(path, record)
-    state.steps[f"optimisation {state.attempt}"] = records.provenance()
-    state.save(folder)
     return optimised
 
 
 def _save_low_level(
-    folder: Path, minimum: Geometry, attempt: int, low: lowlevel.LowLevel, *, measured: bool
+    folder: Path,
+    minimum: Geometry,
+    attempt: int,
+    low: lowlevel.LowLevel,
+    made_with: dict[str, Any],
 ) -> None:
-    """Write the whole low-level step as one file: arrays, checks, and whose it is."""
+    """Write the whole low-level step as one file: arrays, checks, and whose it is.
+
+    ``made_with`` names the run that computed the analytic Hessian and, once the soft
+    modes are measured, the run that measured them.
+    """
+    measured = "soft modes" in made_with
     arrays: dict[str, Any] = {
         "hessian": low.hessian,
         "polar_tensor": low.polar_tensor,
@@ -232,6 +238,7 @@ def _save_low_level(
         "refinement": np.array(list(asdict(low.refinement).values()), dtype=float),
         "sum_rule_violation": np.array(low.sum_rule_violation),
         "seconds": np.array(low.seconds),
+        "made_with": np.array(json.dumps(made_with)),
     }
     if low.analytic_hessian is not None:
         arrays["analytic_hessian"] = low.analytic_hessian
@@ -242,8 +249,8 @@ def _save_low_level(
 
 def _saved_low_level(
     folder: Path, minimum: Geometry, attempt: int
-) -> tuple[lowlevel.LowLevel, bool] | None:
-    """Return this attempt's saved low level of this geometry and whether it is measured.
+) -> tuple[lowlevel.LowLevel, dict[str, Any]] | None:
+    """Return this attempt's saved low level of this geometry and what made it.
 
     None when there is none: no file, another attempt's, or another geometry's.
     """
@@ -272,9 +279,17 @@ def _saved_low_level(
             soft_modes=soft_modes,
             analytic_hessian=saved.get("analytic_hessian"),
         )
-        return low, bool(saved["soft_modes_measured"])
-    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
+        made_with: dict[str, Any] = json.loads(str(saved["made_with"]))
+        expected = (3 * minimum.n_atoms, 3 * minimum.n_atoms)
+        if low.hessian.shape != expected or low.polar_tensor.shape != (3, expected[0]):
+            msg = f"arrays of shape {low.hessian.shape} and {low.polar_tensor.shape}"
+            raise ValueError(msg)  # noqa: TRY301  a damaged file like the others below
+        if bool(saved["soft_modes_measured"]) != ("soft modes" in made_with):
+            msg = "its record of the soft-mode step contradicts itself"
+            raise ValueError(msg)  # noqa: TRY301  the same
+    except (OSError, ValueError, KeyError, TypeError, EOFError, zipfile.BadZipFile) as error:
         raise _damaged(folder, LOW_LEVEL_FILE, error) from error
+    return low, made_with
 
 
 def _low_level(
@@ -288,19 +303,16 @@ def _low_level(
     saved = _saved_low_level(folder, minimum, state.attempt)
     if saved is None:
         low = lowlevel.compute(minimum, resources, log)
-        _save_low_level(folder, minimum, state.attempt, low, measured=False)
-        state.steps[f"low level {state.attempt}"] = records.provenance()
-        state.save(folder)
-        measured = False
+        made_with = {"low level": records.provenance()}
+        _save_low_level(folder, minimum, state.attempt, low, made_with)
     else:
-        low, measured = saved
-    if not measured:
+        low, made_with = saved
+    if "soft modes" not in made_with:
         repaired, record = repair.repair(minimum, low.hessian, resources, log)
         if record is not None:
             low = replace(low, hessian=repaired, analytic_hessian=low.hessian, soft_modes=record)
-        _save_low_level(folder, minimum, state.attempt, low, measured=True)
-        state.steps[f"soft modes {state.attempt}"] = records.provenance()
-        state.save(folder)
+        made_with |= {"soft modes": records.provenance()}
+        _save_low_level(folder, minimum, state.attempt, low, made_with)
     return low
 
 
@@ -362,8 +374,24 @@ def _compute(
     return optimised, low
 
 
+def _made_with(folder: Path) -> dict[str, Any]:
+    """Return what made each saved step of a finished run, read from the step files."""
+    steps: dict[str, Any] = {}
+    for prefix in (SADDLE_POINT_PREFIX, ""):
+        geometry_file = folder / f"{prefix}{GEOMETRY_FILE}"
+        if not geometry_file.is_file():
+            continue
+        stored = json.loads(geometry_file.read_text(encoding="utf-8"))
+        attempt = stored["attempt"]
+        steps[f"optimisation {attempt}"] = stored["made_with"]
+        with np.load(folder / f"{prefix}{LOW_LEVEL_FILE}") as arrays:
+            made_with = json.loads(str(arrays["made_with"]))
+        steps |= {f"{name} {attempt}": made for name, made in made_with.items()}
+    return steps
+
+
 def _computation_record(
-    optimised: optimisation.Optimisation, low: lowlevel.LowLevel, state: _Run
+    optimised: optimisation.Optimisation, low: lowlevel.LowLevel, state: _Run, folder: Path
 ) -> dict[str, Any]:
     left = state.left_saddle_point
     return {
@@ -383,7 +411,7 @@ def _computation_record(
         },
         "soft_mode_repair": None if low.soft_modes is None else asdict(low.soft_modes),
         "seconds_low_level": round(low.seconds, 1),
-        "steps": state.steps,
+        "steps": _made_with(folder),
     }
 
 
@@ -418,7 +446,7 @@ def run_baseline(request: Request) -> dict[str, Any]:
             "formula": admitted.formula,
             "n_atoms": admitted.n_atoms,
         },
-        **_computation_record(optimised, low, state),
+        **_computation_record(optimised, low, state, folder),
         "harmonic": {
             "note": "B3LYP harmonic positions, uncorrected",
             "bands": _bands_record(bands),
@@ -511,12 +539,13 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     if reasons:
         raise RefusedError(reasons)
     folder, state = _open_folder(request.out, _asked("spectrum", admitted, start))
+    # pyscf is told its threads by the resources; torch takes every core unless told too.
+    # The setting is torch's own, for the whole process, and stays after this call.
+    torch.set_num_threads(request.resources.threads)
     reasons = _no_network_inputs(start, release)
     if reasons:
         raise RefusedError(reasons)
     launched = records.provenance()
-    # pyscf is told its threads by the resources; torch takes every core unless told too.
-    torch.set_num_threads(request.resources.threads)
     optimised, low = _compute(start, folder, state, request.resources)
     as_trained = low.as_trained(soft_modes_measured=release.training.soft_mode_repair)
     corrections = release.corrections(optimised.geometry, as_trained)
@@ -527,9 +556,11 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     record = certificate.build(admitted, optimised.geometry, low, corrections, release)
     record["not_in_the_error"] += _saddle_note(state)
     record |= {
-        "computation": _computation_record(optimised, low, state),
+        "computation": _computation_record(optimised, low, state, folder),
         "provenance": launched,
     }
-    records.write_json(folder / CERTIFICATE_FILE, record)
+    # The record is written last: it is what makes the folder a result, and a run killed
+    # before it is taken up again and writes both files.
     records.write_text(folder / CERTIFICATE_TEXT_FILE, certificate.to_markdown(record))
+    records.write_json(folder / CERTIFICATE_FILE, record)
     return record

@@ -397,22 +397,21 @@ def test_a_kill_between_two_writes_does_not_feed_the_network_a_measured_hessian(
         return hessian + stiffer, repair.Repair(2, -8.0, 14.0, 22.0)
 
     monkeypatch.setattr(repair, "repair", measure)
-    write_json = records.write_json
-    writes = []
+    write_arrays = records.write_arrays
 
-    def killed_after_the_repair_is_saved(path: Path, record: dict[str, object]) -> None:
-        if path.name == pipeline.RUN_FILE:
-            writes.append(path)
-            if synthetic_chemistry["repair"] == 1 and len(writes) > 1:
-                raise KeyboardInterrupt
-        write_json(path, record)
+    def killed_once_the_measured_hessian_is_saved(
+        path: Path, arrays: dict[str, FloatArray]
+    ) -> None:
+        write_arrays(path, arrays)
+        if path.name == pipeline.LOW_LEVEL_FILE and "analytic_hessian" in arrays:
+            raise KeyboardInterrupt
 
-    monkeypatch.setattr(records, "write_json", killed_after_the_repair_is_saved)
+    monkeypatch.setattr(records, "write_arrays", killed_once_the_measured_hessian_is_saved)
     loaded = release.load(write_release(tmp_path / "release"))
     folder = tmp_path / "benzene"
     with pytest.raises(KeyboardInterrupt):
         pipeline.run_spectrum(_benzene(folder), loaded)
-    monkeypatch.setattr(records, "write_json", write_json)
+    monkeypatch.setattr(records, "write_arrays", write_arrays)
     read: list[FloatArray] = []
     corrections = release.Release.corrections
 
@@ -439,6 +438,7 @@ def _saved_geometry(folder: Path) -> tuple[tuple[str, ...], FloatArray]:
         ("run.json", "[]", "run.json in"),
         ("run.json", "{", "run.json in"),
         ("lowlevel.npz", "not a zip file", "lowlevel.npz in"),
+        ("lowlevel.npz", "", "lowlevel.npz in"),
         ("geometry.json", "{}", "geometry.json in"),
     ],
 )
@@ -549,3 +549,96 @@ def test_the_same_start_geometry_is_the_same_request_whatever_the_sign_of_zero(
     monkeypatch.setattr(pipeline, "admit", a_hair_off)
     pipeline.run_baseline(_benzene(folder))
     assert synthetic_chemistry["optimise"] == 1
+
+
+def test_a_folder_with_somebody_elses_temporary_file_is_not_taken(tmp_path: Path) -> None:
+    folder = tmp_path / "work"
+    folder.mkdir()
+    (folder / "thesis.tmp").write_text("mine", encoding="utf-8")
+    with pytest.raises(RefusedError, match="is not empty: a result is never overwritten"):
+        pipeline.run_baseline(_benzene(folder))
+    assert (folder / "thesis.tmp").read_text(encoding="utf-8") == "mine"
+
+
+def test_a_run_without_a_soft_mode_is_not_measured_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    # The repair found nothing to measure and said so in the step file; a failure after it
+    # (here: the network) must not send the resumed run through the repair again.
+    loaded = release.load(write_release(tmp_path / "release"))
+    working = release.Release.corrections
+    calls = []
+
+    def fails_after_the_start(
+        self: release.Release, geometry: Geometry, hessian: FloatArray
+    ) -> release.Corrections:
+        calls.append(1)
+        if len(calls) == 2:
+            msg = "the network broke"
+            raise InternalCoordinatesError(msg)
+        return working(self, geometry, hessian)
+
+    monkeypatch.setattr(release.Release, "corrections", fails_after_the_start)
+    folder = tmp_path / "benzene"
+    with pytest.raises(InternalCoordinatesError):
+        pipeline.run_spectrum(_benzene(folder), loaded)
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
+    record = pipeline.run_spectrum(_benzene(folder), loaded)
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
+    assert sorted(record["computation"]["steps"]) == [
+        "low level 1",
+        "optimisation 1",
+        "soft modes 1",
+    ]
+    assert all(step["packages"]["aromir"] for step in record["computation"]["steps"].values())
+
+
+def test_a_step_names_the_run_that_made_it_in_its_own_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    # A kill between a step's file and anything written after it loses nothing of the
+    # record: what made the step is in the step file.
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    working = repair.repair
+    monkeypatch.setattr(repair, "repair", stop)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    stored = json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    assert stored["made_with"]["packages"]["pyscf"]
+    with np.load(folder / "lowlevel.npz") as arrays:
+        assert list(json.loads(str(arrays["made_with"]))) == ["low level"]
+    monkeypatch.setattr(repair, "repair", working)
+    record = pipeline.run_baseline(_benzene(folder))
+    assert sorted(record["steps"]) == ["low level 1", "optimisation 1", "soft modes 1"]
+    assert synthetic_chemistry["optimise"] == 1
+
+
+def test_a_certificate_without_its_record_is_a_run_to_take_up(
+    tmp_path: Path, synthetic_chemistry: Counter[str]
+) -> None:
+    # The record is written last. A folder that holds the text and not the record is an
+    # unfinished run: the same request finishes it without any quantum chemistry.
+    loaded = release.load(write_release(tmp_path / "release"))
+    folder = tmp_path / "benzene"
+    pipeline.run_spectrum(_benzene(folder), loaded)
+    (folder / "certificate.json").unlink()
+    pipeline.run_spectrum(_benzene(folder), loaded)
+    assert (folder / "certificate.json").is_file()
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
+
+
+def test_the_start_geometry_is_named_the_same_whatever_the_sign_of_its_zeros() -> None:
+    admitted, start = pipeline.admit(pipeline.MoleculeInput(smiles="c1ccccc1"))
+    flat = start.coords_bohr.copy()
+    flat[:, 2] = 0.0
+    below = flat.copy()
+    below[:, 2] = -1e-9
+    above = Geometry(start.symbols, flat)
+    asked = pipeline._asked("baseline", admitted, above)  # noqa: SLF001  the identity itself
+    assert asked == pipeline._asked("baseline", admitted, Geometry(start.symbols, below))  # noqa: SLF001
+    elsewhere = flat.copy()
+    elsewhere[0, 0] += 1e-4
+    assert asked != pipeline._asked("baseline", admitted, Geometry(start.symbols, elsewhere))  # noqa: SLF001

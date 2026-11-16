@@ -7,6 +7,8 @@ A release is a folder:
     training.json                      the elements, sizes and molecules it was trained on
     invariance.json                    how far its answer moves under a rotation, a
                                        reflection and another atom listing (optional)
+    measured.json                      the output of ``aromir evaluate`` on the hold-outs,
+                                       which the evaluation's tables are (optional)
 
 The JSON files are written from the training project's own records. Nothing the
 certificate states about a network is typed into this package.
@@ -38,6 +40,9 @@ if TYPE_CHECKING:
 EVALUATION_FILE: Final = "evaluation.json"
 TRAINING_FILE: Final = "training.json"
 INVARIANCE_FILE: Final = "invariance.json"
+MEASURED_FILE: Final = "measured.json"
+"""What ``aromir evaluate`` wrote on the hold-outs: the source of the evaluation record's
+error tables, shipped beside it where a release has it."""
 SEED_FILES: Final = "seed-*.json"
 MIN_SEEDS: Final = 2
 """A band's spread over the seeds needs at least two of them."""

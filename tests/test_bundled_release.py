@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+from rdkit import Chem
 
-from aromir import card, cli, release
+from aromir import card, cli, evaluation, release
 from aromir.molecule import Geometry
 
 if TYPE_CHECKING:
@@ -63,3 +65,24 @@ def test_the_release_corrects_a_twisted_biphenyl_alike_on_every_platform() -> No
     for ours, theirs in zip(corrections.per_seed, pinned, strict=True):
         assert 0.03 < float(np.abs(theirs).max()) < 0.05
         assert float(np.abs(ours - theirs).max()) <= DELTA_H_TOLERANCE
+
+
+def test_the_evaluation_record_is_the_measurement_that_ships_beside_it() -> None:
+    folder = release.bundled()
+    measured = json.loads((folder / release.MEASURED_FILE).read_text(encoding="utf-8"))
+    recorded = release.load(folder).evaluation.model_dump(mode="json")
+    for field, table in evaluation.record_tables(measured).items():
+        assert recorded[field] == table
+    for name, holdout in measured.items():
+        assert recorded["holdouts"][name]["n_molecules"] == holdout["n_molecules"]
+
+
+def test_every_smiles_of_the_release_is_in_rdkits_present_canonical_form() -> None:
+    training = release.load(release.bundled()).training
+    listed = [
+        *training.trained_smiles,
+        *(s for held in training.held_out_smiles.values() for s in held),
+    ]
+    assert len(listed) > 700
+    rewritten = [s for s in listed if Chem.MolToSmiles(Chem.MolFromSmiles(s)) != s]
+    assert rewritten == []
