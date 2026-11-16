@@ -111,7 +111,7 @@ def test_the_rotation_in_a_bent_linear_group_is_not_inverted(smiles: str) -> Non
 
 
 def test_a_distorted_diphenylacetylene_is_not_refused() -> None:
-    # 0.01 bohr of noise bends the C–C≡C–C axis: a null value of 2e-5 of the largest.
+    # 0.01 bohr of noise bends the C–C≡C–C axis: a null value of 1.3e-4 of the largest.
     start = geometry.start_from_smiles("C(#Cc1ccccc1)c1ccccc1")
     noise = np.random.default_rng(4).normal(scale=0.01, size=start.coords_bohr.shape)
     _assert_the_rotation_is_dropped(Geometry(start.symbols, start.coords_bohr + noise))

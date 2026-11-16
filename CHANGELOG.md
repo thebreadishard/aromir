@@ -42,12 +42,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `aromir.network.primitives.pseudo_inverse` now keeps exactly the 3N − 6 largest singular
   values and refuses, with an `InternalCoordinatesError`, a B whose values on either side
   of that count are not where they belong (a linear molecule, primitives that miss a
-  direction). With the v1.3 release the Linux build's ΔH for 76 of those molecules now
-  agrees with the Windows build's to 2.4e-7 hartree/bohr² (bands to 2e-4 cm⁻¹); on
-  Windows 75 of the 76 are unchanged to the bit.
+  direction). With the v1.3 release the Linux build's ΔH for 76 corpus molecules, 71 of
+  those 72 among them, now agrees with the Windows build's to 2.4e-7 hartree/bohr² (bands
+  to 2e-4 cm⁻¹); on Windows 75 of the 76 are unchanged to the bit.
 - An alkyne between two rings or an allene no longer breaks the pseudo-inverse on every
   build. geomeTRIC measures a linear angle against a fixed axis, so where two such groups
-  share an axis that is bent by θ, a rotation enters B at about θ: 1e-7 of the largest
-  singular value for diphenylacetylene at its minimum (the 76th molecule above: ΔH 6e17
-  before, 0.056 hartree/bohr² now), 1e-4 for start geometries of unsymmetrical alkynes.
-  The count drops that direction; a bend that puts it above 1e-3 is refused.
+  share an axis that is bent by θ rad, a rotation enters B at about 0.01 θ of its largest
+  singular value: 3.5e-8 for diphenylacetylene at its minimum (the 76th molecule above:
+  ΔH 6e17 before, 0.056 hartree/bohr² now), 1e-4 for start geometries of unsymmetrical
+  alkynes. The count drops that direction, and B⁺ then differs from the B⁺ of a B without
+  rigid motions by about 0.3 θ of its largest element; a bend above about 0.1 rad (6°) is
+  refused.

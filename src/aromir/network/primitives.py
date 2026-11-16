@@ -3,8 +3,8 @@
 The network predicts its correction in internal coordinates: bonds, angles, dihedrals and
 out-of-plane bends. Their Wilson B matrix carries a correction ΔF to Cartesian
 coordinates as ΔH = Bᵀ ΔF B, which is symmetric and free of translations and rotations
-by construction (but for a bent linear angle, whose row holds a rotation at about the size
-of the bend in radians).
+by construction (but for a bent linear angle, whose row holds a small share of a
+rotation: 5e-4 at the start geometry of phenyl isocyanate).
 
 geomeTRIC keeps two of the three angles at a planar centre and chooses by atom number, so
 two atom orders of one molecule get different primitives. The ``canonical`` angle choice
@@ -54,13 +54,18 @@ OTHER: Final = 5
 
 _PARITY_TOLERANCE: Final = 1e-6
 
-_RANK_GAP: Final = 1e-3
-"""The share of B's largest singular value that separates the 3N − 6 real values from the
-rest. Over the 1,240 molecules of the networks' training corpus the smallest real value is
-1.0e-2 (E-stilbene) and every further value below 4e-15, but for diphenylacetylene, 3.5e-8:
-geomeTRIC measures a linear angle against a fixed axis, and where two such groups share an
-axis that is bent by θ a rotation enters B at about θ. Start geometries of unsymmetrical
-alkynes and allenes reach 4e-4, beside a smallest real value of 5.6e-3."""
+_SMALLEST_REAL: Final = 1e-6
+"""Singular value 3N − 6 of B, as a share of the largest, must lie above this. A real value
+falls with the length of the molecule — 1.0e-2 at the least over the 1,240 molecules of the
+networks' training corpus (60 atoms at most), 1.4e-3 for a rod of eight rings and 96 atoms
+— and a value that is no direction of the primitives is rounding residue, 1e-15."""
+
+_LARGEST_NULL: Final = 1e-3
+"""Singular value 3N − 5 of B, as a share of the largest, must lie at or below this. Over
+the corpus every such value is below 4e-15, but for diphenylacetylene, 3.5e-8: geomeTRIC
+measures a linear angle against a fixed axis, and where two such groups share an axis that
+is bent by θ rad a rotation enters B at about 0.01 θ of the largest value. Start geometries
+of unsymmetrical alkynes and allenes reach 4e-4; the limit is a bend of about 0.1 rad."""
 
 
 class PrimitiveSettings(BaseModel):
@@ -177,19 +182,20 @@ def pseudo_inverse(wilson_b: FloatArray) -> FloatArray:
         msg = "the Wilson B matrix is zero or not finite"
         raise InternalCoordinatesError(msg)
     left, values, right = np.linalg.svd(wilson_b, full_matrices=False)
-    if values[n_internal - 1] <= _RANK_GAP * values[0]:
+    if values[n_internal - 1] <= _SMALLEST_REAL * values[0]:
         msg = (
             f"the primitives span fewer than 3N − 6 = {n_internal} directions: singular "
             f"value {n_internal} of B is {values[n_internal - 1]:.1e}, the largest "
             f"{values[0]:.1e}"
         )
         raise InternalCoordinatesError(msg)
-    if len(values) > n_internal and values[n_internal] > _RANK_GAP * values[0]:
+    if len(values) > n_internal and values[n_internal] > _LARGEST_NULL * values[0]:
         msg = (
             f"the primitives span more than 3N − 6 = {n_internal} directions: singular "
             f"value {n_internal + 1} of B is {values[n_internal]:.1e}, the largest "
-            f"{values[0]:.1e}; a linear molecule, or a linear group (an alkyne, an allene) "
-            "bent so far that its angles' rows hold a rotation"
+            f"{values[0]:.1e}; a linear molecule, or a linear group (an alkyne between two "
+            "groups, an allene) bent by more than about 6°, whose angles' rows then hold "
+            "a rotation"
         )
         raise InternalCoordinatesError(msg)
     kept = (right[:n_internal].T / values[:n_internal]) @ left[:, :n_internal].T

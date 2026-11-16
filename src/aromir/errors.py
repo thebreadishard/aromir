@@ -34,4 +34,4 @@ class ResponseError(AromirError):
 
 
 class InternalCoordinatesError(AromirError):
-    """The primitives do not span exactly the 3N − 6 internal directions of the molecule."""
+    """The Wilson B matrix is not one of exactly 3N − 6 internal directions, or not finite."""
