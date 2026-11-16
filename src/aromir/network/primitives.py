@@ -67,6 +67,12 @@ measures a linear angle against a fixed axis, and where two such groups share an
 is bent by θ rad a rotation enters B at about 0.01 θ of the largest value. Start geometries
 of unsymmetrical alkynes and allenes reach 4e-4; the limit is a bend of about 0.1 rad."""
 
+_LARGEST_NULL_OF_REAL: Final = 0.1
+"""Singular value 3N − 5 of B must also lie at or below this share of value 3N − 6: the
+error of dropping a rotation follows their ratio. Up to 60 atoms the largest ratio measured
+is 0.064 (1,2-bis(phenylethynyl)benzene, B⁺ off by 0.5 %); a rod of twelve rings joined by
+alkynes (144 atoms) has 0.2 at its start geometry, and its B⁺ would be off by 23 %."""
+
 
 class PrimitiveSettings(BaseModel):
     """How the primitives are built and how a dihedral's value enters the features."""
@@ -196,6 +202,17 @@ def pseudo_inverse(wilson_b: FloatArray) -> FloatArray:
             f"{values[0]:.1e}; a linear molecule, or a linear group (an alkyne between two "
             "groups, an allene) bent by more than about 6°, whose angles' rows then hold "
             "a rotation"
+        )
+        raise InternalCoordinatesError(msg)
+    if (
+        len(values) > n_internal
+        and values[n_internal] > _LARGEST_NULL_OF_REAL * values[n_internal - 1]
+    ):
+        msg = (
+            f"singular values {n_internal} and {n_internal + 1} of B, "
+            f"{values[n_internal - 1]:.1e} and {values[n_internal]:.1e}, are too close to "
+            "tell the last internal direction from a rotation that bent linear groups let "
+            "in (a long molecule with several alkynes or allenes)"
         )
         raise InternalCoordinatesError(msg)
     kept = (right[:n_internal].T / values[:n_internal]) @ left[:, :n_internal].T

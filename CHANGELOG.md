@@ -51,5 +51,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   singular value: 3.5e-8 for diphenylacetylene at its minimum (the 76th molecule above:
   ΔH 6e17 before, 0.056 hartree/bohr² now), 1e-4 for start geometries of unsymmetrical
   alkynes. The count drops that direction, and B⁺ then differs from the B⁺ of a B without
-  rigid motions by about 0.3 θ of its largest element; a bend above about 0.1 rad (6°) is
-  refused.
+  rigid motions by about 0.3 θ of its largest element (measured on molecules of up to 60
+  atoms); a bend above about 0.1 rad (6°) is refused, and so is a molecule in which that
+  rotation comes within a tenth of the smallest real singular value — rods of several
+  alkynes and some 90 atoms or more.

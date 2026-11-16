@@ -142,3 +142,23 @@ def test_primitives_that_miss_an_internal_direction_are_refused() -> None:
 def test_a_matrix_that_is_no_b_is_refused(fill: float) -> None:
     with pytest.raises(InternalCoordinatesError, match="zero or not finite"):
         primitives.pseudo_inverse(np.full((40, 36), fill))
+
+
+@pytest.mark.parametrize(("leak_of_real", "refused"), [(0.02, False), (0.2, True)])
+def test_a_rotation_as_large_as_the_last_real_value_is_refused(
+    leak_of_real: float, *, refused: bool
+) -> None:
+    # A long rod: its last real singular value is small, and bent alkynes let a rotation in
+    # beside it. Both lie between the two limits that are relative to the largest value.
+    wilson_b = _benzene_b()
+    rank = wilson_b.shape[1] - N_RIGID_MOTIONS
+    left, values, right = np.linalg.svd(wilson_b, full_matrices=False)
+    values[rank - 1] = 5e-4 * values[0]
+    values[rank] = leak_of_real * values[rank - 1]
+    rod_like = (left * values) @ right
+    if refused:
+        with pytest.raises(InternalCoordinatesError, match="too close"):
+            primitives.pseudo_inverse(rod_like)
+    else:
+        largest = float(np.abs(primitives.pseudo_inverse(rod_like)).max())
+        assert largest < 1.0 / values[rank - 1]
