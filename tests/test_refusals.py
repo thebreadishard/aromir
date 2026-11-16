@@ -336,3 +336,13 @@ def test_an_error_in_the_code_itself_is_not_dressed_as_a_failure(
     monkeypatch.setattr(pipeline, "admit", bug)
     with pytest.raises(KeyError):
         cli.main(["check", "c1ccccc1"])
+
+
+def test_an_imine_isomer_named_through_its_hydrogen_is_said_to_be_left_open() -> None:
+    # The admitted SMILES is written without the hydrogen that carries the stereo mark,
+    # and the start geometry is embedded from that SMILES: the isomer is not what the
+    # user wrote, and the certificate must not pass over it.
+    for written in ("[H]/N=C(/C)c1ccccc1", "[H]/N=C(\\C)c1ccccc1"):
+        admitted = admission.admit(admission.parse_smiles(written))
+        assert admitted.smiles == "CC(=N)c1ccccc1"
+        assert admitted.unassigned_stereo == ("1 double bond",)

@@ -17,6 +17,7 @@ from aromir import (
     lowlevel,
     optimisation,
     pipeline,
+    records,
     release,
     repair,
     response,
@@ -25,13 +26,14 @@ from aromir import (
 )
 from aromir.dft import Resources
 from aromir.errors import InternalCoordinatesError, NotAMinimumError, RefusedError
+from aromir.molecule import Geometry
 
 from support import BENZENE_XYZ, bond_force_field, write_release
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from aromir.molecule import FloatArray, Geometry
+    from aromir.molecule import FloatArray
 
 
 def _ring_force_field(geometry: Geometry) -> tuple[tuple[int, int, float], ...]:
@@ -64,10 +66,7 @@ def synthetic_chemistry(monkeypatch: pytest.MonkeyPatch) -> Counter[str]:
         log.write("optimised\n")
         return optimisation.Optimisation(start, energy=-1.0, max_force=1e-6, n_steps=3)
 
-    def compute(
-        geometry: Geometry, _resources: Resources, _log: TextIO, *, repair_soft_modes: bool
-    ) -> lowlevel.LowLevel:
-        assert not repair_soft_modes, "the pipeline saves the analytic Hessian first"
+    def compute(geometry: Geometry, _resources: Resources, _log: TextIO) -> lowlevel.LowLevel:
         calls["low level"] += 1
         return _synthetic_low_level(geometry)
 
@@ -167,11 +166,9 @@ def _unstable_for(n_calls: int, monkeypatch: pytest.MonkeyPatch) -> list[Geometr
     stable = lowlevel.compute
     asked_at: list[Geometry] = []
 
-    def compute(
-        geometry: Geometry, resources: Resources, log: TextIO, *, repair_soft_modes: bool
-    ) -> lowlevel.LowLevel:
+    def compute(geometry: Geometry, resources: Resources, log: TextIO) -> lowlevel.LowLevel:
         asked_at.append(geometry)
-        result = stable(geometry, resources, log, repair_soft_modes=repair_soft_modes)
+        result = stable(geometry, resources, log)
         if len(asked_at) > n_calls:
             return result
         return replace(result, hessian=-result.hessian)
@@ -258,7 +255,8 @@ def test_an_unfinished_run_is_not_taken_up_by_another_request(
         pipeline.run_baseline(_benzene(folder))
     other = pipeline.Request(molecule=pipeline.MoleculeInput(smiles="c1ccncc1"), out=folder)
     with pytest.raises(
-        RefusedError, match=r"unfinished run of another request \(baseline c1ccccc1\)"
+        RefusedError,
+        match=r"unfinished run of another request \(baseline c1ccccc1; it differs in smiles",
     ):
         pipeline.run_baseline(other)
     loaded = release.load(write_release(tmp_path / "release"))
@@ -386,3 +384,168 @@ def test_the_network_runs_on_the_threads_the_request_allows(
     )
     pipeline.run_spectrum(request, loaded)
     assert asked == [3]
+
+
+def test_a_kill_between_two_writes_does_not_feed_the_network_a_measured_hessian(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    def measure(
+        geometry: Geometry, hessian: FloatArray, _resources: Resources, _log: TextIO
+    ) -> tuple[FloatArray, repair.Repair]:
+        synthetic_chemistry["repair"] += 1
+        stiffer = vibrations.project_rigid_motions(0.01 * np.eye(len(hessian)), geometry)
+        return hessian + stiffer, repair.Repair(2, -8.0, 14.0, 22.0)
+
+    monkeypatch.setattr(repair, "repair", measure)
+    write_json = records.write_json
+    writes = []
+
+    def killed_after_the_repair_is_saved(path: Path, record: dict[str, object]) -> None:
+        if path.name == pipeline.RUN_FILE:
+            writes.append(path)
+            if synthetic_chemistry["repair"] == 1 and len(writes) > 1:
+                raise KeyboardInterrupt
+        write_json(path, record)
+
+    monkeypatch.setattr(records, "write_json", killed_after_the_repair_is_saved)
+    loaded = release.load(write_release(tmp_path / "release"))
+    folder = tmp_path / "benzene"
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.run_spectrum(_benzene(folder), loaded)
+    monkeypatch.setattr(records, "write_json", write_json)
+    read: list[FloatArray] = []
+    corrections = release.Release.corrections
+
+    def spy(self: release.Release, geometry: Geometry, hessian: FloatArray) -> release.Corrections:
+        read.append(hessian)
+        return corrections(self, geometry, hessian)
+
+    monkeypatch.setattr(release.Release, "corrections", spy)
+    record = pipeline.run_spectrum(_benzene(folder), loaded)
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
+    analytic = _synthetic_low_level(Geometry(*_saved_geometry(folder))).hessian
+    np.testing.assert_array_equal(read[-1], analytic)
+    assert record["computation"]["soft_mode_repair"]["n_directions"] == 2
+
+
+def _saved_geometry(folder: Path) -> tuple[tuple[str, ...], FloatArray]:
+    stored = json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    return tuple(stored["symbols"]), np.array(stored["coords_bohr"])
+
+
+@pytest.mark.parametrize(
+    ("name", "content", "said"),
+    [
+        ("run.json", "[]", "run.json in"),
+        ("run.json", "{", "run.json in"),
+        ("lowlevel.npz", "not a zip file", "lowlevel.npz in"),
+        ("geometry.json", "{}", "geometry.json in"),
+    ],
+)
+def test_a_damaged_run_is_refused_in_words(
+    name: str,
+    content: str,
+    said: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_chemistry: Counter[str],
+) -> None:
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    working = repair.repair
+    monkeypatch.setattr(repair, "repair", stop)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    monkeypatch.setattr(repair, "repair", working)
+    (folder / name).write_text(content, encoding="utf-8")
+    with pytest.raises(
+        RefusedError, match="holds a damaged run; delete it to start over"
+    ) as refusal:
+        pipeline.run_baseline(_benzene(folder))
+    assert said in refusal.value.reasons[0]
+    assert synthetic_chemistry["optimise"] == 1
+
+
+@pytest.mark.usefixtures("synthetic_chemistry")
+def test_a_folder_a_killed_run_left_nothing_in_is_used(tmp_path: Path) -> None:
+    folder = tmp_path / "benzene"
+    folder.mkdir()
+    (folder / "pyscf.log").write_text("started", encoding="utf-8")
+    (folder / "run.json.tmp").write_text("{", encoding="utf-8")
+    pipeline.run_baseline(_benzene(folder))
+    assert (folder / "baseline.json").is_file()
+    assert (folder / "pyscf.log").read_text(encoding="utf-8").startswith("started")
+
+
+def test_a_hessian_is_not_reused_for_another_geometry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    working = repair.repair
+    monkeypatch.setattr(repair, "repair", stop)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    monkeypatch.setattr(repair, "repair", working)
+    optimise = optimisation.optimise
+
+    def elsewhere(start: Geometry, resources: Resources, log: TextIO) -> optimisation.Optimisation:
+        found = optimise(start, resources, log)
+        return replace(found, geometry=Geometry(start.symbols, start.coords_bohr * 1.01))
+
+    monkeypatch.setattr(optimisation, "optimise", elsewhere)
+    (folder / "geometry.json").unlink()
+    pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 1}
+
+
+def test_the_certificate_says_when_the_structure_is_one_off_a_saddle_point(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    _unstable_for(1, monkeypatch)
+    loaded = release.load(write_release(tmp_path / "release"))
+    record = pipeline.run_spectrum(_benzene(tmp_path / "benzene"), loaded)
+    assert synthetic_chemistry["optimise"] == 2
+    assert any(
+        line.startswith("the start geometry led to a saddle point (a mode at -")
+        for line in record["not_in_the_error"]
+    )
+    text = (tmp_path / "benzene" / "certificate.md").read_text(encoding="utf-8")
+    assert "- The start geometry led to a saddle point" in text
+    assert sorted(record["computation"]["steps"]) == [
+        "low level 1",
+        "low level 2",
+        "optimisation 1",
+        "optimisation 2",
+        "soft modes 1",
+        "soft modes 2",
+    ]
+
+
+def test_the_same_start_geometry_is_the_same_request_whatever_the_sign_of_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    working = repair.repair
+    monkeypatch.setattr(repair, "repair", stop)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    monkeypatch.setattr(repair, "repair", working)
+    admit = pipeline.admit
+
+    def a_hair_off(molecule: pipeline.MoleculeInput) -> tuple[object, Geometry]:
+        admitted, start = admit(molecule)
+        return admitted, Geometry(
+            start.symbols, np.where(start.coords_bohr == 0, -0.0, start.coords_bohr) - 1e-9
+        )
+
+    monkeypatch.setattr(pipeline, "admit", a_hair_off)
+    pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry["optimise"] == 1

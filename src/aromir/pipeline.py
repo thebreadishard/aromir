@@ -4,19 +4,25 @@ A molecule outside the domain is refused before the first computation, and a res
 never overwritten. Each step is saved when it ends — the optimised geometry, the Hessian,
 the measured soft modes — so that a failure after hours of quantum chemistry loses none of
 them: the same request into the same folder takes up where the run stopped.
+
+A saved step is one file, written through a temporary file and moved into place, that
+says of itself which attempt and which geometry it belongs to. No two files have to agree
+for a step to count, so a run killed between two writes resumes from a step that is
+whole or not there.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import zipfile
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Self, TextIO
 
 import numpy as np
 import torch
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from aromir import (
     admission,
@@ -45,11 +51,18 @@ CERTIFICATE_FILE: Final = "certificate.json"
 CERTIFICATE_TEXT_FILE: Final = "certificate.md"
 QUANTUM_LOG_FILE: Final = "pyscf.log"
 RUN_FILE: Final = "run.json"
-"""What the run was asked and which steps have ended: the record a later run resumes from."""
+"""What the run was asked, and whether it has stepped off a saddle point."""
+SADDLE_POINT_PREFIX: Final = "saddle_point_"
+"""The name a saddle point's geometry and Hessian are kept under."""
 
 OFF_THE_SADDLE_BOHR: Final = 0.1
 """How far the atom that moves most is displaced along an imaginary mode before the one
-second optimisation: far enough to leave a saddle point's flat top, small beside a bond."""
+second optimisation. On hydrogen peroxide's planar saddle point (B3LYP/6-31G*) this step
+leads the optimiser to the skew minimum; a flatter saddle may need more, and the run then
+ends as not a minimum, with everything kept."""
+
+_LEFTOVERS: Final = (QUANTUM_LOG_FILE,)
+"""What a run killed before its first step leaves behind: no reason to refuse the folder."""
 
 
 class MoleculeInput(BaseModel):
@@ -80,6 +93,34 @@ class Request(BaseModel):
     """Compute a corrected spectrum although no band of it can be licensed."""
 
 
+class _SaddlePoint(BaseModel):
+    """The saddle point a run has stepped off, and where its second optimisation starts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    imaginary_cm: float
+    restart: list[list[float]]
+
+
+class _Run(BaseModel):
+    """The state of a run that is not in its step files: the request and the saddle step."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    asked: dict[str, Any]
+    left_saddle_point: _SaddlePoint | None = None
+    steps: dict[str, dict[str, Any]] = {}
+    """What made each step: the time, command and package versions of the run that ran it."""
+
+    @property
+    def attempt(self) -> int:
+        """1 for the optimisation from the start geometry, 2 for the one off a saddle."""
+        return 1 if self.left_saddle_point is None else 2
+
+    def save(self, folder: Path) -> None:
+        records.write_json(folder / RUN_FILE, self.model_dump(mode="json"))
+
+
 def admit(molecule: MoleculeInput) -> tuple[admission.Admission, Geometry]:
     """Parse and check a molecule, and build its start geometry in the canonical order.
 
@@ -97,7 +138,8 @@ def admit(molecule: MoleculeInput) -> tuple[admission.Admission, Geometry]:
 
 def _asked(command: str, admitted: admission.Admission, start: Geometry) -> dict[str, Any]:
     """Return what identifies a run: the command, the molecule, its start and the level."""
-    coordinates = np.round(start.coords_bohr, 6).tobytes()
+    # Adding 0.0 turns a rounded -0.0 into 0.0: the two differ in their bytes only.
+    coordinates = (np.round(start.coords_bohr, 6) + 0.0).tobytes()
     start_hash = hashlib.sha256(" ".join(start.symbols).encode() + coordinates).hexdigest()
     return {
         "command": command,
@@ -107,167 +149,230 @@ def _asked(command: str, admitted: admission.Admission, start: Geometry) -> dict
     }
 
 
-def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+def _damaged(folder: Path, what: str, error: Exception) -> RefusedError:
+    reason = (
+        f"{what} in {folder} cannot be read ({type(error).__name__}: {error}): the folder "
+        "holds a damaged run; delete it to start over"
+    )
+    return RefusedError([reason])
+
+
+def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, _Run]:
     """Return the result folder and the state of the run it holds, new or to be resumed.
 
     Raises:
-        RefusedError: The folder holds a result, another request's run or other files.
+        RefusedError: The folder holds a result, another request's run, a damaged run or
+            other files.
     """
     folder = out.resolve()
     if folder.exists() and not folder.is_dir():
         raise RefusedError([f"{folder} is a file: --out names a folder"])
-    if not folder.exists() or not any(folder.iterdir()):
-        return folder, {"asked": asked}
-    if any((folder / name).exists() for name in (BASELINE_FILE, CERTIFICATE_FILE)):
+    held = [] if not folder.exists() else [path.name for path in folder.iterdir()]
+    if all(name in _LEFTOVERS or name.endswith(".tmp") for name in held):
+        return folder, _Run(asked=asked)
+    if BASELINE_FILE in held or CERTIFICATE_FILE in held:
         raise RefusedError([f"{folder} holds a result: a result is never overwritten"])
-    if not (folder / RUN_FILE).is_file():
+    if RUN_FILE not in held:
         raise RefusedError([f"{folder} is not empty: a result is never overwritten"])
-    state: dict[str, Any] = json.loads((folder / RUN_FILE).read_text(encoding="utf-8"))
-    if state.get("asked") != asked:
-        before = state.get("asked", {})
+    try:
+        state = _Run.model_validate_json((folder / RUN_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError, ValidationError) as error:
+        raise _damaged(folder, RUN_FILE, error) from error
+    if state.asked != asked:
+        differing = sorted(key for key in asked if state.asked.get(key) != asked[key])
         reason = (
             f"{folder} holds the unfinished run of another request "
-            f"({before.get('command')} {before.get('smiles')}): only the same command on the "
-            "same molecule and start geometry takes it up"
+            f"({state.asked.get('command')} {state.asked.get('smiles')}; it differs in "
+            f"{', '.join(differing)}): only the same command on the same molecule, start "
+            "geometry and level takes it up"
         )
         raise RefusedError([reason])
     return folder, state
 
 
 def _optimised(
-    start: Geometry, folder: Path, state: dict[str, Any], resources: Resources, log: TextIO
+    start: Geometry, folder: Path, state: _Run, resources: Resources, log: TextIO
 ) -> optimisation.Optimisation:
-    """Return the optimised geometry: the saved one, or a new one that is saved at once."""
-    saved = state.get("optimisation")
-    if saved is not None and (folder / GEOMETRY_FILE).is_file():
-        stored = json.loads((folder / GEOMETRY_FILE).read_text(encoding="utf-8"))
-        minimum = Geometry(tuple(stored["symbols"]), np.array(stored["coords_bohr"], float))
-        return optimisation.Optimisation(minimum, **saved)
+    """Return the optimised geometry: the saved one of this attempt, or a new one, saved."""
+    path = folder / GEOMETRY_FILE
+    if path.is_file():
+        try:
+            stored = json.loads(path.read_text(encoding="utf-8"))
+            if stored["attempt"] == state.attempt:
+                minimum = Geometry(tuple(stored["symbols"]), np.array(stored["coords_bohr"]))
+                return optimisation.Optimisation(minimum, **stored["optimisation"])
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise _damaged(folder, GEOMETRY_FILE, error) from error
     optimised = optimisation.optimise(start, resources, log)
-    records.write_json(folder / GEOMETRY_FILE, optimised.geometry.to_dict())
-    state["optimisation"] = {
-        "energy": optimised.energy,
-        "max_force": optimised.max_force,
-        "n_steps": optimised.n_steps,
+    record = optimised.geometry.to_dict() | {
+        "optimisation": {
+            "energy": optimised.energy,
+            "max_force": optimised.max_force,
+            "n_steps": optimised.n_steps,
+        },
+        "attempt": state.attempt,
     }
-    records.write_json(folder / RUN_FILE, state)
+    records.write_json(path, record)
+    state.steps[f"optimisation {state.attempt}"] = records.provenance()
+    state.save(folder)
     return optimised
 
 
 def _save_low_level(
-    folder: Path, state: dict[str, Any], low: lowlevel.LowLevel, *, soft_modes_measured: bool
+    folder: Path, minimum: Geometry, attempt: int, low: lowlevel.LowLevel, *, measured: bool
 ) -> None:
-    arrays = {"hessian": low.hessian, "polar_tensor": low.polar_tensor}
+    """Write the whole low-level step as one file: arrays, checks, and whose it is."""
+    arrays: dict[str, Any] = {
+        "hessian": low.hessian,
+        "polar_tensor": low.polar_tensor,
+        "coords_bohr": minimum.coords_bohr,
+        "attempt": np.array(attempt),
+        "soft_modes_measured": np.array(measured),
+        "energy": np.array(low.energy),
+        "refinement": np.array(list(asdict(low.refinement).values()), dtype=float),
+        "sum_rule_violation": np.array(low.sum_rule_violation),
+        "seconds": np.array(low.seconds),
+    }
     if low.analytic_hessian is not None:
         arrays["analytic_hessian"] = low.analytic_hessian
+    if low.soft_modes is not None:
+        arrays["soft_modes"] = np.array(list(asdict(low.soft_modes).values()), dtype=float)
     records.write_arrays(folder / LOW_LEVEL_FILE, arrays)
-    state["low_level"] = {
-        "energy": low.energy,
-        "refinement": asdict(low.refinement),
-        "sum_rule_violation": low.sum_rule_violation,
-        "seconds": low.seconds,
-        "soft_modes_measured": soft_modes_measured,
-        "soft_modes": None if low.soft_modes is None else asdict(low.soft_modes),
-    }
-    records.write_json(folder / RUN_FILE, state)
 
 
-def _saved_low_level(folder: Path, saved: dict[str, Any]) -> lowlevel.LowLevel:
-    with np.load(folder / LOW_LEVEL_FILE) as arrays:
-        hessian, polar_tensor = np.array(arrays["hessian"]), np.array(arrays["polar_tensor"])
-        analytic = np.array(arrays["analytic_hessian"]) if "analytic_hessian" in arrays else None
-    soft_modes = saved["soft_modes"]
-    return lowlevel.LowLevel(
-        energy=saved["energy"],
-        hessian=hessian,
-        polar_tensor=polar_tensor,
-        refinement=response.Refinement(**saved["refinement"]),
-        sum_rule_violation=saved["sum_rule_violation"],
-        seconds=saved["seconds"],
-        soft_modes=None if soft_modes is None else repair.Repair(**soft_modes),
-        analytic_hessian=analytic,
-    )
+def _saved_low_level(
+    folder: Path, minimum: Geometry, attempt: int
+) -> tuple[lowlevel.LowLevel, bool] | None:
+    """Return this attempt's saved low level of this geometry and whether it is measured.
+
+    None when there is none: no file, another attempt's, or another geometry's.
+    """
+    path = folder / LOW_LEVEL_FILE
+    if not path.is_file():
+        return None
+    try:
+        with np.load(path) as arrays:
+            saved = {name: np.array(arrays[name]) for name in arrays.files}
+        if int(saved["attempt"]) != attempt or not np.array_equal(
+            saved["coords_bohr"], minimum.coords_bohr
+        ):
+            return None
+        before, after, rounds, columns = saved["refinement"].tolist()
+        soft_modes = None
+        if "soft_modes" in saved:
+            n_directions, *positions = saved["soft_modes"].tolist()
+            soft_modes = repair.Repair(int(n_directions), *positions)
+        low = lowlevel.LowLevel(
+            energy=float(saved["energy"]),
+            hessian=saved["hessian"],
+            polar_tensor=saved["polar_tensor"],
+            refinement=response.Refinement(before, after, int(rounds), int(columns)),
+            sum_rule_violation=float(saved["sum_rule_violation"]),
+            seconds=float(saved["seconds"]),
+            soft_modes=soft_modes,
+            analytic_hessian=saved.get("analytic_hessian"),
+        )
+        return low, bool(saved["soft_modes_measured"])
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile) as error:
+        raise _damaged(folder, LOW_LEVEL_FILE, error) from error
 
 
 def _low_level(
-    minimum: Geometry, folder: Path, state: dict[str, Any], resources: Resources, log: TextIO
+    minimum: Geometry, folder: Path, state: _Run, resources: Resources, log: TextIO
 ) -> lowlevel.LowLevel:
     """Return the low level with its soft modes measured, saving each of the two steps.
 
     The analytic Hessian is on disk before the repair starts, so a repair that fails —
     for want of memory, say — costs the repair alone.
     """
-    saved = state.get("low_level")
-    if saved is not None and (folder / LOW_LEVEL_FILE).is_file():
-        low = _saved_low_level(folder, saved)
+    saved = _saved_low_level(folder, minimum, state.attempt)
+    if saved is None:
+        low = lowlevel.compute(minimum, resources, log)
+        _save_low_level(folder, minimum, state.attempt, low, measured=False)
+        state.steps[f"low level {state.attempt}"] = records.provenance()
+        state.save(folder)
+        measured = False
     else:
-        low = lowlevel.compute(minimum, resources, log, repair_soft_modes=False)
-        _save_low_level(folder, state, low, soft_modes_measured=False)
-    if not state["low_level"]["soft_modes_measured"]:
+        low, measured = saved
+    if not measured:
         repaired, record = repair.repair(minimum, low.hessian, resources, log)
         if record is not None:
             low = replace(low, hessian=repaired, analytic_hessian=low.hessian, soft_modes=record)
-        _save_low_level(folder, state, low, soft_modes_measured=True)
+        _save_low_level(folder, minimum, state.attempt, low, measured=True)
+        state.steps[f"soft modes {state.attempt}"] = records.provenance()
+        state.save(folder)
     return low
 
 
+def _attempt(
+    start: Geometry, folder: Path, state: _Run, resources: Resources, log: TextIO
+) -> tuple[optimisation.Optimisation, lowlevel.LowLevel, vibrations.Modes]:
+    left = state.left_saddle_point
+    begin = start if left is None else Geometry(start.symbols, np.array(left.restart))
+    optimised = _optimised(begin, folder, state, resources, log)
+    low = _low_level(optimised.geometry, folder, state, resources, log)
+    return optimised, low, vibrations.vibrational_modes(low.hessian, optimised.geometry)
+
+
+def _step_off(folder: Path, state: _Run, saddle: Geometry, modes: vibrations.Modes) -> None:
+    """Keep the saddle point's files under another name and record where to start again.
+
+    The copies are made first and the state is written last: until then a resumed run
+    finds the first attempt whole, and after it the first attempt's files no longer count,
+    because they say they are of attempt 1.
+    """
+    for name in (GEOMETRY_FILE, LOW_LEVEL_FILE):
+        (folder / f"{SADDLE_POINT_PREFIX}{name}").write_bytes((folder / name).read_bytes())
+    step, _ = vibrations.displacement(modes.vectors[:, 0], saddle.masses_amu, OFF_THE_SADDLE_BOHR)
+    state.left_saddle_point = _SaddlePoint(
+        imaginary_cm=float(modes.wavenumbers[0]),
+        restart=(saddle.coords_bohr + step).tolist(),
+    )
+    state.save(folder)
+
+
 def _compute(
-    start: Geometry, folder: Path, state: dict[str, Any], resources: Resources
+    start: Geometry, folder: Path, state: _Run, resources: Resources
 ) -> tuple[optimisation.Optimisation, lowlevel.LowLevel]:
     """Optimise and compute the low level, each step saved; step off a saddle point once.
 
     Whether the geometry is a minimum is read from the Hessian with its soft modes
-    measured: the analytic one can make a soft mode imaginary that is not.
+    measured: the analytic one can make a soft mode imaginary that is not. From a saddle
+    point the optimisation, the Hessian and the repair are run a second time, which
+    doubles the cost and can still end without a minimum.
 
     Raises:
         NotAMinimumError: The geometry still has an imaginary mode after one step along it
             and a second optimisation.
     """
     folder.mkdir(parents=True, exist_ok=True)
-    records.write_json(folder / RUN_FILE, state)
+    state.save(folder)
     with (folder / QUANTUM_LOG_FILE).open("a", encoding="utf-8") as log:
-        for _attempt in range(2):
-            left = state.get("left_saddle_point")
-            begin = start if left is None else Geometry(start.symbols, np.array(left["restart"]))
-            optimised = _optimised(begin, folder, state, resources, log)
-            low = _low_level(optimised.geometry, folder, state, resources, log)
-            modes = vibrations.vibrational_modes(low.hessian, optimised.geometry)
-            if not modes.n_imaginary or left is not None:
-                break
-            step, _ = vibrations.displacement(
-                modes.vectors[:, 0], optimised.geometry.masses_amu, OFF_THE_SADDLE_BOHR
-            )
-            # The saddle point's own files stay, under another name; the steps start over.
-            for name in (GEOMETRY_FILE, LOW_LEVEL_FILE):
-                (folder / name).replace(folder / f"saddle_point_{name}")
-            state.pop("optimisation")
-            state.pop("low_level")
-            state["left_saddle_point"] = {
-                "imaginary_cm": float(modes.wavenumbers[0]),
-                "restart": (optimised.geometry.coords_bohr + step).tolist(),
-            }
-            records.write_json(folder / RUN_FILE, state)
+        optimised, low, modes = _attempt(start, folder, state, resources, log)
+        if modes.n_imaginary and state.left_saddle_point is None:
+            _step_off(folder, state, optimised.geometry, modes)
+            optimised, low, modes = _attempt(start, folder, state, resources, log)
     if modes.n_imaginary:
         msg = (
             f"{modes.n_imaginary} imaginary mode(s), the lowest at {modes.wavenumbers[0]:.0f} "
             "cm⁻¹, also after one step along it and a second optimisation: no minimum was "
-            f"found. The geometry and the Hessian are kept in {folder}"
+            f"found. The geometries and the Hessians are kept in {folder}"
         )
         raise NotAMinimumError(msg)
     return optimised, low
 
 
 def _computation_record(
-    optimised: optimisation.Optimisation, low: lowlevel.LowLevel, state: dict[str, Any]
+    optimised: optimisation.Optimisation, low: lowlevel.LowLevel, state: _Run
 ) -> dict[str, Any]:
-    left = state.get("left_saddle_point")
+    left = state.left_saddle_point
     return {
         "level": {"functional": FUNCTIONAL, "basis": BASIS, "grid": list(GRID)},
         "optimisation": {
             "energy_hartree": optimised.energy,
             "max_force_hartree_per_bohr": optimised.max_force,
             "n_steps": optimised.n_steps,
-            "left_saddle_point_at_cm": None if left is None else left["imaginary_cm"],
+            "left_saddle_point_at_cm": None if left is None else left.imaginary_cm,
         },
         "checks": {
             "response_residual_before": low.refinement.residual_before,
@@ -278,6 +383,7 @@ def _computation_record(
         },
         "soft_mode_repair": None if low.soft_modes is None else asdict(low.soft_modes),
         "seconds_low_level": round(low.seconds, 1),
+        "steps": state.steps,
     }
 
 
@@ -359,8 +465,24 @@ def _no_network_inputs(start: Geometry, release: Release) -> list[str]:
     try:
         release.corrections(start, np.eye(3 * start.n_atoms))
     except (AromirError, ValueError) as error:
-        return [f"the network cannot read this molecule's start geometry: {error}"]
+        reason = (
+            f"the network cannot read this molecule's start geometry: {error}. If a linear "
+            "group is bent only in this start geometry, straighten it or give the SMILES"
+        )
+        return [reason]
     return []
+
+
+def _saddle_note(state: _Run) -> list[str]:
+    left = state.left_saddle_point
+    if left is None:
+        return []
+    note = (
+        f"the start geometry led to a saddle point (a mode at {left.imaginary_cm:.0f} cm⁻¹): "
+        f"the atoms were moved {OFF_THE_SADDLE_BOHR:g} bohr along that mode and optimised "
+        "again, so the structure computed is the minimum that step led to, one of two"
+    )
+    return [note]
 
 
 def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
@@ -402,7 +524,9 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
         folder / CORRECTION_FILE,
         {"mean": corrections.mean, "per_seed": np.stack(corrections.per_seed)},
     )
-    record = certificate.build(admitted, optimised.geometry, low, corrections, release) | {
+    record = certificate.build(admitted, optimised.geometry, low, corrections, release)
+    record["not_in_the_error"] += _saddle_note(state)
+    record |= {
         "computation": _computation_record(optimised, low, state),
         "provenance": launched,
     }

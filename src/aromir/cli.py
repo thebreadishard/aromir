@@ -63,7 +63,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     for computing in (baseline, spectrum):
         computing.add_argument(
-            "--out", type=Path, required=True, help="the result folder (empty or new)"
+            "--out",
+            type=Path,
+            required=True,
+            help="the result folder: new, empty, or holding the unfinished run of this request",
         )
         computing.add_argument(
             "--threads",
@@ -176,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"failed: {failure}", file=sys.stderr)  # noqa: T201  the command's answer
         return EXIT_FAILED
     except (OSError, ValueError, ArithmeticError) as failure:
-        if os.environ.get(TRACEBACK_VARIABLE):
+        if os.environ.get(TRACEBACK_VARIABLE, "0") not in ("", "0"):
             raise
         # A file that cannot be read or written, or a numerical step that broke: the
         # kind is named because the message alone may not say what happened.

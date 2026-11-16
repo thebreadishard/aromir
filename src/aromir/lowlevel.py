@@ -16,11 +16,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, eq=False)
 class LowLevel:
-    """The analytic B3LYP result the correction and the spectrum are built on.
+    """The B3LYP result the correction and the spectrum are built on.
 
     Attributes:
         energy: Total energy, hartree.
-        hessian: Cartesian Hessian, hartree/bohr², shape (3N, 3N), symmetric.
+        hessian: Cartesian Hessian, hartree/bohr², shape (3N, 3N), symmetric: pyscf's
+            analytic one, or that with its soft modes measured once the repair has run.
         polar_tensor: Atomic polar tensor ∂μ/∂R in e, shape (3, 3N).
         refinement: The residual check of the response the polar tensor rests on.
         sum_rule_violation: The polar tensor's translation sum rule, in e.
@@ -66,21 +67,17 @@ def _failed_checks(refinement: response.Refinement, violation: float) -> list[st
     return failures
 
 
-def compute(
-    geometry: Geometry, resources: Resources, log: TextIO, *, repair_soft_modes: bool
-) -> LowLevel:
+def compute(geometry: Geometry, resources: Resources, log: TextIO) -> LowLevel:
     """Compute the analytic Hessian and the polar tensor at a geometry.
 
     The orbital response is solved once. The Hessian is built on pyscf's own solution; the
     polar tensor on the solution after the residual check, because it is the more sensitive
-    of the two. With ``repair_soft_modes`` the Hessian's modes below 20 cm⁻¹ are then
-    measured (``aromir.repair``). A network must get the kind of Hessian it was trained
-    on, so its release decides; without a network the repaired Hessian is the better one.
+    of the two. The Hessian's soft modes are measured afterwards (``aromir.repair``), as
+    a step of its own, so that this result is saved before that one can fail.
 
     Raises:
         ConvergenceError: The SCF did not converge.
         ResponseError: The polar tensor failed its residual bound or its sum rule.
-        GridResponseMemoryError: The repair's gradients would exceed the allowed memory.
     """
     started = time.monotonic()
     scf = converged_scf(build_molecule(geometry, resources, log))
@@ -93,9 +90,6 @@ def compute(
     failures = _failed_checks(refinement, violation)
     if failures:
         raise ResponseError("; ".join(failures))
-    soft_modes = None
-    if repair_soft_modes:
-        hessian, soft_modes = repair.repair(geometry, hessian, resources, log)
     return LowLevel(
         energy=float(scf.e_tot),
         hessian=hessian,
@@ -103,5 +97,4 @@ def compute(
         refinement=refinement,
         sum_rule_violation=violation,
         seconds=time.monotonic() - started,
-        soft_modes=soft_modes,
     )

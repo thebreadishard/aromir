@@ -82,7 +82,8 @@ def _check_memory(scf: Scf, resources: Resources) -> None:
         msg = (
             f"the soft-mode repair needs about {needed_mb:.0f} MB for the grid-response "
             f"gradient of {molecule.natm} atoms; {resources.max_memory_mb} MB are allowed "
-            "(raise --max-memory-mb)"
+            "(raise --max-memory-mb; the same command into the same folder then takes the "
+            "run up from the saved Hessian)"
         )
         raise GridResponseMemoryError(msg)
 

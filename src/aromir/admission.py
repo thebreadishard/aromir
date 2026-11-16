@@ -108,6 +108,18 @@ def _unassigned_stereo(molecule: Mol) -> tuple[str, ...]:
     return tuple(f"{n} {name}{'s' if n > 1 else ''}" for name, n in counts.items() if n)
 
 
+def _as_computed(molecule: Mol, smiles: str) -> Mol:
+    """Return the molecule whose stereo the computed geometry has.
+
+    An xyz file's geometry is computed as it is. A SMILES is embedded from the admitted
+    SMILES, which drops a stereo mark that rests on a hydrogen (the N–H of an imine):
+    what that SMILES leaves open is open in the computation.
+    """
+    if molecule.GetNumConformers():
+        return molecule
+    return Chem.AddHs(Chem.MolFromSmiles(smiles))
+
+
 def _reasons_to_refuse(molecule: Mol) -> list[str]:
     atoms = list(molecule.GetAtoms())
     if not atoms:
@@ -148,9 +160,10 @@ def admit(molecule: Mol) -> Admission:
     reasons = _reasons_to_refuse(molecule)
     if reasons:
         raise RefusedError(reasons)
+    smiles = Chem.MolToSmiles(without_hydrogens(molecule))
     return Admission(
-        smiles=Chem.MolToSmiles(without_hydrogens(molecule)),
+        smiles=smiles,
         formula=CalcMolFormula(molecule),
         n_atoms=molecule.GetNumAtoms(),
-        unassigned_stereo=_unassigned_stereo(molecule),
+        unassigned_stereo=_unassigned_stereo(_as_computed(molecule, smiles)),
     )

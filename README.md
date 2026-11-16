@@ -95,8 +95,9 @@ stops being known.
 Two checks and a repair guard every result:
 
 - **The geometry is a minimum.** A geometry with an imaginary mode has no harmonic
-  spectrum. aromir steps along the mode once and optimises again; if an imaginary mode
-  remains, no spectrum is written, and the geometry and the Hessian stay in the folder.
+  spectrum. aromir steps along the mode once and optimises again, which costs the
+  optimisation and the Hessian a second time; if an imaginary mode remains, no spectrum
+  is written, and the geometries and the Hessians stay in the folder.
 - **The dipole derivatives satisfy their own equations.** pyscf's response solver can
   stop early ([pyscf#2702](https://github.com/pyscf/pyscf/issues/2702)), which a Hessian
   barely feels and a band height does. aromir checks the response against the

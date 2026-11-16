@@ -312,7 +312,8 @@ def _soft_mode_note(low: LowLevel, release: Release) -> str:
         return note
     return (
         f"{note}. The network read the Hessian without that repair, the kind it was trained "
-        "on, and its correction was added to the measured one"
+        "on, and its correction was added to the measured one; the family errors were "
+        "measured without the repair, so they say nothing of these modes"
     )
 
 

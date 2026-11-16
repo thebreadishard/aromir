@@ -32,7 +32,7 @@ def water_geometry() -> Geometry:
 
 @pytest.fixture(scope="module")
 def low(water_geometry: Geometry) -> lowlevel.LowLevel:
-    return lowlevel.compute(water_geometry, RESOURCES, io.StringIO(), repair_soft_modes=True)
+    return lowlevel.compute(water_geometry, RESOURCES, io.StringIO())
 
 
 def _dipole(geometry: Geometry) -> FloatArray:
@@ -115,4 +115,4 @@ def test_a_failed_check_refuses_the_result(
 ) -> None:
     monkeypatch.setattr(response, "SUM_RULE_LIMIT", 0.0)
     with pytest.raises(ResponseError, match="sum rule"):
-        lowlevel.compute(water_geometry, RESOURCES, io.StringIO(), repair_soft_modes=False)
+        lowlevel.compute(water_geometry, RESOURCES, io.StringIO())

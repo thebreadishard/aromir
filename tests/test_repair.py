@@ -81,7 +81,7 @@ def test_a_column_is_the_central_difference_of_the_gradients(
 @pytest.fixture(scope="module")
 def analytic(request: pytest.FixtureRequest) -> tuple[Geometry, lowlevel.LowLevel]:
     water: Geometry = request.getfixturevalue("water_for_module")
-    return water, lowlevel.compute(water, RESOURCES, io.StringIO(), repair_soft_modes=False)
+    return water, lowlevel.compute(water, RESOURCES, io.StringIO())
 
 
 @pytest.mark.quantum

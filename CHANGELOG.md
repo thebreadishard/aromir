@@ -71,7 +71,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A run no longer loses its quantum chemistry to a failure that comes after it. The
   optimised geometry, the analytic Hessian and the measured soft modes are each saved
   when they end, with `run.json` saying what was asked; the same command into the same
-  folder takes the run up. A Hessian with an imaginary mode is kept, not discarded.
+  folder takes the run up. Each saved step is one file that names its own attempt and
+  geometry, so a run killed between two writes resumes from a step that is whole or
+  absent; a damaged file is refused in words. A Hessian with an imaginary mode is
+  kept, not discarded.
 - A folder left by a failed run no longer blocks the next one: it is resumed by the
   same request and refused, with the request it holds, for another.
 - `aromir spectrum` with a release trained on analytic Hessians (v1.3) no longer skips
@@ -80,7 +83,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   imaginary lowest mode in the analytic Hessian). The soft modes are always measured; the minimum is decided
   and the positions are printed from the measured Hessian; the network reads the kind
   it was trained on; the certificate says so. From a real saddle point aromir steps
-  0.1 bohr along the mode and optimises once more.
+  0.1 bohr along the mode and optimises once more (tested with the quantum chemistry
+  itself on planar hydrogen peroxide). That runs the optimisation, the Hessian and the
+  repair a second time and can still end without a minimum; the certificate says when
+  the structure is one off a saddle point.
 - What the network cannot read is found on the start geometry, before the quantum
   chemistry, not after it.
 - The scaled-B3LYP baseline uses the scale factors of the basis set the Hessian is
