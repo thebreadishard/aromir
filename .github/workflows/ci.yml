@@ -48,6 +48,8 @@ jobs:
           cache: pip
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e ".[dev]"
+      # The versions this job tested with: the README's sentence on them is read here.
+      - run: pip list
       - run: pytest --cov --cov-report=term-missing
 
   package:

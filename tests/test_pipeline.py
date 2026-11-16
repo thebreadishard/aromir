@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tokenize
 import zlib
 from collections import Counter
 from dataclasses import replace
@@ -678,7 +679,7 @@ def _stopped_before_the_repair(folder: Path, monkeypatch: pytest.MonkeyPatch) ->
     [
         ({"hessian": np.zeros((3, 3))}, "arrays of shape (3, 3)"),
         ({"soft_modes_measured": np.array(True)}, "contradicts itself"),  # noqa: FBT003  a stored flag
-        ({"made_with": np.array("{}")}, "contradicts itself"),
+        ({"made_with": np.array("{}")}, "does not name the run that computed it"),
         ({"made_with": np.array("[]")}, "not a record"),
     ],
     ids=["another shape", "measured without a run", "no low-level run", "no record"],
@@ -701,19 +702,33 @@ def test_a_low_level_file_that_cannot_be_this_runs_is_a_damaged_run(
     assert synthetic_chemistry == {"optimise": 1, "low level": 1}
 
 
-def test_a_low_level_file_that_does_not_decompress_is_a_damaged_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+@pytest.mark.parametrize(
+    "raised",
+    [
+        zlib.error("Error -3 while decompressing data: invalid stored block lengths"),
+        tokenize.TokenError("EOF in multi-line statement", (2, 0)),
+        NotImplementedError("zip file version 21.0"),
+        RuntimeError("File 'hessian.npy' is encrypted, password required for extraction"),
+    ],
+    ids=["zlib", "npy header", "zip version", "encryption flag"],
+)
+def test_a_low_level_file_that_numpy_cannot_open_is_a_damaged_run(
+    raised: Exception,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_chemistry: Counter[str],
 ) -> None:
+    # What flipped bytes of a real file made numpy raise, each given back by a stand-in.
     folder = tmp_path / "benzene"
     _stopped_before_the_repair(folder, monkeypatch)
 
-    def does_not_decompress(*_arguments: object) -> None:
-        msg = "Error -3 while decompressing data: invalid stored block lengths"
-        raise zlib.error(msg)
+    def does_not_open(*_arguments: object) -> None:
+        raise raised
 
-    monkeypatch.setattr(np, "load", does_not_decompress)
-    with pytest.raises(RefusedError, match=r"lowlevel.npz in .* \(error: Error -3") as refusal:
+    monkeypatch.setattr(np, "load", does_not_open)
+    with pytest.raises(RefusedError, match=r"lowlevel\.npz in .* cannot be read") as refusal:
         pipeline.run_baseline(_benzene(folder))
+    assert type(raised).__name__ in refusal.value.reasons[0]
     assert "holds a damaged run" in refusal.value.reasons[0]
     assert synthetic_chemistry == {"optimise": 1, "low level": 1}
 
@@ -733,3 +748,29 @@ def test_a_geometry_file_that_does_not_name_its_run_is_refused_before_the_next_s
         pipeline.run_baseline(_benzene(folder))
     assert synthetic_chemistry == {"optimise": 1, "low level": 1}
     assert not (folder / "lowlevel.npz").exists()
+
+
+def test_a_saddle_points_file_that_does_not_name_its_run_is_refused_before_the_second_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    _unstable_for(1, monkeypatch)
+    optimise = optimisation.optimise
+
+    def killed_at_the_second(start: Geometry, resources: Resources, log: TextIO) -> object:
+        if synthetic_chemistry["optimise"]:
+            raise KeyboardInterrupt
+        return optimise(start, resources, log)
+
+    monkeypatch.setattr(optimisation, "optimise", killed_at_the_second)
+    folder = tmp_path / "benzene"
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.run_baseline(_benzene(folder))
+    monkeypatch.setattr(optimisation, "optimise", optimise)
+    kept = folder / "saddle_point_geometry.json"
+    stored = json.loads(kept.read_text(encoding="utf-8"))
+    del stored["made_with"]
+    kept.write_text(json.dumps(stored), encoding="utf-8")
+    said = r"saddle_point_geometry\.json or saddle_point_lowlevel\.npz in .* holds a damaged run"
+    with pytest.raises(RefusedError, match=said):
+        pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}

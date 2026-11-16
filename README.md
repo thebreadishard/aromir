@@ -173,7 +173,8 @@ upper bounds in `pyproject.toml` are those series; the lower bounds are not test
 decides the atom order and geomeTRIC the internal coordinates, and release v1.3's answer
 depends on both, so a newer series of either is allowed only after the pins in
 `tests/test_order_pins.py` pass with it. Those pins hold seven molecules' internal
-coordinates atom by atom; they are no proof for a molecule that is not among them.
+coordinates atom by atom; they are no proof for a molecule that is not among them. The
+versions are what pip chose in CI on 16 November 2026, not pins; each CI job lists its own.
 
 ## Develop
 

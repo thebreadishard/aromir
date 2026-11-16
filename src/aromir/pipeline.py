@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import tokenize
 import zipfile
 import zlib
 from dataclasses import asdict, replace
@@ -63,18 +64,23 @@ leads the optimiser to the skew minimum; a flatter saddle may need more, and the
 ends as not a minimum, with everything kept."""
 
 _LEFTOVERS: Final = (QUANTUM_LOG_FILE, f"{RUN_FILE}.tmp")
+"""What a run killed before its first step leaves behind: no reason to refuse the folder."""
 _UNREADABLE: Final = (
     OSError,
     ValueError,
     KeyError,
     TypeError,
     EOFError,
+    RuntimeError,
     zipfile.BadZipFile,
     zlib.error,
+    tokenize.TokenError,
 )
-"""What reading a damaged step file raises. A file changed in a way its archive's checksum
-and these checks do not see is read as it stands."""
-"""What a run killed before its first step leaves behind: no reason to refuse the folder."""
+"""What reading a damaged step file raises, as measured by flipping every byte of one:
+the archive's own errors, zlib's, a header numpy cannot parse (TokenError), a zip
+version or an encryption flag that is not there (NotImplementedError, RuntimeError). A
+file changed in a way its archive's checksum and these checks do not see is read as it
+stands."""
 
 
 class MoleculeInput(BaseModel):
@@ -307,8 +313,10 @@ def _saved_low_level(
         if low.hessian.shape != expected or low.polar_tensor.shape != (3, expected[0]):
             msg = f"arrays of shape {low.hessian.shape} and {low.polar_tensor.shape}"
             raise ValueError(msg)
-        measured = bool(saved["soft_modes_measured"])
-        if "low level" not in made_with or measured != ("soft modes" in made_with):
+        if "low level" not in made_with:
+            msg = "it does not name the run that computed it"
+            raise ValueError(msg)
+        if bool(saved["soft_modes_measured"]) != ("soft modes" in made_with):
             msg = "its record of the soft-mode step contradicts itself"
             raise ValueError(msg)
     except _UNREADABLE as error:
@@ -383,6 +391,10 @@ def _compute(
     """
     folder.mkdir(parents=True, exist_ok=True)
     state.save(folder)
+    if state.left_saddle_point is not None:
+        # The saddle point's files go into the record: read now, before a second
+        # optimisation and Hessian are paid for and end at a file that cannot be read.
+        _steps_of(folder, SADDLE_POINT_PREFIX)
     with (folder / QUANTUM_LOG_FILE).open("a", encoding="utf-8") as log:
         optimised, low, modes = _attempt(start, folder, state, resources, log)
         if modes.n_imaginary and state.left_saddle_point is None:
@@ -398,23 +410,26 @@ def _compute(
     return optimised, low
 
 
-def _made_with(folder: Path) -> dict[str, Any]:
+def _steps_of(folder: Path, prefix: str) -> dict[str, Any]:
+    """Return what made the steps saved under a prefix, each named with its attempt."""
+    geometry_name, low_level_name = f"{prefix}{GEOMETRY_FILE}", f"{prefix}{LOW_LEVEL_FILE}"
+    try:
+        stored = json.loads((folder / geometry_name).read_text(encoding="utf-8"))
+        attempt = stored["attempt"]
+        steps = {f"optimisation {attempt}": _a_record(stored["made_with"])}
+        with np.load(folder / low_level_name) as arrays:
+            made_with = _a_record(json.loads(str(arrays["made_with"])))
+    except _UNREADABLE as error:
+        raise _damaged(folder, f"{geometry_name} or {low_level_name}", error) from error
+    return steps | {f"{name} {attempt}": made for name, made in made_with.items()}
+
+
+def _made_with(folder: Path, state: _Run) -> dict[str, Any]:
     """Return what made each saved step of a finished run, read from the step files."""
-    steps: dict[str, Any] = {}
-    for prefix in (SADDLE_POINT_PREFIX, ""):
-        geometry_file = folder / f"{prefix}{GEOMETRY_FILE}"
-        if not geometry_file.is_file():
-            continue
-        try:
-            stored = json.loads(geometry_file.read_text(encoding="utf-8"))
-            attempt = stored["attempt"]
-            steps[f"optimisation {attempt}"] = _a_record(stored["made_with"])
-            with np.load(folder / f"{prefix}{LOW_LEVEL_FILE}") as arrays:
-                made_with = _a_record(json.loads(str(arrays["made_with"])))
-        except _UNREADABLE as error:
-            raise _damaged(folder, f"a step file ({prefix}*)", error) from error
-        steps |= {f"{name} {attempt}": made for name, made in made_with.items()}
-    return steps
+    saddle_point: dict[str, Any] = {}
+    if state.left_saddle_point is not None:
+        saddle_point = _steps_of(folder, SADDLE_POINT_PREFIX)
+    return saddle_point | _steps_of(folder, "")
 
 
 def _computation_record(
@@ -438,7 +453,7 @@ def _computation_record(
         },
         "soft_mode_repair": None if low.soft_modes is None else asdict(low.soft_modes),
         "seconds_low_level": round(low.seconds, 1),
-        "steps": _made_with(folder),
+        "steps": _made_with(folder, state),
     }
 
 

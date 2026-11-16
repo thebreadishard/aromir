@@ -135,7 +135,7 @@ def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = 
     for family, per_holdout in evaluation["first_order_error_per_seed_cm"].items():
         for name, errors in per_holdout.items():
             per_holdout[name] = errors[: len(seeds)]
-            means[family][name] = round(sum(per_holdout[name]) / len(seeds), 2)
+            means[family][name] = round(sum(per_holdout[name]) / len(per_holdout[name]), 2)
     evaluation.pop("atom_order_spread")
     (folder / "evaluation.json").write_text(json.dumps(evaluation), encoding="utf-8")
     (folder / "training.json").write_text(json.dumps(TRAINING), encoding="utf-8")
