@@ -280,7 +280,8 @@ def _limits(release: Release) -> list[str]:
             "- **A family is a rule, not a kind of bond.** "
             + " ".join(f"{family}: {rule}." for family, rule in families.RULES.items())
             + " aromir's certificate licenses a band only when its family is within the "
-            "licence line, the molecule lies inside the training sizes, the band is real for "
+            "licence line, the molecule lies inside the training sizes, its low-level mode "
+            "is real, the band is real for "
             "the seeds' mean and for every seed, and a CH-stretch or CH-oop band moves "
             "carbon-bound hydrogens. A "
             "ring-ip band is licensed as the rule takes it, C=O stretches included."

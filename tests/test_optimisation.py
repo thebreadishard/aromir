@@ -52,19 +52,27 @@ def test_running_out_of_steps_is_an_error(
         optimisation.optimise(distorted_water, RESOURCES, io.StringIO())
 
 
-def test_geometric_takes_its_q_chem_style_test_through_pyscf(
+def test_geometric_takes_the_displacement_thresholds_through_pyscf(
     distorted_water: Geometry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Two gradients are not enough under any test; the stage that follows runs under
-    # geomeTRIC's Q-Chem-style test, and geomeTRIC's own report says so.
+    # Two steps are not enough under any test; the stage that follows runs without the
+    # displacement criterion, and geomeTRIC's own report prints the thresholds it took.
     monkeypatch.setattr(optimisation, "MAX_STEPS", 2)
     log = io.StringIO()
     kept: list[optimisation.Progress] = []
     result = optimisation.optimise(distorted_water, RESOURCES, log, keep=kept.append)
-    assert "Q-Chem style convergence criteria requested" in log.getvalue()
-    said_flat = optimisation.Q_CHEM_VERDICT in log.getvalue()
-    assert (result.criteria == optimisation.ENERGY_AND_FORCES) == said_flat
-    assert (result.last_step is not None) == said_flat
+    report = log.getvalue()
+    for threshold in ("RMS-Grad  < 1.00e-05", "Max-Grad  < 1.50e-05", "|Delta-E| < 1.00e-06"):
+        assert report.count(f">  {threshold}") == 2
+    assert report.count(">  RMS-Disp  < inf") == report.count(">  Max-Disp  < inf") == 1
+    assert report.count(">  RMS-Disp  < 4.00e-05") == 1
+    assert report.count("Converged! =D") == 1
+    assert result.criteria == optimisation.ENERGY_AND_FORCES
+    last = result.last_step
+    assert last is not None
+    assert abs(last["energy_change_hartree"]) < 1e-6
+    assert last["rms_force_hartree_per_bohr"] < 1e-5
+    assert last["max_force_hartree_per_bohr"] < 1.5e-5
     assert result.n_steps == len(kept) == kept[-1].n_steps
     assert result.max_force < 5e-5
     np.testing.assert_allclose(kept[-1].coords_bohr, result.geometry.coords_bohr, atol=1e-10)

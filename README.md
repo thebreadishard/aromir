@@ -33,7 +33,8 @@ so is an isotope label, a SMILES with anything after it, and, for `aromir spectr
 molecule smaller or larger than the training molecules unless
 `--outside-training-sizes` asks for it. The command's exit code is 0 for a result, 2
 for a refusal, 1 for a failure, and 3 for a corrected spectrum that was written but
-holds an imaginary band. A failure is one line; with `AROMIR_TRACEBACK=1` in the
+holds an imaginary band (a band named a flat coordinate, see below, is no band position
+and does not count there). A failure is one line; with `AROMIR_TRACEBACK=1` in the
 environment an unforeseen one keeps its traceback, for a bug report.
 
 ## What works today
@@ -77,7 +78,8 @@ another atom order). The result folder then also holds
   mode's position and motion, which the certificate spells out) and the error measured
   for that family on molecules the network never saw;
 - whether the band is licensed: the family's error is within the licence line on every
-  hold-out, the molecule lies inside the training sizes, the band is real for the seeds'
+  hold-out, the molecule lies inside the training sizes, its low-level mode is real, the
+  band is real for the seeds'
   mean and for every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens
   (an O–H stretch
   falls under the CH-stretch rule and is not licensed), with the reason where it is not;
@@ -129,8 +131,9 @@ optimisation is taken up at its last gradient (`optimisation_progress.json`).
 
 A molecule with a nearly free torsion can have no minimum the optimiser's displacement
 criterion accepts, or none at all at this level. aromir then says what it did instead
-of ending without a spectrum: a geometry converged on energy and forces alone is named
-so on the certificate with the last step's numbers, and a band whose low-level mode is
+of ending without a spectrum: a geometry that meets geomeTRIC's tight thresholds for the
+energy and the forces but not, in 100 steps, the one for the displacement is named so
+on the certificate with the last step's numbers, and a band whose low-level mode is
 still imaginary and softer than 20 cm⁻¹ after one step off the saddle point is printed
 as a flat coordinate — no band position, never licensed.
 

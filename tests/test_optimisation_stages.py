@@ -8,7 +8,7 @@ does around geomeTRIC, not of geomeTRIC.
 from __future__ import annotations
 
 import io
-import sys
+import math
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -59,7 +59,6 @@ class _Solver:
 
     def __init__(self) -> None:
         self.verdicts: list[bool] = []
-        self.says = optimisation.Q_CHEM_VERDICT
         self.calls: list[dict[str, Any]] = []
 
     def kernel(
@@ -81,12 +80,7 @@ class _Solver:
             coords = coords + STEP_BOHR
             energy = -76.0 - 1e-9 * gradient
             callback({"coords": coords, "energy": energy, "gradients": np.full_like(coords, FORCE)})
-        verdict = self.verdicts.pop(0)
-        if verdict:
-            # geomeTRIC reports on stderr, and says there which test it converged on.
-            said = self.says if settings.get("qccnv") else "Converged! =D"
-            sys.stderr.write(f"{said}\n")
-        return verdict, _Stopped(coords)
+        return self.verdicts.pop(0), _Stopped(coords)
 
 
 @pytest.fixture
@@ -108,7 +102,8 @@ def test_an_optimisation_that_converges_is_asked_for_every_criterion(solver: _So
     assert len(solver.calls) == 1
     assert solver.calls[0]["set"] == "GAU_TIGHT"
     assert solver.calls[0]["maxsteps"] == optimisation.MAX_STEPS
-    assert "qccnv" not in solver.calls[0]
+    assert "convergence_drms" not in solver.calls[0]
+    assert "convergence_dmax" not in solver.calls[0]
     assert result.criteria == optimisation.ALL_CRITERIA
     assert result.last_step is None
     assert result.n_steps == GRADIENTS
@@ -125,13 +120,14 @@ def test_one_that_does_not_goes_on_under_geometrics_own_test_of_energy_and_force
     log = io.StringIO()
     result = optimisation.optimise(WATER, Resources(), log)
     first, second = solver.calls
-    assert second["qccnv"] is True
+    assert (second["convergence_drms"], second["convergence_dmax"]) == (math.inf, math.inf)
+    assert "qccnv" not in second
     assert second["set"] == "GAU_TIGHT"
     assert second["maxsteps"] == optimisation.FLAT_STEPS
     np.testing.assert_allclose(second["start"], first["start"] + GRADIENTS * STEP_BOHR)
     assert result.criteria == optimisation.ENERGY_AND_FORCES
     assert result.n_steps == 2 * GRADIENTS
-    assert "going on under geomeTRIC's Q-Chem-style test" in log.getvalue()
+    assert "going on without the displacement criterion" in log.getvalue()
     last = result.last_step
     assert last is not None
     assert last["energy_change_hartree"] == pytest.approx(-1e-9)
@@ -139,15 +135,6 @@ def test_one_that_does_not_goes_on_under_geometrics_own_test_of_energy_and_force
         np.sqrt(3) * STEP_BOHR * ANGSTROM_PER_BOHR
     )
     assert last["rms_force_hartree_per_bohr"] == pytest.approx(np.sqrt(3) * FORCE)
-
-
-def test_one_that_then_meets_every_criterion_is_not_called_flat(solver: _Solver) -> None:
-    solver.verdicts = [False, True]
-    solver.says = "Converged! =D"
-    result = _optimise()
-    assert solver.calls[1]["qccnv"] is True
-    assert result.criteria == optimisation.ALL_CRITERIA
-    assert result.last_step is None
 
 
 def test_one_that_converges_on_neither_is_an_error(solver: _Solver) -> None:
@@ -181,5 +168,5 @@ def test_a_progress_that_has_used_its_steps_goes_on_under_energy_and_forces(
     solver.verdicts = [True]
     reached = optimisation.Progress(WATER.coords_bohr.tolist(), optimisation.MAX_STEPS)
     result = _optimise(taken_up=reached)
-    assert [call.get("qccnv") for call in solver.calls] == [True]
+    assert [call.get("convergence_dmax") for call in solver.calls] == [math.inf]
     assert result.criteria == optimisation.ENERGY_AND_FORCES

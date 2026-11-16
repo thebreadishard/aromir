@@ -64,14 +64,16 @@ PROGRESS_FILE: Final = "optimisation_progress.json"
 
 SADDLE_ENERGY_LOWERING_HARTREE: Final = 1e-5
 """What the step off a saddle point lowers the energy by in the harmonic picture, ½·|k|·q²
-along the imaginary mode: ten times geomeTRIC's energy criterion, so that the second
-optimisation starts on a slope it can tell from noise."""
+along the imaginary mode, where ``LARGEST_STEP_OFF_BOHR`` allows a step that long: ten
+times geomeTRIC's energy criterion. A chosen value."""
 
 LARGEST_STEP_OFF_BOHR: Final = 0.3
-"""The most the atom that moves most is moved by that step. A soft imaginary mode is the top
-of a shallow double well, not of a parabola: the harmonic picture asks for bohrs there,
-and the well is long past. On 3-vinylfuran (a mode at -12 cm⁻¹, B3LYP/6-31G*) the energy
-was still falling 0.22 bohr from the saddle point, 0.16 cm⁻¹ below it."""
+"""The most the atom that moves most is moved by that step: a chosen value. A soft imaginary
+mode is the top of a shallow double well, not of a parabola; the harmonic picture asks
+for bohrs there, so every saddle point softer than about 100 cm⁻¹ gets this step, and
+with it a lowering far below ``SADDLE_ENERGY_LOWERING_HARTREE``. One case stands behind
+the size: 3-vinylfuran (a mode at -12 cm⁻¹, B3LYP/6-31G*), whose minimum the optimiser
+reached 0.22 bohr from its saddle point, 0.16 cm⁻¹ below it."""
 
 _LEFTOVERS: Final = (QUANTUM_LOG_FILE, f"{RUN_FILE}.tmp")
 """What a run killed before its first step leaves behind: no reason to refuse the folder."""
@@ -235,10 +237,14 @@ def _saved_progress(folder: Path, state: _Run, start: Geometry) -> optimisation.
         if stored["attempt"] != state.attempt:
             return None
         coords = np.array(stored["coords_bohr"], dtype=float)
+        n_steps = int(stored["n_steps"])
         if coords.shape != start.coords_bohr.shape or not np.isfinite(coords).all():
             msg = f"coordinates of shape {coords.shape}, or not numbers"
             raise ValueError(msg)
-        return optimisation.Progress(coords.tolist(), int(stored["n_steps"]))
+        if n_steps < 1:
+            msg = f"{n_steps} gradients taken"
+            raise ValueError(msg)
+        return optimisation.Progress(coords.tolist(), n_steps)
     except _UNREADABLE as error:
         raise _damaged(folder, PROGRESS_FILE, error) from error
 
@@ -442,8 +448,8 @@ def _compute(
     molecule is flat along them, and the spectrum is printed with those bands named.
 
     Raises:
-        NotAMinimumError: The geometry still has an imaginary mode after one step along it
-            and a second optimisation.
+        NotAMinimumError: After one step along an imaginary mode and a second optimisation
+            the geometry still has an imaginary mode at or beyond the soft-mode line.
     """
     folder.mkdir(parents=True, exist_ok=True)
     state.save(folder)
@@ -620,18 +626,23 @@ def _saddle_note(state: _Run) -> list[str]:
 
 def _convergence_note(optimised: optimisation.Optimisation) -> list[str]:
     """Say when the geometry is converged on energy and forces alone, with the numbers."""
-    last = optimised.last_step
-    if optimised.criteria != optimisation.ENERGY_AND_FORCES or last is None:
+    if optimised.criteria != optimisation.ENERGY_AND_FORCES:
         return []
+    last = optimised.last_step
+    if last is None:
+        msg = "an optimisation converged on energy and forces holds no record of its last step"
+        raise ValueError(msg)
     note = (
         "the geometry is converged on energy and forces; the displacement criterion was "
-        f"not met on a flat coordinate ({optimised.n_steps} gradients; the last step changed "
-        f"the energy by {last['energy_change_hartree']:.1e} hartree, with forces of "
+        f"not met on a flat coordinate in {optimisation.MAX_STEPS} steps and was not applied "
+        f"after them ({optimised.n_steps} gradients in all; geomeTRIC's "
+        f"{optimisation.CONVERGENCE_SET} thresholds for the energy change and for the rms and "
+        "the largest force were met; between the last two gradients the energy changed by "
+        f"{last['energy_change_hartree']:.1e} hartree and the atoms moved by "
+        f"{last['rms_displacement_angstrom']:.1e} rms and "
+        f"{last['max_displacement_angstrom']:.1e} Å at most, with forces of "
         f"{last['rms_force_hartree_per_bohr']:.1e} rms and "
-        f"{last['max_force_hartree_per_bohr']:.1e} hartree/bohr at most, and moved the atoms "
-        f"by {last['rms_displacement_angstrom']:.1e} rms and "
-        f"{last['max_displacement_angstrom']:.1e} Å at most; geomeTRIC's "
-        f"{optimisation.CONVERGENCE_SET} asks for the energy, the forces and the displacement)"
+        f"{last['max_force_hartree_per_bohr']:.1e} hartree/bohr at most at the end)"
     )
     return [note]
 

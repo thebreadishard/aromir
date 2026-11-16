@@ -857,21 +857,91 @@ def test_the_step_off_a_saddle_point_is_sized_from_its_curvature_and_capped() ->
     assert soft == pipeline.LARGEST_STEP_OFF_BOHR
 
 
-def _flat_at_minus_ten(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Give every low-level Hessian one imaginary mode at -10 cm⁻¹, softer than the line."""
+def _imaginary_at(monkeypatch: pytest.MonkeyPatch, *wavenumbers: float) -> None:
+    """Give every low-level Hessian its lowest modes at these imaginary positions, cm⁻¹."""
     stable = lowlevel.compute
 
     def compute(geometry: Geometry, resources: Resources, log: TextIO) -> lowlevel.LowLevel:
         result = stable(geometry, resources, log)
         modes = vibrations.vibrational_modes(result.hessian, geometry)
-        weighted = modes.vectors[:, 0] * vibrations.mass_weights(geometry.masses_amu)
-        now = (modes.wavenumbers[0] / WAVENUMBERS_PER_HARTREE) ** 2
-        wanted = -((10.0 / WAVENUMBERS_PER_HARTREE) ** 2)
-        return replace(
-            result, hessian=result.hessian + (wanted - now) * np.outer(weighted, weighted)
-        )
+        hessian = result.hessian.copy()
+        for index, wavenumber in enumerate(wavenumbers):
+            weighted = modes.vectors[:, index] * vibrations.mass_weights(geometry.masses_amu)
+            now = (modes.wavenumbers[index] / WAVENUMBERS_PER_HARTREE) ** 2
+            wanted = -((wavenumber / WAVENUMBERS_PER_HARTREE) ** 2)
+            hessian += (wanted - now) * np.outer(weighted, weighted)
+        return replace(result, hessian=hessian)
 
     monkeypatch.setattr(lowlevel, "compute", compute)
+
+
+def _flat_at_minus_ten(monkeypatch: pytest.MonkeyPatch) -> None:
+    _imaginary_at(monkeypatch, -10.0)
+
+
+@pytest.mark.parametrize("wavenumbers", [(-25.0,), (-30.0, -10.0)], ids=["one", "one of two"])
+def test_an_imaginary_mode_beyond_the_soft_mode_line_still_gets_no_spectrum(
+    wavenumbers: tuple[float, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_chemistry: Counter[str],
+) -> None:
+    _imaginary_at(monkeypatch, *wavenumbers)
+    said = f"{len(wavenumbers)} imaginary mode\\(s\\), the lowest at {wavenumbers[0]:.0f} cm"
+    with pytest.raises(NotAMinimumError, match=said):
+        pipeline.run_baseline(_benzene(tmp_path / "benzene"))
+    assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
+    assert not (tmp_path / "benzene" / "baseline.json").exists()
+
+
+def test_the_first_attempts_progress_is_not_the_second_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    # A progress file that outlived the first optimisation says so itself: the second
+    # optimisation, off the saddle point, does not start from it.
+    _unstable_for(1, monkeypatch)
+    optimise = optimisation.optimise
+    step_off = pipeline._step_off  # noqa: SLF001  the moment between the two attempts
+    taken_up_from: list[object] = []
+    folder = tmp_path / "benzene"
+
+    def watched(
+        start: Geometry, resources: Resources, log: TextIO, **progress: object
+    ) -> optimisation.Optimisation:
+        taken_up_from.append(progress["taken_up"])
+        return optimise(start, resources, log)
+
+    def leaving_a_stale_file(
+        folder: Path,
+        state: Any,  # noqa: ANN401  the run's own state, a private class
+        saddle: Geometry,
+        modes: vibrations.Modes,
+    ) -> None:
+        step_off(folder, state, saddle, modes)
+        stale = {"attempt": 1, "coords_bohr": saddle.coords_bohr.tolist(), "n_steps": 7}
+        (folder / pipeline.PROGRESS_FILE).write_text(json.dumps(stale), encoding="utf-8")
+
+    monkeypatch.setattr(optimisation, "optimise", watched)
+    monkeypatch.setattr(pipeline, "_step_off", leaving_a_stale_file)
+    pipeline.run_baseline(_benzene(folder))
+    assert taken_up_from == [None, None]
+    assert synthetic_chemistry["optimise"] == 2
+
+
+@pytest.mark.parametrize("n_steps", [0, -5])
+def test_a_saved_progress_without_a_gradient_is_a_damaged_run(
+    n_steps: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def killed(start: Geometry, *_arguments: object, **progress: Any) -> None:  # noqa: ANN401
+        progress["keep"](optimisation.Progress(start.coords_bohr.tolist(), n_steps))
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(optimisation, "optimise", killed)
+    folder = tmp_path / "benzene"
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.run_baseline(_benzene(folder))
+    with pytest.raises(RefusedError, match=r"optimisation_progress\.json in .* damaged run"):
+        pipeline.run_baseline(_benzene(folder))
 
 
 def test_a_flat_coordinate_gets_its_spectrum_with_that_band_named_and_unlicensed(
@@ -932,10 +1002,11 @@ def test_a_geometry_converged_on_energy_and_forces_says_so_with_its_numbers(
     assert loaded_back["optimisation"]["last_step"] == last_step
     said = (
         "the geometry is converged on energy and forces; the displacement criterion was not "
-        "met on a flat coordinate (104 gradients; the last step changed the energy by -6.7e-10 "
-        "hartree, with forces of 1.3e-06 rms and 2.3e-06 hartree/bohr at most, and moved the "
-        "atoms by 4.2e-04 rms and 9.1e-04 Å at most; geomeTRIC's GAU_TIGHT asks for the energy, "
-        "the forces and the displacement)"
+        "met on a flat coordinate in 100 steps and was not applied after them (104 gradients "
+        "in all; geomeTRIC's GAU_TIGHT thresholds for the energy change and for the rms and "
+        "the largest force were met; between the last two gradients the energy changed by "
+        "-6.7e-10 hartree and the atoms moved by 4.2e-04 rms and 9.1e-04 Å at most, with "
+        "forces of 1.3e-06 rms and 2.3e-06 hartree/bohr at most at the end)"
     )
     assert loaded_back["notes"] == [said]
     record = pipeline.run_spectrum(
