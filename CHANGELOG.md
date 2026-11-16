@@ -34,6 +34,36 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The licence is read on the error of what the release delivers** (decided on 16
+  November 2026, after both quantities were measured on both hold-outs). That is the
+  band error of the seeds' mean: the mean ΔH added to the Hessian, the sum
+  diagonalised, each corrected band paired with its reference band. Until now the
+  record held, unnamed, the first-order error of each seed averaged over the seeds,
+  the number a training run reports. It is the larger number here for two reasons:
+  averaging the seeds removes part of each seed's error, and a first-order shift is
+  not the shift of the diagonalised Hessian (for 'other' the first-order error of the
+  seeds' mean is still 3.00 / 3.02 cm⁻¹, measured outside the package). For v1.3 the
+  band error is 1.43 / 0.95 / 1.64 / 2.78 cm⁻¹
+  on hold-out (a) and 1.91 / 2.19 / 1.88 / 2.77 on (b) (ring-ip, CH-stretch, CH-oop,
+  other), where the record printed 1.77 / 1.19 / 2.17 / 3.62 and 2.12 / 2.50 / 2.70 /
+  3.89 from the training runs' own records. All four families are now within the 3 cm⁻¹ line, 'other' included. On
+  hold-out (a) 'other' rests on eight molecules: resampling them puts its error
+  between 1.68 and 3.76 cm⁻¹, and the card and every certificate say so in their
+  first paragraph.
+- `evaluation.json` has a second format (`record_version: 2`) that names both
+  quantities: `band_error_seed_mean_cm`, with the number of bands and the resampling
+  interval per family and hold-out, and `first_order_error_per_seed_cm` with its
+  mean. v1.3's record is rewritten in it, every number from `aromir evaluate`; its
+  first-order numbers differ from the training runs' by up to 0.08 cm⁻¹ (CH-oop on
+  hold-out (b): 2.46 / 2.93 / 2.80 against 2.44 / 2.95 / 2.72). Its weights and its
+  network version are unchanged. A record of the first format is refused with the reason: read silently,
+  its numbers would be printed under the name of a quantity they are not.
+- `aromir evaluate <folder>` measures a release on hold-out molecules with stored
+  Hessians (`aromir.evaluation` gives the file format) and writes both quantities:
+  the one implementation of the numbers a record of format 2 holds, to two decimals,
+  on which the licence is read. On v1.3's two hold-outs its band errors reproduce the
+  measurement made outside the package to the second decimal.
+
 - A band is licensed for the molecule it belongs to, not for its family alone: the
   family's error must be within the licence line on every hold-out, the molecule inside
   the training sizes, the band real for the seeds' mean and for every seed, and a

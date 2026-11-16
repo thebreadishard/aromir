@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Final, Literal, Self, TypeVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -41,6 +41,8 @@ INVARIANCE_FILE: Final = "invariance.json"
 SEED_FILES: Final = "seed-*.json"
 MIN_SEEDS: Final = 2
 """A band's spread over the seeds needs at least two of them."""
+_MEAN_TOLERANCE_CM: Final = 0.011
+"""A record holds two decimals: a mean of rounded seeds may differ from the rounded mean."""
 _Record = TypeVar("_Record", bound=BaseModel)
 BUNDLED_VERSION: Final = "1.3"
 """The network version whose release ships inside the package."""
@@ -73,17 +75,54 @@ class AtomOrderSpread(BaseModel):
     source: str
 
 
+class BandError(BaseModel):
+    """The error of the corrected band positions of the seeds' mean, for one family on one hold-out.
+
+    Attributes:
+        rms_cm: The rms difference to the reference band each corrected band is paired
+            with, cm⁻¹.
+        n_modes: The bands it is the rms of.
+        interval_cm: The 2.5th and 97.5th percentile of that rms when the hold-out's
+            molecules are resampled with replacement.
+        share_of_resamples_within_line: The share of those resamples below the licence line.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    rms_cm: float = Field(ge=0, allow_inf_nan=False)
+    n_modes: int = Field(ge=1)
+    interval_cm: tuple[float, float]
+    share_of_resamples_within_line: float = Field(ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _an_interval(self) -> Self:
+        low, high = self.interval_cm
+        if not (math.isfinite(low) and math.isfinite(high) and 0 <= low <= high):
+            msg = f"{self.interval_cm} is no interval of an rms error"
+            raise ValueError(msg)
+        return self
+
+
 class Evaluation(BaseModel):
     """A network version's measured error, as its evaluation records state it.
 
+    Two quantities are kept apart by name (``aromir.evaluation`` defines both): the band
+    error of the seeds' mean, which is what the product delivers and what the licence is
+    read on, and the trainer's first-order error per seed.
+
     Attributes:
+        record_version: The format of this record; 2 is the first that names both.
         network_version: The version the numbers belong to.
         higher_level: The level of theory the network corrects towards.
-        licence_line_cm: A family is licensed when its error is within this on every hold-out.
+        licence_line_cm: A family is licensed when its band error is within this on every
+            hold-out.
+        licence_basis: Which quantity the licence is read on, and since when.
         holdouts: The hold-out sets, by name.
-        errors_cm: Per family and hold-out, the seed-mean rms error of the corrected
-            positions against the higher level, cm⁻¹.
-        seed_errors_cm: The same per seed.
+        band_error_seed_mean_cm: Per family and hold-out, the error of the corrected band
+            positions of the seeds' mean.
+        first_order_error_per_seed_cm: Per family and hold-out, each seed's first-order
+            error.
+        first_order_error_per_seed_mean_cm: The mean of those over the seeds.
         coupled_cluster: What is known at the coupled-cluster level.
         sources: The evaluation records the numbers were read from.
         atom_order_spread: The measured spread between atom orders, when it was measured.
@@ -91,19 +130,40 @@ class Evaluation(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    record_version: Literal[2]
     network_version: str
     higher_level: str
     licence_line_cm: float = Field(gt=0, allow_inf_nan=False)
+    licence_basis: str = Field(min_length=1)
     holdouts: dict[str, Holdout]
-    errors_cm: dict[Family, dict[str, float]]
-    seed_errors_cm: dict[Family, dict[str, list[float]]]
+    band_error_seed_mean_cm: dict[Family, dict[str, BandError]]
+    first_order_error_per_seed_cm: dict[Family, dict[str, list[float]]]
+    first_order_error_per_seed_mean_cm: dict[Family, dict[str, float]]
     coupled_cluster: str
     sources: list[str]
     atom_order_spread: AtomOrderSpread | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _not_the_first_format(cls, record: Any) -> Any:  # noqa: ANN401  a record before it is validated
+        if isinstance(record, dict) and "errors_cm" in record:
+            msg = (
+                "a record of the first format: its `errors_cm` are first-order errors per "
+                "seed, which are not the error of what the release delivers and are not read "
+                "as it. Measure the release with `aromir evaluate` and write a record of "
+                "format 2"
+            )
+            raise ValueError(msg)
+        return record
+
     @model_validator(mode="after")
     def _every_family_on_every_holdout(self) -> Self:
-        for table in (self.errors_cm, self.seed_errors_cm):
+        tables: tuple[dict[Family, Any], ...] = (
+            self.band_error_seed_mean_cm,
+            self.first_order_error_per_seed_cm,
+            self.first_order_error_per_seed_mean_cm,
+        )
+        for table in tables:
             if set(table) != set(FAMILIES):
                 msg = f"errors for {sorted(table)}, expected every family of {sorted(FAMILIES)}"
                 raise ValueError(msg)
@@ -118,21 +178,57 @@ class Evaluation(BaseModel):
 
     @model_validator(mode="after")
     def _every_error_is_an_error(self) -> Self:
-        errors = [error for per in self.errors_cm.values() for error in per.values()]
-        errors += [
-            error
-            for per in self.seed_errors_cm.values()
-            for seeds in per.values()
-            for error in seeds
-        ]
-        if not all(math.isfinite(error) and error >= 0 for error in errors):
-            msg = "an rms error is negative or not a finite number"
-            raise ValueError(msg)
+        for family, per_holdout in self.first_order_error_per_seed_cm.items():
+            for holdout, seeds in per_holdout.items():
+                mean = self.first_order_error_per_seed_mean_cm[family][holdout]
+                if not all(math.isfinite(error) and error >= 0 for error in [*seeds, mean]):
+                    msg = "an rms error is negative or not a finite number"
+                    raise ValueError(msg)
+                if not seeds or abs(mean - sum(seeds) / len(seeds)) > _MEAN_TOLERANCE_CM:
+                    msg = f"{family} on ({holdout}): {mean} is not the mean of the seeds' {seeds}"
+                    raise ValueError(msg)
         return self
 
     def licensed(self, family: Family) -> bool:
-        """Tell whether a family's error is within the licence line on every hold-out."""
-        return all(error <= self.licence_line_cm for error in self.errors_cm[family].values())
+        """Tell whether a family's band error is within the licence line on every hold-out.
+
+        The comparison is made on the record's numbers, which hold two decimals: a family
+        measured at 3.004 cm⁻¹ is recorded as 3.00 and is within a line of 3.
+        """
+        errors = self.band_error_seed_mean_cm[family].values()
+        return all(error.rms_cm <= self.licence_line_cm for error in errors)
+
+    def caveats(self) -> list[str]:
+        """Say, for every licensed family on thin ground, what the licence rests on."""
+        sentences = []
+        for family in FAMILIES:
+            if not self.licensed(family):
+                continue
+            for holdout, error in self.thin_ground(family).items():
+                low, high = error.interval_cm
+                sentences.append(
+                    f"'{family}' is within the licence line on hold-out ({holdout}) at "
+                    f"{error.rms_cm:.2f} cm⁻¹, on {self.holdouts[holdout].n_molecules} molecules: "
+                    f"resampling those molecules puts the error between {low:.2f} and {high:.2f} "
+                    f"cm⁻¹, and {1 - error.share_of_resamples_within_line:.0%} of the resamples "
+                    "lie above the line"
+                )
+        return sentences
+
+    def thin_ground(self, family: Family) -> dict[str, BandError]:
+        """Return the hold-outs on which a family's licence could fall with other molecules.
+
+        Those are the hold-outs where the upper end of the resampling interval is above
+        the line, for a family that is licensed; a family that is not has no licence to
+        lose.
+        """
+        if not self.licensed(family):
+            return {}
+        return {
+            holdout: error
+            for holdout, error in self.band_error_seed_mean_cm[family].items()
+            if error.rms_cm <= self.licence_line_cm < error.interval_cm[1]
+        }
 
 
 class Training(BaseModel):

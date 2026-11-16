@@ -211,7 +211,7 @@ def _wider_network(record: dict[str, Any]) -> None:
 
 
 def _negative_error(record: dict[str, Any]) -> None:
-    record["errors_cm"]["other"]["a"] = -1.0
+    record["first_order_error_per_seed_mean_cm"]["other"]["a"] = -1.0
 
 
 def _too_many(record: dict[str, Any]) -> None:

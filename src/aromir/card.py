@@ -58,6 +58,7 @@ def _summary(release: Release) -> list[str]:
         ),
         f"- **Licensed families:** {', '.join(licensed) or 'none'}.",
         f"- **Not licensed:** {', '.join(unlicensed) or 'none'}.",
+        *(f"- **On thin ground:** {caveat}." for caveat in evaluation.caveats()),
         (
             f"- **Use it through:** [aromir]({REPOSITORY}), which builds the inputs, applies the "
             "correction and writes a certificate for every band."
@@ -70,13 +71,29 @@ def _evaluation_table(evaluation: Evaluation) -> list[str]:
     header = " | ".join(f"({name}), {h.n_molecules} molecules" for name, h in holdouts.items())
     lines = [f"| family | {header} | licensed |", "|---|" + "---|" * (len(holdouts) + 1)]
     for family in families.FAMILIES:
+        errors = evaluation.band_error_seed_mean_cm[family]
         cells = " | ".join(
-            f"{error_text(evaluation.errors_cm[family][name])} "
-            f"({', '.join(error_text(x) for x in evaluation.seed_errors_cm[family][name])})"
+            f"{error_text(errors[name].rms_cm)} [{error_text(errors[name].interval_cm[0])}–"
+            f"{error_text(errors[name].interval_cm[1])}], {errors[name].n_modes} bands"
             for name in holdouts
         )
         licensed = "yes" if evaluation.licensed(family) else "no"
         lines.append(f"| {family} | {cells} | {licensed} |")
+    return lines
+
+
+def _first_order_table(evaluation: Evaluation) -> list[str]:
+    holdouts = evaluation.holdouts
+    header = " | ".join(f"({name})" for name in holdouts)
+    lines = [f"| family | {header} |", "|---|" + "---|" * len(holdouts)]
+    for family in families.FAMILIES:
+        means = evaluation.first_order_error_per_seed_mean_cm[family]
+        per_seed = evaluation.first_order_error_per_seed_cm[family]
+        cells = " | ".join(
+            f"{error_text(means[name])} ({', '.join(error_text(x) for x in per_seed[name])})"
+            for name in holdouts
+        )
+        lines.append(f"| {family} | {cells} |")
     return lines
 
 
@@ -86,10 +103,11 @@ def _evaluation(release: Release) -> list[str]:
         "## How well it is known",
         "",
         (
-            "The rms error of the corrected band positions against "
+            "The rms error of the corrected band positions of the seeds' mean against "
             f"{level_name(evaluation.higher_level)}, in cm⁻¹, on molecules the network never "
-            "trained on. "
-            "The seed mean, with each seed's value in brackets."
+            "trained on: the error of what aromir prints. In square brackets the 95 % "
+            "interval when the hold-out's molecules are resampled. The licence is read on "
+            f"{evaluation.licence_basis}."
         ),
         "",
         *_evaluation_table(evaluation),
@@ -97,7 +115,17 @@ def _evaluation(release: Release) -> list[str]:
         *(f"- ({name}): {h.description}" for name, h in evaluation.holdouts.items()),
         "",
         (
-            "A family is licensed when its seed-mean error is within "
+            "For comparison, the first-order error of each seed alone, the number a training "
+            "run reports and the one earlier versions of this card printed as the error: its "
+            "mean over the seeds, each seed's value in brackets. It is not the error of what "
+            "aromir prints."
+        ),
+        "",
+        *_first_order_table(evaluation),
+        "",
+        (
+            "A family is licensed when the band error of the seeds' mean, as recorded to two "
+            "decimals, is within "
             f"{evaluation.licence_line_cm:g} cm⁻¹ on every hold-out. aromir's certificate marks "
             "each band with its family, that family's error and whether the band itself is "
             "licensed, which asks more: see the limits below."

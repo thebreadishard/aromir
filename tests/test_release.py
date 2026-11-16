@@ -10,6 +10,7 @@ import pytest
 
 from aromir import geometry, release
 from aromir.errors import RefusedError
+from aromir.families import FAMILIES
 from aromir.network import weights
 from aromir.network.inputs import InputSettings
 
@@ -43,28 +44,64 @@ def test_a_release_loads_with_its_records(tmp_path: Path) -> None:
 def test_the_licence_follows_the_measured_errors() -> None:
     evaluation = release.Evaluation.model_validate(_evaluation())
     assert evaluation.licence_line_cm == 3.0
-    assert evaluation.errors_cm["other"] == {"a": 3.62, "b": 3.89}
-    assert [evaluation.licensed(family) for family in ("ring-ip", "CH-stretch", "CH-oop")] == [
-        True,
-        True,
-        True,
-    ]
-    assert not evaluation.licensed("other")
+    assert evaluation.first_order_error_per_seed_mean_cm["other"] == {"a": 3.62, "b": 3.89}
+    band = evaluation.band_error_seed_mean_cm["other"]
+    assert (band["a"].rms_cm, band["b"].rms_cm) == (2.78, 2.77)
+    # The two quantities disagree about 'other': the licence follows the band error.
+    assert all(evaluation.licensed(family) for family in FAMILIES)
+    assert list(evaluation.thin_ground("other")) == ["a"]
+    assert all(not evaluation.thin_ground(family) for family in FAMILIES if family != "other")
+    caveat = (
+        "'other' is within the licence line on hold-out (a) at 2.78 cm⁻¹, on 8 molecules: "
+        "resampling those molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of the "
+        "resamples lie above the line"
+    )
+    assert evaluation.caveats() == [caveat]
 
 
 def test_one_hold_out_above_the_line_withdraws_the_licence() -> None:
     record = _evaluation()
-    record["errors_cm"]["ring-ip"]["b"] = 3.01
+    record["band_error_seed_mean_cm"]["ring-ip"]["b"]["rms_cm"] = 3.01
     assert not release.Evaluation.model_validate(record).licensed("ring-ip")
+
+
+def test_a_first_order_error_above_the_line_does_not_withdraw_the_licence() -> None:
+    record = _evaluation()
+    record["first_order_error_per_seed_cm"]["ring-ip"]["b"] = [9.0, 9.0, 9.0]
+    record["first_order_error_per_seed_mean_cm"]["ring-ip"]["b"] = 9.0
+    assert release.Evaluation.model_validate(record).licensed("ring-ip")
+
+
+def test_a_record_of_the_first_format_is_refused_and_told_why() -> None:
+    record = _evaluation()
+    first = {
+        key: value
+        for key, value in record.items()
+        if key in ("network_version", "higher_level", "licence_line_cm", "holdouts", "sources")
+    }
+    first |= {
+        "coupled_cluster": record["coupled_cluster"],
+        "errors_cm": record["first_order_error_per_seed_mean_cm"],
+        "seed_errors_cm": record["first_order_error_per_seed_cm"],
+    }
+    with pytest.raises(ValueError, match="a record of the first format: its `errors_cm` are"):
+        release.Evaluation.model_validate(first)
+
+
+def test_a_mean_that_is_not_the_seeds_mean_is_refused() -> None:
+    record = _evaluation()
+    record["first_order_error_per_seed_mean_cm"]["other"]["a"] = 2.0
+    with pytest.raises(ValueError, match="is not the mean of the seeds'"):
+        release.Evaluation.model_validate(record)
 
 
 def test_an_evaluation_must_cover_every_family_and_hold_out() -> None:
     without_family = _evaluation()
-    del without_family["errors_cm"]["other"]
+    del without_family["band_error_seed_mean_cm"]["other"]
     with pytest.raises(ValueError, match="expected every family"):
         release.Evaluation.model_validate(without_family)
     without_holdout = _evaluation()
-    del without_holdout["seed_errors_cm"]["other"]["b"]
+    del without_holdout["first_order_error_per_seed_cm"]["other"]["b"]
     with pytest.raises(ValueError, match="other: errors on"):
         release.Evaluation.model_validate(without_holdout)
 

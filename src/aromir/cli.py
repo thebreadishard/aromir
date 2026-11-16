@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ from typing import Final
 from pydantic import ValidationError
 
 import aromir
-from aromir import card, certificate, pipeline, records, release
+from aromir import card, certificate, evaluation, pipeline, records, release
 from aromir.dft import Resources
 from aromir.errors import AromirError, RefusedError
 
@@ -81,6 +82,18 @@ def _parser() -> argparse.ArgumentParser:
             help="what pyscf plans its arrays for: a target of the quantum chemistry, not a "
             "cap the operating system enforces",
         )
+    evaluate = commands.add_parser(
+        "evaluate",
+        help="measure a release on hold-out molecules with stored Hessians: the error of what "
+        "it delivers, per family, and the first-order error of each seed",
+    )
+    evaluate.add_argument(
+        "holdouts",
+        type=Path,
+        help="a folder of hold-out folders of .npz molecules (see aromir.evaluation)",
+    )
+    evaluate.add_argument("--release", type=Path, help=RELEASE_HELP)
+    evaluate.add_argument("--out", type=Path, help="the JSON file to write (default: print)")
     model_card = commands.add_parser(
         "card", help="write the model card of a network release from the release's own files"
     )
@@ -136,9 +149,26 @@ def _spectrum(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -
     return EXIT_DONE
 
 
+def _evaluate(arguments: argparse.Namespace) -> None:
+    out = arguments.out
+    if out is not None and out.exists():
+        raise RefusedError([f"{out} exists: a result is never overwritten"])
+    if out is not None and not out.parent.is_dir():
+        raise RefusedError([f"{out.parent}: no such folder"])
+    measured = evaluation.evaluate(_release(arguments), arguments.holdouts)
+    if out is None:
+        print(json.dumps(measured, indent=1, ensure_ascii=False))  # noqa: T201  the command's answer
+        return
+    records.write_json(out, measured)
+    print(f"done: {len(measured)} hold-out(s) measured, in {out}")  # noqa: T201  the command's answer
+
+
 def _run(arguments: argparse.Namespace) -> int:
     if arguments.command == "card":
         _write_card(arguments)
+        return EXIT_DONE
+    if arguments.command == "evaluate":
+        _evaluate(arguments)
         return EXIT_DONE
     molecule = pipeline.MoleculeInput(smiles=arguments.smiles, xyz=arguments.xyz)
     if arguments.command == "check":

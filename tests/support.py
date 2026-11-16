@@ -109,16 +109,28 @@ TRAINING: dict[str, Any] = {
 """A made-up training set: benzene held out, naphthalene trained on, no chlorine."""
 
 
+UNLICENSED_OTHER = {
+    "rms_cm": 3.89,
+    "interval_cm": [3.5, 4.2],
+    "share_of_resamples_within_line": 0.0,
+}
+"""The made-up release keeps one family above the licence line, so that a test sees both kinds
+of band; v1.3 itself has all four within it."""
+
+
 def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = "1.3") -> Path:
     """Write a release folder: v1.3's evaluation record, ``TRAINING`` and random small seeds.
 
     The evaluation's hold-out counts are set to ``TRAINING``'s one molecule each: a release
-    whose two records count differently does not load.
+    whose two records count differently does not load. The family 'other' is put above
+    the licence line and the atom-order spread is left unmeasured.
     """
     folder.mkdir(parents=True, exist_ok=True)
     evaluation = json.loads((RELEASE_DATA / "evaluation_v1.3.json").read_text(encoding="utf-8"))
     for name, held_out in TRAINING["held_out_smiles"].items():
         evaluation["holdouts"][name]["n_molecules"] = len(held_out)
+    evaluation["band_error_seed_mean_cm"]["other"]["b"] |= UNLICENSED_OTHER
+    evaluation.pop("atom_order_spread")
     (folder / "evaluation.json").write_text(json.dumps(evaluation), encoding="utf-8")
     (folder / "training.json").write_text(json.dumps(TRAINING), encoding="utf-8")
     for seed in seeds:

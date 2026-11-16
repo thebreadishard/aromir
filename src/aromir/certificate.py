@@ -67,7 +67,7 @@ class Band:
             the training sizes, the band is real for the seed mean and for every seed,
             and a band of a C–H family moves carbon-bound hydrogens.
         licence_note: The first condition the band fails; empty when it is licensed.
-        measured_error_cm: The family's seed-mean error per hold-out.
+        measured_error_cm: The family's band error of the seeds' mean, per hold-out.
     """
 
     wavenumber_cm: float
@@ -157,7 +157,10 @@ def bands(
                 family=mode.family,
                 licensed=not note,
                 licence_note=note,
-                measured_error_cm=dict(evaluation.errors_cm[mode.family]),
+                measured_error_cm={
+                    holdout: error.rms_cm
+                    for holdout, error in evaluation.band_error_seed_mean_cm[mode.family].items()
+                },
             )
         )
     return rows
@@ -276,6 +279,7 @@ def _statement(
     seen = [
         value for value, _ in spreads_cm(release, linear_group=molecule["linear_group"]).values()
     ]
+    thin = "".join(f"{caveat[0].upper()}{caveat[1:]}. " for caveat in evaluation.caveats())
     beyond = ""
     if seen and max(seen) > line:
         beyond = (
@@ -292,7 +296,7 @@ def _statement(
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
         "the band is real for the seeds' mean and for every seed, and a band of a C–H "
         "family moves carbon-bound "
-        f"hydrogens. {beyond}"
+        f"hydrogens. {thin}{beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. The scaled B3LYP positions are a "
         "baseline for comparison only."
     )
@@ -366,7 +370,12 @@ def build(
         "warnings": _warnings(rows),
         "bands": [asdict(row) | {"seed_range_cm": list(row.seed_range_cm)} for row in rows],
         "not_in_the_error": _not_in_the_error(release, molecule),
-        "accuracy": evaluation.model_dump(mode="json") | {"licensed_families": within},
+        "accuracy": evaluation.model_dump(mode="json")
+        | {
+            "licensed_families": within,
+            "on_thin_ground": [f for f in within if evaluation.thin_ground(f)],
+            "caveats": evaluation.caveats(),
+        },
     }
 
 
@@ -385,6 +394,8 @@ def _band_lines(record: dict[str, Any]) -> list[str]:
         low, high = band["seed_range_cm"]
         errors = " / ".join(error_text(band["measured_error_cm"][name]) for name in holdouts)
         licensed = "yes" if band["licensed"] else f"no: {band['licence_note']}"
+        if band["licensed"] and band["family"] in record["accuracy"]["on_thin_ground"]:
+            licensed = "yes, on thin ground (see above)"
         lines.append(
             f"| {band['wavenumber_cm']} | {band['intensity_km_mol']} | {low}–{high} "
             f"| {band['b3lyp_cm']} | {band['scaled_b3lyp_cm']} | {band['family']} "
@@ -400,16 +411,36 @@ def _accuracy_lines(accuracy: dict[str, Any]) -> list[str]:
         f"| family | {header} | within the licence line |",
         "|---|" + "---|" * (len(holdouts) + 1),
     ]
-    for family, errors in accuracy["errors_cm"].items():
-        per_seed = accuracy["seed_errors_cm"][family]
+    for family, errors in accuracy["band_error_seed_mean_cm"].items():
         cells = " | ".join(
-            f"{error_text(errors[name])} ({', '.join(error_text(x) for x in per_seed[name])})"
+            f"{error_text(errors[name]['rms_cm'])} "
+            f"[{error_text(errors[name]['interval_cm'][0])}–"
+            f"{error_text(errors[name]['interval_cm'][1])}], {errors[name]['n_modes']} bands"
             for name in holdouts
         )
         licensed = "yes" if family in accuracy["licensed_families"] else "no"
         lines.append(f"| {family} | {cells} | {licensed} |")
-    lines += ["", *(f"- ({name}): {h['description']}" for name, h in holdouts.items())]
+    lines += ["", *(f"- {caveat[0].upper()}{caveat[1:]}." for caveat in accuracy["caveats"])]
+    lines += [*(f"- ({name}): {h['description']}" for name, h in holdouts.items())]
     lines.append(f"- sources: {'; '.join(accuracy['sources'])}")
+    lines += [
+        "",
+        (
+            "For comparison, the first-order error of each seed alone, the number a training "
+            "run reports: its mean over the seeds, each seed's value in brackets. It is not "
+            "the error of what is printed above."
+        ),
+        "",
+        f"| family | {header} |",
+        "|---|" + "---|" * len(holdouts),
+    ]
+    for family, means in accuracy["first_order_error_per_seed_mean_cm"].items():
+        per_seed = accuracy["first_order_error_per_seed_cm"][family]
+        cells = " | ".join(
+            f"{error_text(means[name])} ({', '.join(error_text(x) for x in per_seed[name])})"
+            for name in holdouts
+        )
+        lines.append(f"| {family} | {cells} |")
     lines += ["", "A family is a rule, and its name is the evaluation's:", ""]
     return [*lines, *(f"- {family}: {rule}." for family, rule in families.RULES.items())]
 
@@ -455,8 +486,11 @@ def to_markdown(record: dict[str, Any]) -> str:
         "## How well the network is known",
         "",
         (
-            "Seed-mean rms error of the corrected positions against "
-            f"{level_name(network['higher_level'])}, in cm⁻¹, each seed's value in brackets."
+            "The rms error of the corrected band positions of the seeds' mean against "
+            f"{level_name(network['higher_level'])}, in cm⁻¹: what this certificate's "
+            "positions are. In square brackets the 95 % interval when the hold-out's "
+            "molecules are resampled. The licence is read on "
+            f"{record['accuracy']['licence_basis']}."
         ),
         "",
         *_accuracy_lines(record["accuracy"]),

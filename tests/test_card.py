@@ -30,9 +30,13 @@ def test_the_card_states_the_releases_own_numbers(loaded: release.Release) -> No
     assert "- **Seeds:** 2 (0, 1)" in text
     assert "- **Licensed families:** ring-ip, CH-stretch, CH-oop." in text
     assert "- **Not licensed:** other." in text
-    seeds = loaded.evaluation.seed_errors_cm["ring-ip"]
+    seeds = loaded.evaluation.first_order_error_per_seed_cm["ring-ip"]
     brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
-    assert f"| ring-ip | 1.77 ({brackets['a']}) | 2.12 ({brackets['b']}) | yes |" in text
+    assert "| ring-ip | 1.43 [1.13–1.70], 199 bands | 1.91 [1.84–2.00], 1164 bands | yes |" in text
+    assert "| other | 2.78 [1.68–3.76], 156 bands | 3.89 [3.50–4.20], 1225 bands | no |" in text
+    assert f"| ring-ip | 1.77 ({brackets['a']}) | 2.12 ({brackets['b']}) |" in text
+    assert "It is not the error of what aromir prints." in text
+    assert "chosen on 16 November 2026" in text
     assert "- Elements: C, H, N, O." in text
     assert "- Sizes: 10 to 30 atoms." in text
     assert "- 1 molecules, neutral" in text
@@ -74,9 +78,9 @@ def test_a_hold_out_list_is_counted_by_molecule_and_none_is_said(
 
 
 def test_errors_are_written_with_two_decimals(loaded: release.Release) -> None:
-    errors = dict(loaded.evaluation.errors_cm)
+    errors = dict(loaded.evaluation.first_order_error_per_seed_mean_cm)
     errors["CH-stretch"] = {"a": 1.2, "b": 2.5}
-    evaluation = loaded.evaluation.model_copy(update={"errors_cm": errors})
+    evaluation = loaded.evaluation.model_copy(update={"first_order_error_per_seed_mean_cm": errors})
     text = card.to_markdown(replace(loaded, evaluation=evaluation))
     assert "| CH-stretch | 1.20 (" in text
     assert ") | 2.50 (" in text
@@ -89,7 +93,7 @@ def test_the_level_is_explained_once_and_named_after(loaded: release.Release) ->
     assert text.count("(the DFT proxy") == 1
     assert "the difference to ωB97X/6-31G* (the DFT proxy" in text
     assert "- **The level is ωB97X/6-31G*.**" in text
-    assert "positions against ωB97X/6-31G*, in cm⁻¹" in text
+    assert "positions of the seeds' mean against ωB97X/6-31G*, in cm⁻¹" in text
 
 
 def test_the_card_says_how_the_training_hessians_were_prepared(loaded: release.Release) -> None:
@@ -116,8 +120,13 @@ def test_the_card_warns_about_the_atom_order_unless_the_network_is_order_free(
 
 
 def test_a_release_with_no_licensed_family_says_so(loaded: release.Release) -> None:
-    errors = {family: {"a": 9.0, "b": 9.0} for family in loaded.evaluation.errors_cm}
-    evaluation = loaded.evaluation.model_copy(update={"errors_cm": errors})
+    high = release.BandError(
+        rms_cm=9.0, n_modes=10, interval_cm=(8.0, 10.0), share_of_resamples_within_line=0.0
+    )
+    errors = {
+        family: {"a": high, "b": high} for family in loaded.evaluation.band_error_seed_mean_cm
+    }
+    evaluation = loaded.evaluation.model_copy(update={"band_error_seed_mean_cm": errors})
     text = card.to_markdown(replace(loaded, evaluation=evaluation))
     assert "- **Licensed families:** none." in text
     assert "- **Not licensed: ring-ip, CH-stretch, CH-oop, other.**" in text

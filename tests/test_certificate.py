@@ -79,7 +79,8 @@ def test_each_band_carries_its_familys_record(
     assert positions == sorted(positions)
     for row in rows:
         assert row.licensed == (row.family != "other")
-        assert row.measured_error_cm == loaded.evaluation.errors_cm[row.family]
+        band_errors = loaded.evaluation.band_error_seed_mean_cm[row.family]
+        assert row.measured_error_cm == {name: error.rms_cm for name, error in band_errors.items()}
         assert row.seed_range_cm[0] <= row.seed_range_cm[1]
     low_families = families.classify(benzene, vib.vibrational_modes(low.hessian, benzene))
     assert sorted(row.family for row in rows) == sorted(low_families)
@@ -151,10 +152,13 @@ def test_the_record_and_its_text(
     text = certificate.to_markdown(record)
     assert text.startswith("# Certificate: c1ccccc1\n")
     assert "the training set spans 10–30 atoms: inside" in text
-    seeds = loaded.evaluation.seed_errors_cm["other"]
+    seeds = loaded.evaluation.first_order_error_per_seed_cm["other"]
     in_brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
-    assert f"| other | 3.62 ({in_brackets['a']}) | 3.89 ({in_brackets['b']}) | no |" in text
-    assert ") | 2.70 (" in text
+    assert "| other | 2.78 [1.68–3.76], 156 bands | 3.89 [3.50–4.20], 1225 bands | no |" in text
+    assert f"| other | 3.62 ({in_brackets['a']}) | 3.89 ({in_brackets['b']}) |" in text
+    assert "It is not the error of what is printed above." in text
+    assert "The licence is read on the band error of the seeds' mean" in text
+    assert ") | 2.73 (" in text
     assert "(the DFT proxy" in record["statement"]
     assert text.count("(the DFT proxy") == 1
     band_rows = [line for line in text.split("\n") if line.count("|") == 9 and "–" in line]

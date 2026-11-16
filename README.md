@@ -88,6 +88,15 @@ positions move when the same molecule is turned, mirrored or listed in another a
 order. Nothing it states about the network is typed into the
 package: every number comes from the release's records.
 
+The error printed for a family is the error of what aromir delivers: the corrected band
+positions of the seeds' mean against the reference, on molecules the network never
+trained on. `aromir evaluate <folder>` measures it for a release on a folder of hold-out
+molecules with stored Hessians (the format is in `aromir.evaluation`), together with the
+first-order error of each seed that a training run reports, which is a different and
+larger number. For v1.3 all four families are within the licence line; on the smaller
+hold-out the family 'other' rests on eight molecules, and the card and the certificate
+say what that is worth.
+
 `aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it
 stops being known.
