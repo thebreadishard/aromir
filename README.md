@@ -124,7 +124,15 @@ Each step is saved when it ends: `geometry.json`, then `lowlevel.npz`, each nami
 run that made it, with `run.json` recording what was asked. After a step off a saddle
 point the saddle's two files are kept as `saddle_point_geometry.json` and
 `saddle_point_lowlevel.npz`. A run that fails after hours of quantum
-chemistry, or is stopped, is taken up by the same command into the same folder.
+chemistry, or is stopped, is taken up by the same command into the same folder; an
+optimisation is taken up at its last gradient (`optimisation_progress.json`).
+
+A molecule with a nearly free torsion can have no minimum the optimiser's displacement
+criterion accepts, or none at all at this level. aromir then says what it did instead
+of ending without a spectrum: a geometry converged on energy and forces alone is named
+so on the certificate with the last step's numbers, and a band whose low-level mode is
+still imaginary and softer than 20 cm⁻¹ after one step off the saddle point is printed
+as a flat coordinate — no band position, never licensed.
 
 ## The network
 

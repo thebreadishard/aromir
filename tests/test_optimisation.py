@@ -47,5 +47,24 @@ def test_running_out_of_steps_is_an_error(
     distorted_water: Geometry, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(optimisation, "MAX_STEPS", 1)
-    with pytest.raises(ConvergenceError, match="did not converge in 1 steps"):
+    monkeypatch.setattr(optimisation, "FLAT_STEPS", 1)
+    with pytest.raises(ConvergenceError, match="did not converge in 1 steps, nor in 1 more"):
         optimisation.optimise(distorted_water, RESOURCES, io.StringIO())
+
+
+def test_geometric_takes_its_q_chem_style_test_through_pyscf(
+    distorted_water: Geometry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Two gradients are not enough under any test; the stage that follows runs under
+    # geomeTRIC's Q-Chem-style test, and geomeTRIC's own report says so.
+    monkeypatch.setattr(optimisation, "MAX_STEPS", 2)
+    log = io.StringIO()
+    kept: list[optimisation.Progress] = []
+    result = optimisation.optimise(distorted_water, RESOURCES, log, keep=kept.append)
+    assert "Q-Chem style convergence criteria requested" in log.getvalue()
+    said_flat = optimisation.Q_CHEM_VERDICT in log.getvalue()
+    assert (result.criteria == optimisation.ENERGY_AND_FORCES) == said_flat
+    assert (result.last_step is not None) == said_flat
+    assert result.n_steps == len(kept) == kept[-1].n_steps
+    assert result.max_force < 5e-5
+    np.testing.assert_allclose(kept[-1].coords_bohr, result.geometry.coords_bohr, atol=1e-10)

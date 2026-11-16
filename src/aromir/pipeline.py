@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import tokenize
 import zipfile
 import zlib
@@ -38,6 +39,7 @@ from aromir import (
     spectrum,
     vibrations,
 )
+from aromir.constants import WAVENUMBERS_PER_HARTREE
 from aromir.dft import BASIS, FUNCTIONAL, GRID, Resources
 from aromir.errors import AromirError, NotAMinimumError, RefusedError
 from aromir.molecule import Geometry
@@ -57,11 +59,19 @@ RUN_FILE: Final = "run.json"
 SADDLE_POINT_PREFIX: Final = "saddle_point_"
 """The name a saddle point's geometry and Hessian are kept under."""
 
-OFF_THE_SADDLE_BOHR: Final = 0.1
-"""How far the atom that moves most is displaced along an imaginary mode before the one
-second optimisation. On hydrogen peroxide's planar saddle point (B3LYP/6-31G*) this step
-leads the optimiser to the skew minimum; a flatter saddle may need more, and the run then
-ends as not a minimum, with everything kept."""
+PROGRESS_FILE: Final = "optimisation_progress.json"
+"""Where an optimisation stands after its last gradient; gone once its geometry is saved."""
+
+SADDLE_ENERGY_LOWERING_HARTREE: Final = 1e-5
+"""What the step off a saddle point lowers the energy by in the harmonic picture, ½·|k|·q²
+along the imaginary mode: ten times geomeTRIC's energy criterion, so that the second
+optimisation starts on a slope it can tell from noise."""
+
+LARGEST_STEP_OFF_BOHR: Final = 0.3
+"""The most the atom that moves most is moved by that step. A soft imaginary mode is the top
+of a shallow double well, not of a parabola: the harmonic picture asks for bohrs there,
+and the well is long past. On 3-vinylfuran (a mode at -12 cm⁻¹, B3LYP/6-31G*) the energy
+was still falling 0.22 bohr from the saddle point, 0.16 cm⁻¹ below it."""
 
 _LEFTOVERS: Final = (QUANTUM_LOG_FILE, f"{RUN_FILE}.tmp")
 """What a run killed before its first step leaves behind: no reason to refuse the folder."""
@@ -117,6 +127,7 @@ class _SaddlePoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     imaginary_cm: float
+    step_bohr: float
     restart: list[list[float]]
 
 
@@ -214,6 +225,24 @@ def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, _Run]:
     return folder, state
 
 
+def _saved_progress(folder: Path, state: _Run, start: Geometry) -> optimisation.Progress | None:
+    """Return this attempt's unfinished optimisation, or None when there is none."""
+    path = folder / PROGRESS_FILE
+    if not path.is_file():
+        return None
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        if stored["attempt"] != state.attempt:
+            return None
+        coords = np.array(stored["coords_bohr"], dtype=float)
+        if coords.shape != start.coords_bohr.shape or not np.isfinite(coords).all():
+            msg = f"coordinates of shape {coords.shape}, or not numbers"
+            raise ValueError(msg)
+        return optimisation.Progress(coords.tolist(), int(stored["n_steps"]))
+    except _UNREADABLE as error:
+        raise _damaged(folder, PROGRESS_FILE, error) from error
+
+
 def _optimised(
     start: Geometry, folder: Path, state: _Run, resources: Resources, log: TextIO
 ) -> optimisation.Optimisation:
@@ -230,17 +259,27 @@ def _optimised(
                 return optimisation.Optimisation(minimum, **stored["optimisation"])
         except _UNREADABLE as error:
             raise _damaged(folder, GEOMETRY_FILE, error) from error
-    optimised = optimisation.optimise(start, resources, log)
+    progress = folder / PROGRESS_FILE
+
+    def keep(reached: optimisation.Progress) -> None:
+        records.write_json(progress, {"attempt": state.attempt, **asdict(reached)})
+
+    optimised = optimisation.optimise(
+        start, resources, log, taken_up=_saved_progress(folder, state, start), keep=keep
+    )
     record = optimised.geometry.to_dict() | {
         "made_with": records.provenance(),
         "optimisation": {
             "energy": optimised.energy,
             "max_force": optimised.max_force,
             "n_steps": optimised.n_steps,
+            "criteria": optimised.criteria,
+            "last_step": optimised.last_step,
         },
         "attempt": state.attempt,
     }
     records.write_json(path, record)
+    progress.unlink(missing_ok=True)
     return optimised
 
 
@@ -358,6 +397,19 @@ def _attempt(
     return optimised, low, vibrations.vibrational_modes(low.hessian, optimised.geometry)
 
 
+def _step_off_bohr(modes: vibrations.Modes, saddle: Geometry) -> float:
+    """Return how far the atom that moves most is moved along the lowest, imaginary mode.
+
+    The step is sized from the mode's measured curvature to lower the energy by
+    ``SADDLE_ENERGY_LOWERING_HARTREE`` in the harmonic picture, and is at most
+    ``LARGEST_STEP_OFF_BOHR``: a stiff saddle point gets a short step, a flat one the cap.
+    """
+    curvature = (float(modes.wavenumbers[0]) / WAVENUMBERS_PER_HARTREE) ** 2
+    wanted = math.sqrt(2 * SADDLE_ENERGY_LOWERING_HARTREE / curvature)
+    _, length_per_bohr = vibrations.displacement(modes.vectors[:, 0], saddle.masses_amu, 1.0)
+    return min(wanted / length_per_bohr, LARGEST_STEP_OFF_BOHR)
+
+
 def _step_off(folder: Path, state: _Run, saddle: Geometry, modes: vibrations.Modes) -> None:
     """Keep the saddle point's files under another name and record where to start again.
 
@@ -367,9 +419,11 @@ def _step_off(folder: Path, state: _Run, saddle: Geometry, modes: vibrations.Mod
     """
     for name in (GEOMETRY_FILE, LOW_LEVEL_FILE):
         (folder / f"{SADDLE_POINT_PREFIX}{name}").write_bytes((folder / name).read_bytes())
-    step, _ = vibrations.displacement(modes.vectors[:, 0], saddle.masses_amu, OFF_THE_SADDLE_BOHR)
+    step_bohr = _step_off_bohr(modes, saddle)
+    step, _ = vibrations.displacement(modes.vectors[:, 0], saddle.masses_amu, step_bohr)
     state.left_saddle_point = _SaddlePoint(
         imaginary_cm=float(modes.wavenumbers[0]),
+        step_bohr=step_bohr,
         restart=(saddle.coords_bohr + step).tolist(),
     )
     state.save(folder)
@@ -383,7 +437,9 @@ def _compute(
     Whether the geometry is a minimum is read from the Hessian with its soft modes
     measured: the analytic one can make a soft mode imaginary that is not. From a saddle
     point the optimisation, the Hessian and the repair are run a second time, which
-    doubles the cost and can still end without a minimum.
+    doubles the cost and can still end without a minimum. A geometry whose only
+    imaginary modes are then softer than the soft-mode line is returned as it is: the
+    molecule is flat along them, and the spectrum is printed with those bands named.
 
     Raises:
         NotAMinimumError: The geometry still has an imaginary mode after one step along it
@@ -400,7 +456,7 @@ def _compute(
         if modes.n_imaginary and state.left_saddle_point is None:
             _step_off(folder, state, optimised.geometry, modes)
             optimised, low, modes = _attempt(start, folder, state, resources, log)
-    if modes.n_imaginary:
+    if modes.wavenumbers[0] <= -repair.SOFT_BELOW_CM:
         msg = (
             f"{modes.n_imaginary} imaginary mode(s), the lowest at {modes.wavenumbers[0]:.0f} "
             "cm⁻¹, also after one step along it and a second optimisation: no minimum was "
@@ -442,6 +498,8 @@ def _computation_record(
             "energy_hartree": optimised.energy,
             "max_force_hartree_per_bohr": optimised.max_force,
             "n_steps": optimised.n_steps,
+            "converged_on": optimised.criteria,
+            "last_step": optimised.last_step,
             "left_saddle_point_at_cm": None if left is None else left.imaginary_cm,
         },
         "checks": {
@@ -499,6 +557,11 @@ def run_baseline(request: Request) -> dict[str, Any]:
             "factors": list(spectrum.SCALING_FACTORS),
             "bands": _bands_record(spectrum.scaled(bands)),
         },
+        "notes": [
+            *_flat_note(low, optimised.geometry),
+            *_saddle_note(state),
+            *_convergence_note(optimised),
+        ],
         "provenance": launched,
     }
     records.write_json(folder / BASELINE_FILE, record)
@@ -549,8 +612,41 @@ def _saddle_note(state: _Run) -> list[str]:
         return []
     note = (
         f"the start geometry led to a saddle point (a mode at {left.imaginary_cm:.0f} cm⁻¹): "
-        f"the atoms were moved {OFF_THE_SADDLE_BOHR:g} bohr along that mode and optimised "
-        "again, so the structure computed is the minimum that step led to, one of two"
+        f"the atoms were moved up to {left.step_bohr:.2g} bohr along that mode and optimised "
+        "again, so the structure computed is the one that step led to, one of two"
+    )
+    return [note]
+
+
+def _convergence_note(optimised: optimisation.Optimisation) -> list[str]:
+    """Say when the geometry is converged on energy and forces alone, with the numbers."""
+    last = optimised.last_step
+    if optimised.criteria != optimisation.ENERGY_AND_FORCES or last is None:
+        return []
+    note = (
+        "the geometry is converged on energy and forces; the displacement criterion was "
+        f"not met on a flat coordinate ({optimised.n_steps} gradients; the last step changed "
+        f"the energy by {last['energy_change_hartree']:.1e} hartree, with forces of "
+        f"{last['rms_force_hartree_per_bohr']:.1e} rms and "
+        f"{last['max_force_hartree_per_bohr']:.1e} hartree/bohr at most, and moved the atoms "
+        f"by {last['rms_displacement_angstrom']:.1e} rms and "
+        f"{last['max_displacement_angstrom']:.1e} Å at most; geomeTRIC's "
+        f"{optimisation.CONVERGENCE_SET} asks for the energy, the forces and the displacement)"
+    )
+    return [note]
+
+
+def _flat_note(low: lowlevel.LowLevel, minimum: Geometry) -> list[str]:
+    """Name the coordinates along which the geometry is no minimum of the low level."""
+    positions = vibrations.vibrational_modes(low.hessian, minimum).wavenumbers
+    flat = [f"{position:.1f}" for position in positions if position < 0]
+    if not flat:
+        return []
+    note = (
+        f"the molecule is flat along {len(flat)} coordinate(s): the mode(s) at "
+        f"{', '.join(flat)} cm⁻¹ are imaginary and softer than {repair.SOFT_BELOW_CM:g} cm⁻¹ "
+        "after a step off the saddle point and a second optimisation. A harmonic position "
+        "means nothing there: the number printed for it is no band position"
     )
     return [note]
 
@@ -596,7 +692,7 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
         {"mean": corrections.mean, "per_seed": np.stack(corrections.per_seed)},
     )
     record = certificate.build(admitted, optimised.geometry, low, corrections, release)
-    record["not_in_the_error"] += _saddle_note(state)
+    record["not_in_the_error"] += _saddle_note(state) + _convergence_note(optimised)
     record |= {
         "computation": _computation_record(optimised, low, state, folder),
         "provenance": launched,

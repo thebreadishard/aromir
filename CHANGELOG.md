@@ -113,7 +113,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   imaginary lowest mode in the analytic Hessian). The soft modes are always measured; the minimum is decided
   and the positions are printed from the measured Hessian; the network reads the kind
   it was trained on; the certificate says so. From a real saddle point aromir steps
-  0.1 bohr along the mode and optimises once more (tested with the quantum chemistry
+  along the mode and optimises once more (tested with the quantum chemistry
   itself on planar hydrogen peroxide). That runs the optimisation, the Hessian and the
   repair a second time and can still end without a minimum; the certificate says when
   the structure is one off a saddle point.
@@ -141,6 +141,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A molecule with a flat coordinate — a nearly free torsion — gets its spectrum. On
+  3-vinylfuran the run found a saddle point at -12 cm⁻¹, stepped 0.1 bohr off it, and
+  the second optimisation ended after 100 steps with the energy and the forces
+  converged and the displacement not: no spectrum after 67 minutes, and nothing of the
+  second attempt kept. Four changes, which hold for every molecule:
+  - an optimisation saves where it stands after every gradient
+    (`optimisation_progress.json`), and the same command takes it up there;
+  - one that does not converge on energy, forces and displacement in 100 gradients goes
+    on for at most 20 under geomeTRIC's own Q-Chem-style test at the same thresholds
+    (the forces and either the energy or the displacement). When geomeTRIC reports it
+    converged on that test, the certificate says 'converged on energy and forces; the
+    displacement criterion was not met on a flat coordinate', with the last step's
+    numbers;
+  - the step off a saddle point is sized from the imaginary mode's measured curvature,
+    to lower the energy by 1e-5 hartree in the harmonic picture, and moves no atom by
+    more than 0.3 bohr; it was 0.1 bohr for every saddle point;
+  - a geometry that after that one step and a second optimisation still has an
+    imaginary mode softer than 20 cm⁻¹ is printed, with that band named a flat
+    coordinate, never licensed and named in the statement. An imaginary mode beyond
+    20 cm⁻¹ still ends the run as not a minimum.
 - The dependencies have upper bounds, the series the package is tested with; the
   internal coordinates of seven molecules are pinned atom by atom (a digest of
   geomeTRIC's own description of every primitive), so a new RDKit or geomeTRIC that

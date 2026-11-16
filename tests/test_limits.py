@@ -154,20 +154,33 @@ def _note(mode: certificate.Mode, loaded: release.Release) -> str:
 
 
 def test_a_mixed_stretch_and_a_wag_off_carbon_fail_the_licence(loaded: release.Release) -> None:
-    assert _note(certificate.Mode("CH-stretch", 3100.0, 3099.0, 0.05), loaded) == ""
-    mixed = _note(certificate.Mode("CH-stretch", 3100.0, 3099.0, 0.45), loaded)
+    assert _note(certificate.Mode("CH-stretch", 100.0, 3100.0, 3099.0, 0.05), loaded) == ""
+    mixed = _note(certificate.Mode("CH-stretch", 100.0, 3100.0, 3099.0, 0.45), loaded)
     assert mixed.startswith("45% of its hydrogen motion")
-    wag = _note(certificate.Mode("CH-oop", 800.0, 799.0, 0.9), loaded)
+    wag = _note(certificate.Mode("CH-oop", 100.0, 800.0, 799.0, 0.9), loaded)
     assert wag.endswith("which the rule counts as CH-oop")
-    assert _note(certificate.Mode("ring-ip", 1200.0, 1199.0, 0.9), loaded) == ""
+    assert _note(certificate.Mode("ring-ip", 100.0, 1200.0, 1199.0, 0.9), loaded) == ""
 
 
 def test_a_position_just_below_zero_is_imaginary_though_it_rounds_to_zero(
     loaded: release.Release,
 ) -> None:
-    assert _note(certificate.Mode("ring-ip", -0.04, -0.04, 0.0), loaded) == certificate.IMAGINARY
-    for_a_seed = _note(certificate.Mode("ring-ip", 12.0, -3.0, 0.0), loaded)
+    assert (
+        _note(certificate.Mode("ring-ip", 100.0, -0.04, -0.04, 0.0), loaded)
+        == certificate.IMAGINARY
+    )
+    for_a_seed = _note(certificate.Mode("ring-ip", 100.0, 12.0, -3.0, 0.0), loaded)
     assert for_a_seed == certificate.IMAGINARY_FOR_A_SEED
+
+
+def test_a_band_of_an_imaginary_low_level_mode_is_a_flat_coordinate_whatever_its_position(
+    loaded: release.Release,
+) -> None:
+    # The command ends with 'unphysical' for an imaginary corrected band; a flat coordinate
+    # is named before that, so a spectrum printed at one does not end that way for it.
+    for position in (-8.0, 15.0):
+        flat = _note(certificate.Mode("other", -12.0, position, position, 0.0), loaded)
+        assert flat == certificate.FLAT_COORDINATE
 
 
 def test_every_family_has_its_rule_in_words(loaded: release.Release) -> None:

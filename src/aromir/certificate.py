@@ -41,6 +41,11 @@ NOT_PLANAR_NOTE: Final = (
 )
 C_H_FAMILIES: Final[tuple[families.Family, ...]] = ("CH-stretch", "CH-oop")
 """The families whose name promises carbon-bound hydrogens."""
+FLAT_COORDINATE: Final = (
+    "a flat coordinate: its low-level mode is imaginary, so this is no band position"
+)
+"""The molecule is at no minimum along this mode, which is softer than the soft-mode line:
+the pipeline prints the spectrum there and claims nothing for this band."""
 IMAGINARY: Final = "imaginary position"
 IMAGINARY_FOR_A_SEED: Final = "imaginary for at least one seed"
 OFF_CARBON_SHARE: Final = 0.1
@@ -64,7 +69,8 @@ class Band:
         family: The mode family, by the rule the network's error is measured in.
         licensed: Whether the band passes every condition of the licence: its family's
             error is within the licence line on every hold-out, the molecule lies inside
-            the training sizes, the band is real for the seed mean and for every seed,
+            the training sizes, its low-level mode is real, the band is real for the
+            seed mean and for every seed,
             and a band of a C–H family moves carbon-bound hydrogens.
         licence_note: The first condition the band fails; empty when it is licensed.
         measured_error_cm: The family's band error of the seeds' mean, per hold-out.
@@ -87,12 +93,14 @@ class Mode:
 
     Attributes:
         family: The band's mode family.
+        low_level_cm: The position of the uncorrected mode that moves most like it.
         position_cm: The corrected position of the seeds' mean.
         lowest_seed_cm: The lowest position of the band over the seeds.
         off_carbon: The share of its hydrogen motion on hydrogens not bound to carbon.
     """
 
     family: families.Family
+    low_level_cm: float
     position_cm: float
     lowest_seed_cm: float
     off_carbon: float
@@ -100,20 +108,19 @@ class Mode:
 
 def licence_note(mode: Mode, evaluation: Evaluation, *, inside_training_sizes: bool) -> str:
     """Return the first condition of the licence a band fails, or "" when it passes all."""
-    if mode.position_cm < 0:
-        return IMAGINARY
-    if mode.lowest_seed_cm < 0:
-        return IMAGINARY_FOR_A_SEED
-    if not evaluation.licensed(mode.family):
-        return "the family's error is above the licence line"
-    if not inside_training_sizes:
-        return "the molecule is outside the training sizes"
-    if mode.family in C_H_FAMILIES and mode.off_carbon > OFF_CARBON_SHARE:
-        return (
-            f"{mode.off_carbon:.0%} of its hydrogen motion is on N–H, O–H or S–H, which "
-            f"the rule counts as {mode.family}"
-        )
-    return ""
+    off_carbon = (
+        f"{mode.off_carbon:.0%} of its hydrogen motion is on N–H, O–H or S–H, which "
+        f"the rule counts as {mode.family}"
+    )
+    conditions = (
+        (mode.low_level_cm < 0, FLAT_COORDINATE),
+        (mode.position_cm < 0, IMAGINARY),
+        (mode.lowest_seed_cm < 0, IMAGINARY_FOR_A_SEED),
+        (not evaluation.licensed(mode.family), "the family's error is above the licence line"),
+        (not inside_training_sizes, "the molecule is outside the training sizes"),
+        (mode.family in C_H_FAMILIES and mode.off_carbon > OFF_CARBON_SHARE, off_carbon),
+    )
+    return next((note for failed, note in conditions if failed), "")
 
 
 def bands(
@@ -139,6 +146,7 @@ def bands(
     for index, low_index in enumerate(partner):
         mode = Mode(
             family=low_families[low_index],
+            low_level_cm=float(low_modes.wavenumbers[low_index]),
             position_cm=float(corrected.wavenumbers[index]),
             lowest_seed_cm=float(ranges[index, 0]),
             off_carbon=float(off_carbon[low_index]),
@@ -287,6 +295,14 @@ def _statement(
             f"atom order was seen to get positions up to {max(seen):.2f} cm⁻¹ away, more "
             "than the licence line. "
         )
+    n_flat = sum(row.licence_note == FLAT_COORDINATE for row in rows)
+    flat = ""
+    if n_flat:
+        flat = (
+            f"{n_flat} band(s) lie on a flat coordinate, along which the molecule is at no "
+            "minimum of the low level: the number printed there is no band position and "
+            "nothing is claimed for it. "
+        )
     return (
         f"{admitted.smiles}: the harmonic infrared spectrum of ΔH network "
         f"v{release.network_version} ({len(release.networks)} seeds), {LEVEL_NOTE} towards "
@@ -294,9 +310,10 @@ def _statement(
         f"saw. {sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every hold-out "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
-        "the band is real for the seeds' mean and for every seed, and a band of a C–H "
+        "its low-level mode is real, the band is real for the seeds' mean and for every "
+        "seed, and a band of a C–H "
         "family moves carbon-bound "
-        f"hydrogens. {thin}{beyond}"
+        f"hydrogens. {flat}{thin}{beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. The scaled B3LYP positions are a "
         "baseline for comparison only."
     )
@@ -323,9 +340,17 @@ def _soft_mode_note(low: LowLevel, release: Release) -> str:
 
 def _warnings(rows: list[Band]) -> list[str]:
     """Return what a reader must know before using the bands at all."""
+    n_flat = sum(row.licence_note == FLAT_COORDINATE for row in rows)
     n_imaginary = sum(row.licence_note == IMAGINARY for row in rows)
     n_for_a_seed = sum(row.licence_note == IMAGINARY_FOR_A_SEED for row in rows)
     warnings = []
+    if n_flat:
+        warnings.append(
+            f"{n_flat} band(s) lie on a flat coordinate: the geometry is no minimum along it "
+            f"at the low level (an imaginary mode softer than {repair.SOFT_BELOW_CM:g} cm⁻¹, "
+            "also after a step off the saddle point and a second optimisation). The number "
+            "printed for such a band is not a band position and is never licensed"
+        )
     if n_imaginary:
         warnings.append(
             f"{n_imaginary} corrected band(s) have an imaginary (negative) position: the "

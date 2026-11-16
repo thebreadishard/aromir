@@ -26,6 +26,7 @@ from aromir import (
     spectrum,
     vibrations,
 )
+from aromir.constants import WAVENUMBERS_PER_HARTREE
 from aromir.dft import Resources
 from aromir.errors import InternalCoordinatesError, NotAMinimumError, RefusedError
 from aromir.molecule import Geometry
@@ -33,6 +34,7 @@ from aromir.molecule import Geometry
 from support import BENZENE_XYZ, bond_force_field, write_release
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from aromir.molecule import FloatArray
@@ -63,7 +65,9 @@ def synthetic_chemistry(monkeypatch: pytest.MonkeyPatch) -> Counter[str]:
     """
     calls: Counter[str] = Counter()
 
-    def optimise(start: Geometry, _resources: Resources, log: TextIO) -> optimisation.Optimisation:
+    def optimise(
+        start: Geometry, _resources: Resources, log: TextIO, **_progress: object
+    ) -> optimisation.Optimisation:
         calls["optimise"] += 1
         log.write("optimised\n")
         return optimisation.Optimisation(start, energy=-1.0, max_force=1e-6, n_steps=3)
@@ -207,7 +211,10 @@ def test_a_saddle_point_is_left_along_its_mode_once(
     assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
     assert record["optimisation"]["left_saddle_point_at_cm"] < 0
     moved = np.linalg.norm(asked_at[1].coords_bohr - asked_at[0].coords_bohr, axis=1)
-    assert float(np.max(moved)) == pytest.approx(pipeline.OFF_THE_SADDLE_BOHR)
+    saddle = vibrations.vibrational_modes(-_synthetic_low_level(asked_at[0]).hessian, asked_at[0])
+    step = pipeline._step_off_bohr(saddle, asked_at[0])  # noqa: SLF001  the rule itself
+    assert step < pipeline.LARGEST_STEP_OFF_BOHR
+    assert float(np.max(moved)) == pytest.approx(step)
     assert (
         vibrations.vibrational_modes(
             _synthetic_low_level(asked_at[1]).hessian, asked_at[1]
@@ -495,7 +502,9 @@ def test_a_hessian_is_not_reused_for_another_geometry(
     monkeypatch.setattr(repair, "repair", working)
     optimise = optimisation.optimise
 
-    def elsewhere(start: Geometry, resources: Resources, log: TextIO) -> optimisation.Optimisation:
+    def elsewhere(
+        start: Geometry, resources: Resources, log: TextIO, **_progress: object
+    ) -> optimisation.Optimisation:
         found = optimise(start, resources, log)
         return replace(found, geometry=Geometry(start.symbols, start.coords_bohr * 1.01))
 
@@ -756,7 +765,9 @@ def test_a_saddle_points_file_that_does_not_name_its_run_is_refused_before_the_s
     _unstable_for(1, monkeypatch)
     optimise = optimisation.optimise
 
-    def killed_at_the_second(start: Geometry, resources: Resources, log: TextIO) -> object:
+    def killed_at_the_second(
+        start: Geometry, resources: Resources, log: TextIO, **_progress: object
+    ) -> object:
         if synthetic_chemistry["optimise"]:
             raise KeyboardInterrupt
         return optimise(start, resources, log)
@@ -774,3 +785,163 @@ def test_a_saddle_points_file_that_does_not_name_its_run_is_refused_before_the_s
     with pytest.raises(RefusedError, match=said):
         pipeline.run_baseline(_benzene(folder))
     assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
+
+
+def test_an_optimisation_that_was_killed_is_taken_up_where_it_stood(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    optimise = optimisation.optimise
+    taken_up_from: list[optimisation.Progress | None] = []
+
+    def killed_after_three(
+        start: Geometry,
+        resources: Resources,
+        log: TextIO,
+        *,
+        taken_up: optimisation.Progress | None,
+        keep: Callable[[optimisation.Progress], None],
+    ) -> optimisation.Optimisation:
+        taken_up_from.append(taken_up)
+        if taken_up is None:
+            keep(optimisation.Progress((start.coords_bohr + 0.01).tolist(), 3))
+            raise KeyboardInterrupt
+        return optimise(Geometry(start.symbols, np.array(taken_up.coords_bohr)), resources, log)
+
+    monkeypatch.setattr(optimisation, "optimise", killed_after_three)
+    folder = tmp_path / "benzene"
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.run_baseline(_benzene(folder))
+    stored = json.loads((folder / pipeline.PROGRESS_FILE).read_text(encoding="utf-8"))
+    assert (stored["attempt"], stored["n_steps"]) == (1, 3)
+    pipeline.run_baseline(_benzene(folder))
+    reached = taken_up_from[1]
+    assert reached is not None
+    assert reached.n_steps == 3
+    assert reached.coords_bohr == stored["coords_bohr"]
+    assert not (folder / pipeline.PROGRESS_FILE).exists()
+    geometry = json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    np.testing.assert_allclose(geometry["coords_bohr"], stored["coords_bohr"])
+    assert synthetic_chemistry["optimise"] == 1
+
+
+def test_a_saved_progress_that_is_not_this_molecules_is_a_damaged_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    def killed(*_arguments: object, **_progress: object) -> None:
+        raise KeyboardInterrupt
+
+    working = optimisation.optimise
+    monkeypatch.setattr(optimisation, "optimise", killed)
+    folder = tmp_path / "benzene"
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.run_baseline(_benzene(folder))
+    monkeypatch.setattr(optimisation, "optimise", working)
+    saved = {"attempt": 1, "coords_bohr": [[0.0, 0.0, 0.0]], "n_steps": 3}
+    (folder / pipeline.PROGRESS_FILE).write_text(json.dumps(saved), encoding="utf-8")
+    with pytest.raises(RefusedError, match=r"optimisation_progress\.json in .* damaged run"):
+        pipeline.run_baseline(_benzene(folder))
+    assert not synthetic_chemistry
+
+
+def test_the_step_off_a_saddle_point_is_sized_from_its_curvature_and_capped() -> None:
+    _, benzene = pipeline.admit(pipeline.MoleculeInput(smiles="c1ccccc1"))
+    along = vibrations.vibrational_modes(_synthetic_low_level(benzene).hessian, benzene).vectors[
+        :, :1
+    ]
+    stiff = pipeline._step_off_bohr(vibrations.Modes(np.array([-400.0]), along), benzene)  # noqa: SLF001
+    _, length = vibrations.displacement(along[:, 0], benzene.masses_amu, stiff)
+    lowering = 0.5 * (400.0 / WAVENUMBERS_PER_HARTREE) ** 2 * length**2
+    assert lowering == pytest.approx(pipeline.SADDLE_ENERGY_LOWERING_HARTREE)
+    assert stiff < pipeline.LARGEST_STEP_OFF_BOHR
+    soft = pipeline._step_off_bohr(vibrations.Modes(np.array([-12.0]), along), benzene)  # noqa: SLF001
+    assert soft == pipeline.LARGEST_STEP_OFF_BOHR
+
+
+def _flat_at_minus_ten(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give every low-level Hessian one imaginary mode at -10 cm⁻¹, softer than the line."""
+    stable = lowlevel.compute
+
+    def compute(geometry: Geometry, resources: Resources, log: TextIO) -> lowlevel.LowLevel:
+        result = stable(geometry, resources, log)
+        modes = vibrations.vibrational_modes(result.hessian, geometry)
+        weighted = modes.vectors[:, 0] * vibrations.mass_weights(geometry.masses_amu)
+        now = (modes.wavenumbers[0] / WAVENUMBERS_PER_HARTREE) ** 2
+        wanted = -((10.0 / WAVENUMBERS_PER_HARTREE) ** 2)
+        return replace(
+            result, hessian=result.hessian + (wanted - now) * np.outer(weighted, weighted)
+        )
+
+    monkeypatch.setattr(lowlevel, "compute", compute)
+
+
+def test_a_flat_coordinate_gets_its_spectrum_with_that_band_named_and_unlicensed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    _flat_at_minus_ten(monkeypatch)
+    loaded = release.load(write_release(tmp_path / "release"))
+    record = pipeline.run_spectrum(_benzene(tmp_path / "benzene"), loaded)
+    assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
+    flat = [band for band in record["bands"] if band["b3lyp_cm"] < 0]
+    assert [band["b3lyp_cm"] for band in flat] == [-10.0]
+    assert flat[0]["licence_note"] == certificate.FLAT_COORDINATE
+    assert not flat[0]["licensed"]
+    assert "1 band(s) lie on a flat coordinate" in record["statement"]
+    assert any("is not a band position and is never licensed" in w for w in record["warnings"])
+    assert record["computation"]["optimisation"]["left_saddle_point_at_cm"] == pytest.approx(-10.0)
+    text = (tmp_path / "benzene" / "certificate.md").read_text(encoding="utf-8")
+    assert "| no: a flat coordinate: its low-level mode is imaginary" in text
+
+
+def test_the_baseline_names_a_flat_coordinate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    _flat_at_minus_ten(monkeypatch)
+    record = pipeline.run_baseline(_benzene(tmp_path / "benzene"))
+    assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
+    assert record["notes"][0].startswith(
+        "the molecule is flat along 1 coordinate(s): the mode(s) at -10.0 cm⁻¹ are imaginary"
+    )
+    assert record["harmonic"]["bands"][0]["wavenumber_cm"] == pytest.approx(-10.0, abs=0.05)
+
+
+def test_a_geometry_converged_on_energy_and_forces_says_so_with_its_numbers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    last_step = {
+        "energy_change_hartree": -6.7e-10,
+        "rms_force_hartree_per_bohr": 1.3e-6,
+        "max_force_hartree_per_bohr": 2.3e-6,
+        "rms_displacement_angstrom": 4.2e-4,
+        "max_displacement_angstrom": 9.1e-4,
+    }
+
+    def crawled(
+        start: Geometry, *_arguments: object, **_progress: object
+    ) -> optimisation.Optimisation:
+        synthetic_chemistry["optimise"] += 1
+        return optimisation.Optimisation(
+            start, -1.0, 1e-6, 104, optimisation.ENERGY_AND_FORCES, last_step
+        )
+
+    monkeypatch.setattr(optimisation, "optimise", crawled)
+    folder = tmp_path / "benzene"
+    _stopped_before_the_repair(folder, monkeypatch)
+    loaded_back = pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry["optimise"] == 1
+    assert loaded_back["optimisation"]["converged_on"] == optimisation.ENERGY_AND_FORCES
+    assert loaded_back["optimisation"]["last_step"] == last_step
+    said = (
+        "the geometry is converged on energy and forces; the displacement criterion was not "
+        "met on a flat coordinate (104 gradients; the last step changed the energy by -6.7e-10 "
+        "hartree, with forces of 1.3e-06 rms and 2.3e-06 hartree/bohr at most, and moved the "
+        "atoms by 4.2e-04 rms and 9.1e-04 Å at most; geomeTRIC's GAU_TIGHT asks for the energy, "
+        "the forces and the displacement)"
+    )
+    assert loaded_back["notes"] == [said]
+    record = pipeline.run_spectrum(
+        _benzene(tmp_path / "again"), release.load(write_release(tmp_path / "release"))
+    )
+    assert loaded_back["notes"][0] in record["not_in_the_error"]
+    assert "- The geometry is converged on energy and forces;" in (
+        tmp_path / "again" / "certificate.md"
+    ).read_text(encoding="utf-8")
