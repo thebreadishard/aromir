@@ -31,3 +31,7 @@ class NotAMinimumError(AromirError):
 
 class ResponseError(AromirError):
     """The dipole derivatives failed one of their own checks, so no intensity is trusted."""
+
+
+class InternalCoordinatesError(AromirError):
+    """The primitives do not span exactly the 3N − 6 internal directions of the molecule."""

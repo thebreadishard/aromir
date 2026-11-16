@@ -25,5 +25,6 @@ dihedrals) and `parity_odd` (the parity-odd factor, mean pooling, pattern d).
 `coords_bohr`), its Wilson B matrix exactly as numpy 2.5.4 on Linux (OpenBLAS 0.3.34,
 SkylakeX kernel) built it (`wilson_b`, 114 × 69), and `np.linalg.pinv` of that matrix from
 numpy 2.5.1 on Windows (`pseudo_inverse_windows`, largest element 3.30). On the Linux build
-the same call keeps a seventh-from-last singular value of 7e-15 and returns 1e13. Written
+the same call keeps the first null singular value (the 64th of 69, returned as 7e-15) and
+its B⁺ reaches 1e13. Written
 by `probes/results_m1/aromir_pinv_2026-11-16/make_fixture.py` of the capstone repository.

@@ -38,10 +38,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rounding residue of B's six null singular values: on numpy 2.5.4's Linux wheels one of
   them came back above the cutoff for 72 of the 1,240 molecules of the training corpus
   (4-cyanobiphenyl among them), B⁺ reached 1e13 and the corrected spectrum was
-  meaningless, while another build gave the right answer for the same input. For
-  diphenylacetylene, whose linear angles let a rotation into B at 1e-7, it failed on every
-  build. `aromir.network.primitives.pseudo_inverse` now keeps exactly the 3N − 6 largest
-  singular values and refuses a B whose values on either side of that count are not where
-  they belong (a linear molecule, primitives that miss a direction). With it the Linux
-  build's ΔH for 76 of those molecules agrees with the Windows build's to 2.4e-7
-  hartree/bohr² (bands to 2e-4 cm⁻¹), and where the old call was right nothing changes.
+  meaningless, while another build gave the right answer for the same input.
+  `aromir.network.primitives.pseudo_inverse` now keeps exactly the 3N − 6 largest singular
+  values and refuses, with an `InternalCoordinatesError`, a B whose values on either side
+  of that count are not where they belong (a linear molecule, primitives that miss a
+  direction). With the v1.3 release the Linux build's ΔH for 76 of those molecules now
+  agrees with the Windows build's to 2.4e-7 hartree/bohr² (bands to 2e-4 cm⁻¹); on
+  Windows 75 of the 76 are unchanged to the bit.
+- An alkyne between two rings or an allene no longer breaks the pseudo-inverse on every
+  build. geomeTRIC measures a linear angle against a fixed axis, so where two such groups
+  share an axis that is bent by θ, a rotation enters B at about θ: 1e-7 of the largest
+  singular value for diphenylacetylene at its minimum (the 76th molecule above: ΔH 6e17
+  before, 0.056 hartree/bohr² now), 1e-4 for start geometries of unsymmetrical alkynes.
+  The count drops that direction; a bend that puts it above 1e-3 is refused.

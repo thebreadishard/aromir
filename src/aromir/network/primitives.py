@@ -3,7 +3,8 @@
 The network predicts its correction in internal coordinates: bonds, angles, dihedrals and
 out-of-plane bends. Their Wilson B matrix carries a correction ΔF to Cartesian
 coordinates as ΔH = Bᵀ ΔF B, which is symmetric and free of translations and rotations
-by construction.
+by construction (but for a bent linear angle, whose row holds a rotation at about the size
+of the bend in radians).
 
 geomeTRIC keeps two of the three angles at a planar centre and chooses by atom number, so
 two atom orders of one molecule get different primitives. The ``canonical`` angle choice
@@ -31,6 +32,7 @@ from pydantic import BaseModel, ConfigDict
 from rdkit import Chem
 
 from aromir.constants import ANGSTROM_PER_BOHR
+from aromir.errors import InternalCoordinatesError
 from aromir.network import graph
 from aromir.vibrations import N_RIGID_MOTIONS
 
@@ -52,12 +54,13 @@ OTHER: Final = 5
 
 _PARITY_TOLERANCE: Final = 1e-6
 
-_SMALLEST_REAL: Final = 1e-4
-_LARGEST_NULL: Final = 1e-5
-"""Where the singular values on either side of the rank 3N − 6 must lie, relative to the
-largest. Over the 1,240 molecules of the networks' training corpus the smallest real value
-is 1.0e-2 (E-stilbene) and the largest null one 3.5e-8 (diphenylacetylene, whose linear
-angles let a rotation through at that size); every other null value is below 4e-15."""
+_RANK_GAP: Final = 1e-3
+"""The share of B's largest singular value that separates the 3N − 6 real values from the
+rest. Over the 1,240 molecules of the networks' training corpus the smallest real value is
+1.0e-2 (E-stilbene) and every further value below 4e-15, but for diphenylacetylene, 3.5e-8:
+geomeTRIC measures a linear angle against a fixed axis, and where two such groups share an
+axis that is bent by θ a rotation enters B at about θ. Start geometries of unsymmetrical
+alkynes and allenes reach 4e-4, beside a smallest real value of 5.6e-3."""
 
 
 class PrimitiveSettings(BaseModel):
@@ -146,20 +149,21 @@ def build(geometry: Geometry, settings: PrimitiveSettings) -> Primitives:
 def pseudo_inverse(wilson_b: FloatArray) -> FloatArray:
     """Return B⁺ from exactly the 3N − 6 largest singular values of a Wilson B matrix.
 
-    The rows of B do not change under the six rigid motions, so of its 3N columns 3N − 6
-    are independent and every further singular value is rounding residue. A cutoff relative
-    to the largest value sits inside that residue — at ``np.linalg.pinv``'s default of
-    1e-15 one LAPACK build returns a null value of 9e-16 and drops it, another returns
-    7e-15 for the same matrix and inverts it to 1e14. The count is known, so the count
-    decides, and the two values next to it are checked against where they belong.
+    Internal coordinates do not change under the six rigid motions, so of B's 3N columns
+    3N − 6 are independent and every further singular value is rounding residue, or the
+    small share of a rotation that a bent linear angle lets in. A cutoff relative to the
+    largest value sits inside that residue: at ``np.linalg.pinv``'s default of 1e-15 one
+    LAPACK build returns a null value of 9e-16 and drops it, another returns 7e-15 for the
+    same matrix and keeps it, and B⁺ reaches 1e13. The count is known, so the count
+    decides, and the values on either side of it are checked against where they belong.
 
     Args:
         wilson_b: (K, 3N), the derivatives of K primitives to the Cartesian coordinates of
             a non-linear molecule.
 
     Raises:
-        ValueError: The primitives span fewer than 3N − 6 directions, or more: B is then
-            not the matrix of a non-linear molecule's internal coordinates.
+        InternalCoordinatesError: B is not finite, or the primitives span fewer than
+            3N − 6 directions, or more.
     """
     n_primitives, n_cartesian = wilson_b.shape
     n_internal = n_cartesian - N_RIGID_MOTIONS
@@ -168,22 +172,26 @@ def pseudo_inverse(wilson_b: FloatArray) -> FloatArray:
             f"{n_primitives} primitives on {n_cartesian} Cartesian coordinates span fewer "
             f"than 3N − 6 = {n_internal} directions"
         )
-        raise ValueError(msg)
+        raise InternalCoordinatesError(msg)
+    if not np.isfinite(wilson_b).all() or not wilson_b.any():
+        msg = "the Wilson B matrix is zero or not finite"
+        raise InternalCoordinatesError(msg)
     left, values, right = np.linalg.svd(wilson_b, full_matrices=False)
-    if values[n_internal - 1] < _SMALLEST_REAL * values[0]:
+    if values[n_internal - 1] <= _RANK_GAP * values[0]:
         msg = (
             f"the primitives span fewer than 3N − 6 = {n_internal} directions: singular "
             f"value {n_internal} of B is {values[n_internal - 1]:.1e}, the largest "
             f"{values[0]:.1e}"
         )
-        raise ValueError(msg)
-    if len(values) > n_internal and values[n_internal] > _LARGEST_NULL * values[0]:
+        raise InternalCoordinatesError(msg)
+    if len(values) > n_internal and values[n_internal] > _RANK_GAP * values[0]:
         msg = (
             f"the primitives span more than 3N − 6 = {n_internal} directions: singular "
             f"value {n_internal + 1} of B is {values[n_internal]:.1e}, the largest "
-            f"{values[0]:.1e}; a linear molecule, or a B that changes under a rotation"
+            f"{values[0]:.1e}; a linear molecule, or a linear group (an alkyne, an allene) "
+            "bent so far that its angles' rows hold a rotation"
         )
-        raise ValueError(msg)
+        raise InternalCoordinatesError(msg)
     kept = (right[:n_internal].T / values[:n_internal]) @ left[:, :n_internal].T
     return np.asarray(kept, dtype=float)
 
