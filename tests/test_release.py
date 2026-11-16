@@ -111,11 +111,11 @@ def test_seeds_built_differently_are_refused(tmp_path: Path) -> None:
         release.load(folder)
 
 
-def test_the_same_seed_twice_is_refused(tmp_path: Path) -> None:
+def test_a_recipe_under_another_seeds_name_is_refused(tmp_path: Path) -> None:
     folder = write_release(tmp_path)
     again = weights.Recipe(
         network_version="1.3", seed=1, architecture=SMALL_ARCHITECTURE, inputs=InputSettings()
     )
     weights.save(random_network(SMALL_ARCHITECTURE, seed=1).state_dict(), folder, "seed-9", again)
-    with pytest.raises(RefusedError, match="same seed"):
+    with pytest.raises(RefusedError, match="holds the recipe of seed 1"):
         release.load(folder)

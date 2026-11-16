@@ -10,13 +10,15 @@ from typing import Final
 from pydantic import ValidationError
 
 import aromir
-from aromir import card, pipeline, records, release
+from aromir import card, certificate, pipeline, records, release
 from aromir.dft import Resources
 from aromir.errors import AromirError, RefusedError
 
 EXIT_DONE: Final = 0
 EXIT_FAILED: Final = 1
 EXIT_REFUSED: Final = 2
+EXIT_UNPHYSICAL: Final = 3
+"""The result is written, but a corrected band is imaginary: not a spectrum to use."""
 
 
 RELEASE_HELP: Final = (
@@ -50,6 +52,12 @@ def _parser() -> argparse.ArgumentParser:
         help="compute the corrected spectrum with a network release and write its certificate",
     )
     spectrum.add_argument("--release", type=Path, help=RELEASE_HELP)
+    spectrum.add_argument(
+        "--outside-training-sizes",
+        action="store_true",
+        help="compute a molecule smaller or larger than the network's training molecules, "
+        "although none of its bands can be licensed",
+    )
     for computing in (baseline, spectrum):
         computing.add_argument(
             "--out", type=Path, required=True, help="the result folder (empty or new)"
@@ -70,43 +78,75 @@ def _release(arguments: argparse.Namespace) -> release.Release:
 
 
 def _write_card(arguments: argparse.Namespace) -> None:
+    out = arguments.out
+    reasons = []
+    if out is not None and out.exists():
+        reasons.append(f"{out} exists: a result is never overwritten")
+    if out is not None and not out.parent.is_dir():
+        reasons.append(f"{out.parent}: no such folder")
+    if reasons:
+        raise RefusedError(reasons)
     text = card.to_markdown(_release(arguments))
-    if arguments.out is None:
+    if out is None:
         print(text, end="")  # noqa: T201  the command's answer
         return
-    records.write_text(arguments.out, text)
-    print(f"done: model card in {arguments.out}")  # noqa: T201  the command's answer
+    records.write_text(out, text)
+    print(f"done: model card in {out}")  # noqa: T201  the command's answer
 
 
-def _run(arguments: argparse.Namespace) -> None:
+def _spectrum(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -> int:
+    request = pipeline.Request(
+        molecule=molecule,
+        out=arguments.out,
+        resources=Resources(threads=arguments.threads, max_memory_mb=arguments.max_memory_mb),
+        outside_training_sizes=arguments.outside_training_sizes,
+    )
+    record = pipeline.run_spectrum(request, _release(arguments))
+    n_licensed = sum(band["licensed"] for band in record["bands"])
+    summary = (
+        f"{len(record['bands'])} bands, {n_licensed} of them licensed; "
+        f"certificate in {request.out / pipeline.CERTIFICATE_TEXT_FILE}"
+    )
+    n_imaginary = sum(band["licence_note"] == certificate.IMAGINARY for band in record["bands"])
+    if n_imaginary:
+        # The result is written, but it is no spectrum to use as it stands.
+        print(  # noqa: T201  the command's answer
+            f"unphysical: {n_imaginary} corrected band(s) have an imaginary position; {summary}",
+            file=sys.stderr,
+        )
+        return EXIT_UNPHYSICAL
+    print(f"done: {summary}")  # noqa: T201  the command's answer
+    return EXIT_DONE
+
+
+def _run(arguments: argparse.Namespace) -> int:
     if arguments.command == "card":
         _write_card(arguments)
-        return
+        return EXIT_DONE
     molecule = pipeline.MoleculeInput(smiles=arguments.smiles, xyz=arguments.xyz)
     if arguments.command == "check":
         admitted, _start = pipeline.admit(molecule)
         print(f"admitted: {admitted.smiles} ({admitted.formula}, {admitted.n_atoms} atoms)")  # noqa: T201  the command's answer
-        return
+        return EXIT_DONE
+    if arguments.command == "spectrum":
+        return _spectrum(arguments, molecule)
     resources = Resources(threads=arguments.threads, max_memory_mb=arguments.max_memory_mb)
     request = pipeline.Request(molecule=molecule, out=arguments.out, resources=resources)
-    if arguments.command == "baseline":
-        record = pipeline.run_baseline(request)
-        n_bands = len(record["harmonic"]["bands"])
-        print(f"done: {n_bands} bands in {request.out / pipeline.BASELINE_FILE}")  # noqa: T201  the command's answer
-        return
-    record = pipeline.run_spectrum(request, _release(arguments))
-    n_licensed = sum(band["licensed"] for band in record["bands"])
-    print(  # noqa: T201  the command's answer
-        f"done: {len(record['bands'])} bands, {n_licensed} of them licensed; "
-        f"certificate in {request.out / pipeline.CERTIFICATE_TEXT_FILE}"
-    )
+    record = pipeline.run_baseline(request)
+    n_bands = len(record["harmonic"]["bands"])
+    print(f"done: {n_bands} bands in {request.out / pipeline.BASELINE_FILE}")  # noqa: T201  the command's answer
+    return EXIT_DONE
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the command line; return the process's exit code."""
+    """Run the command line; return the process's exit code.
+
+    No failure a user can cause leaves as a traceback: a refusal names its reasons (exit
+    2), anything else is one line with the error's kind (exit 1).
+    """
     arguments = _parser().parse_args(argv)
     try:
-        _run(arguments)
+        return _run(arguments)
     except ValidationError as invalid:
         reasons = [
             ": ".join([*(str(part) for part in error["loc"]), str(error["msg"])])
@@ -120,7 +160,11 @@ def main(argv: list[str] | None = None) -> int:
     except AromirError as failure:
         print(f"failed: {failure}", file=sys.stderr)  # noqa: T201  the command's answer
         return EXIT_FAILED
-    return EXIT_DONE
+    except (OSError, ValueError, ArithmeticError) as failure:
+        # A file that cannot be read or written, or a numerical step that broke: the
+        # kind is named because the message alone may not say what happened.
+        print(f"failed: {type(failure).__name__}: {failure}", file=sys.stderr)  # noqa: T201  the command's answer
+        return EXIT_FAILED
 
 
 if __name__ == "__main__":

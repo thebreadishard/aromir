@@ -63,6 +63,8 @@ class Request(BaseModel):
     molecule: MoleculeInput
     out: Path
     resources: Resources = Resources()
+    outside_training_sizes: bool = False
+    """Compute a corrected spectrum although no band of it can be licensed."""
 
 
 def admit(molecule: MoleculeInput) -> tuple[admission.Admission, Geometry]:
@@ -82,6 +84,8 @@ def admit(molecule: MoleculeInput) -> tuple[admission.Admission, Geometry]:
 
 def _new_folder(out: Path) -> Path:
     folder = out.resolve()
+    if folder.exists() and not folder.is_dir():
+        raise RefusedError([f"{folder} is a file: --out names a folder"])
     if folder.exists() and any(folder.iterdir()):
         raise RefusedError([f"{folder} is not empty: a result is never overwritten"])
     return folder
@@ -185,6 +189,18 @@ def _untrained_elements(start: Geometry, release: Release) -> list[str]:
     return [f"element(s) {', '.join(unseen)} outside the network's training set ({trained})"]
 
 
+def _untrained_size(start: Geometry, release: Release) -> list[str]:
+    training = release.training
+    if training.min_atoms <= start.n_atoms <= training.max_atoms:
+        return []
+    reason = (
+        f"{start.n_atoms} atoms: the network was trained on {training.min_atoms} to "
+        f"{training.max_atoms}, so no band of this molecule would be licensed; "
+        "--outside-training-sizes computes it all the same"
+    )
+    return [reason]
+
+
 def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     """Compute a molecule's corrected spectrum and certificate and write its result folder.
 
@@ -200,6 +216,8 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     """
     admitted, start = admit(request.molecule)
     reasons = _untrained_elements(start, release)
+    if not request.outside_training_sizes:
+        reasons += _untrained_size(start, release)
     if reasons:
         raise RefusedError(reasons)
     folder = _new_folder(request.out)

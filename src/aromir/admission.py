@@ -31,19 +31,30 @@ class Admission:
         smiles: RDKit's canonical SMILES; every writing of the molecule gives the same one.
         formula: The molecular formula.
         n_atoms: The number of atoms, hydrogens included.
+        unassigned_stereo: What the input leaves open, such as "1 double bond": the
+            computed geometry is then one isomer of several the SMILES stands for.
     """
 
     smiles: str
     formula: str
     n_atoms: int
+    unassigned_stereo: tuple[str, ...] = ()
 
 
 def parse_smiles(smiles: str) -> Mol:
     """Parse a SMILES string into a molecule with explicit hydrogens.
 
     Raises:
-        RefusedError: The string is not a valid SMILES.
+        RefusedError: The string is not one valid SMILES and nothing else.
     """
+    # RDKit reads a SMILES up to the first blank and takes the rest for a name, so
+    # "c1ccccc1 benzene" would be answered as benzene without a word.
+    if not smiles or not smiles.isascii() or any(character.isspace() for character in smiles):
+        reason = (
+            f"{smiles!r} is not a SMILES alone: it is empty, or holds a blank, a name after "
+            "the SMILES or a character outside ASCII"
+        )
+        raise RefusedError([reason])
     molecule = Chem.MolFromSmiles(smiles)
     if molecule is None:
         raise RefusedError([f"{smiles!r} does not parse as a SMILES"])
@@ -56,19 +67,48 @@ def parse_xyz(path: Path) -> Mol:
     Raises:
         RefusedError: The file does not parse, or no neutral bonding pattern fits it.
     """
-    molecule = Chem.MolFromXYZFile(str(path))
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise RefusedError([f"{path} cannot be read as UTF-8 text: {error}"]) from error
+    molecule = Chem.MolFromXYZBlock(text)
     if molecule is None:
         raise RefusedError([f"{path} does not parse as an xyz file"])
     try:
         rdDetermineBonds.DetermineBonds(molecule, charge=0)
     except ValueError as error:
         raise RefusedError([f"{path}: no neutral bonding pattern fits the geometry"]) from error
+    Chem.AssignStereochemistryFrom3D(molecule)
     return molecule
+
+
+def _unassigned_stereo(molecule: Mol) -> tuple[str, ...]:
+    """Name the double bonds and stereocentres an input does not assign."""
+    open_elements = [
+        element.type
+        for element in Chem.FindPotentialStereo(Chem.RemoveHs(molecule))
+        if element.specified == Chem.StereoSpecified.Unspecified
+    ]
+    counts = {
+        "double bond": sum(kind == Chem.StereoType.Bond_Double for kind in open_elements),
+        "stereocentre": sum(kind == Chem.StereoType.Atom_Tetrahedral for kind in open_elements),
+    }
+    return tuple(f"{n} {name}{'s' if n > 1 else ''}" for name, n in counts.items() if n)
 
 
 def _reasons_to_refuse(molecule: Mol) -> list[str]:
     atoms = list(molecule.GetAtoms())
+    if not atoms:
+        return ["the input holds no atom"]
     reasons = []
+    labelled = sorted(
+        {f"{atom.GetIsotope()}{atom.GetSymbol()}" for atom in atoms if atom.GetIsotope()}
+    )
+    if labelled:
+        reasons.append(
+            f"isotope label(s) {', '.join(labelled)}: every atom is computed with the mass of "
+            "its most abundant isotope, so an isotopologue's spectrum would be wrong"
+        )
     n_fragments = len(Chem.GetMolFrags(molecule))
     if n_fragments > 1:
         reasons.append(f"{n_fragments} separate molecules: one molecule at a time")
@@ -100,4 +140,5 @@ def admit(molecule: Mol) -> Admission:
         smiles=Chem.MolToSmiles(Chem.RemoveHs(molecule)),
         formula=CalcMolFormula(molecule),
         n_atoms=molecule.GetNumAtoms(),
+        unassigned_stereo=_unassigned_stereo(molecule),
     )

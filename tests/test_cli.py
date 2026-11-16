@@ -88,7 +88,8 @@ def test_spectrum_reports_the_licensed_bands(
 
     def run(_request: pipeline.Request, loaded: str) -> dict[str, Any]:
         assert loaded == "the release"
-        return {"bands": [{"licensed": True}, {"licensed": True}, {"licensed": False}]}
+        notes = ("", "", "the family's error is above the licence line")
+        return {"bands": [{"licensed": not note, "licence_note": note} for note in notes]}
 
     monkeypatch.setattr(release, "load", load)
     monkeypatch.setattr(pipeline, "run_spectrum", run)

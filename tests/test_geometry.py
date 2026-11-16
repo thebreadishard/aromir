@@ -9,6 +9,7 @@ import pytest
 from rdkit.Chem import rdDistGeom
 
 from aromir import admission, geometry
+from aromir.errors import RefusedError
 
 from support import BENZENE_XYZ
 
@@ -99,5 +100,5 @@ def test_random_coordinates_are_tried_when_the_first_embedding_fails(
 
 def test_no_embedding_at_all_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rdDistGeom, "EmbedMolecule", lambda _molecule, **_options: -1)
-    with pytest.raises(ValueError, match="no 3D embedding"):
+    with pytest.raises(RefusedError, match="no 3D start geometry"):
         geometry.start_from_smiles("c1ccccc1")

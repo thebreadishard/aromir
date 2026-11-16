@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -97,7 +97,7 @@ def random_network(architecture: Architecture, seed: int) -> DeltaHessianNetwork
 
 RELEASE_DATA = Path(__file__).parent / "data" / "release"
 SMALL_ARCHITECTURE = Architecture(n_features=16, n_blocks=2, hidden=24)
-TRAINING = {
+TRAINING: dict[str, Any] = {
     "network_version": "1.3",
     "elements": ["C", "H", "N", "O"],
     "min_atoms": 10,
@@ -110,10 +110,16 @@ TRAINING = {
 
 
 def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = "1.3") -> Path:
-    """Write a release folder: v1.3's evaluation record, ``TRAINING`` and random small seeds."""
+    """Write a release folder: v1.3's evaluation record, ``TRAINING`` and random small seeds.
+
+    The evaluation's hold-out counts are set to ``TRAINING``'s one molecule each: a release
+    whose two records count differently does not load.
+    """
     folder.mkdir(parents=True, exist_ok=True)
-    evaluation = (RELEASE_DATA / "evaluation_v1.3.json").read_text(encoding="utf-8")
-    (folder / "evaluation.json").write_text(evaluation, encoding="utf-8")
+    evaluation = json.loads((RELEASE_DATA / "evaluation_v1.3.json").read_text(encoding="utf-8"))
+    for name, held_out in TRAINING["held_out_smiles"].items():
+        evaluation["holdouts"][name]["n_molecules"] = len(held_out)
+    (folder / "evaluation.json").write_text(json.dumps(evaluation), encoding="utf-8")
     (folder / "training.json").write_text(json.dumps(TRAINING), encoding="utf-8")
     for seed in seeds:
         recipe = weights.Recipe(

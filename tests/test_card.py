@@ -111,7 +111,7 @@ def test_the_card_warns_about_the_atom_order_unless_the_network_is_order_free(
     )
     recipes = tuple(recipe.model_copy(update={"inputs": order_free}) for recipe in loaded.recipes)
     text = card.to_markdown(replace(loaded, recipes=recipes))
-    assert "does not depend on how the molecule's atoms are numbered" in text
+    assert "is meant to make the answer independent of how the molecule's atoms" in text
     assert "Do not feed the network" not in text
 
 
@@ -150,7 +150,9 @@ def test_a_release_record_missing_a_field_names_it(
     training = {key: value for key, value in TRAINING.items() if key != "soft_mode_repair"}
     (folder / "training.json").write_text(json.dumps(training), encoding="utf-8")
     assert cli.main(["card", "--release", str(folder)]) == cli.EXIT_REFUSED
-    assert capsys.readouterr().err == "refused:\n  soft_mode_repair: Field required\n"
+    assert capsys.readouterr().err == (
+        f"refused:\n  {folder / 'training.json'}: soft_mode_repair: Field required\n"
+    )
 
 
 def test_the_card_states_the_measured_spread_between_atom_orders(loaded: release.Release) -> None:

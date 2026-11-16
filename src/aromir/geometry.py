@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Final
 from rdkit import Chem
 from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
+from aromir.errors import RefusedError
 from aromir.molecule import Geometry
 
 if TYPE_CHECKING:
@@ -65,7 +66,7 @@ def start_from_smiles(canonical_smiles: str) -> Geometry:
     its canonical SMILES in the order that SMILES writes it.
 
     Raises:
-        ValueError: RDKit finds no 3D embedding.
+        RefusedError: RDKit finds no 3D embedding, so there is no geometry to start from.
     """
     molecule = Chem.AddHs(Chem.MolFromSmiles(canonical_smiles))
     if rdDistGeom.EmbedMolecule(molecule, randomSeed=EMBEDDING_SEED) != _EMBEDDED:
@@ -73,8 +74,11 @@ def start_from_smiles(canonical_smiles: str) -> Geometry:
             molecule, randomSeed=EMBEDDING_SEED, useRandomCoords=True
         )
         if embedded != _EMBEDDED:
-            msg = f"no 3D embedding found for {canonical_smiles}"
-            raise ValueError(msg)
+            reason = (
+                f"RDKit finds no 3D start geometry for {canonical_smiles}: give the molecule "
+                "as an xyz file"
+            )
+            raise RefusedError([reason])
     rdForceFieldHelpers.MMFFOptimizeMolecule(molecule, maxIters=FORCE_FIELD_ITERATIONS)
     return Geometry.from_angstrom(_symbols(molecule), molecule.GetConformer().GetPositions())
 

@@ -17,13 +17,16 @@ download and works on a machine without a network connection.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Self
+from typing import TYPE_CHECKING, Final, Self, TypeVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from safetensors import SafetensorError
 
+from aromir.constants import ELEMENTS
 from aromir.errors import RefusedError
 from aromir.families import FAMILIES, Family
 from aromir.network import inputs, weights
@@ -38,6 +41,7 @@ INVARIANCE_FILE: Final = "invariance.json"
 SEED_FILES: Final = "seed-*.json"
 MIN_SEEDS: Final = 2
 """A band's spread over the seeds needs at least two of them."""
+_Record = TypeVar("_Record", bound=BaseModel)
 BUNDLED_VERSION: Final = "1.3"
 """The network version whose release ships inside the package."""
 
@@ -63,7 +67,7 @@ class AtomOrderSpread(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    max_cm: float = Field(ge=0)
+    max_cm: float = Field(ge=0, allow_inf_nan=False)
     n_molecules: int = Field(ge=1)
     n_orders: int = Field(ge=1)
     source: str
@@ -89,7 +93,7 @@ class Evaluation(BaseModel):
 
     network_version: str
     higher_level: str
-    licence_line_cm: float = Field(gt=0)
+    licence_line_cm: float = Field(gt=0, allow_inf_nan=False)
     holdouts: dict[str, Holdout]
     errors_cm: dict[Family, dict[str, float]]
     seed_errors_cm: dict[Family, dict[str, list[float]]]
@@ -110,6 +114,20 @@ class Evaluation(BaseModel):
                         f"hold-outs {sorted(self.holdouts)}"
                     )
                     raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _every_error_is_an_error(self) -> Self:
+        errors = [error for per in self.errors_cm.values() for error in per.values()]
+        errors += [
+            error
+            for per in self.seed_errors_cm.values()
+            for seeds in per.values()
+            for error in seeds
+        ]
+        if not all(math.isfinite(error) and error >= 0 for error in errors):
+            msg = "an rms error is negative or not a finite number"
+            raise ValueError(msg)
         return self
 
     def licensed(self, family: Family) -> bool:
@@ -141,28 +159,61 @@ class Training(BaseModel):
     held_out_smiles: dict[str, list[str]]
     soft_mode_repair: bool
 
+    @model_validator(mode="after")
+    def _a_set_that_can_exist(self) -> Self:
+        unknown = sorted(set(self.elements) - set(ELEMENTS))
+        if unknown:
+            msg = f"element(s) {', '.join(unknown)} that the package does not know"
+            raise ValueError(msg)
+        if self.min_atoms > self.max_atoms:
+            msg = f"the smallest molecule has {self.min_atoms} atoms, the largest {self.max_atoms}"
+            raise ValueError(msg)
+        return self
+
+    def n_held_out(self, holdout: str) -> int:
+        """Count a hold-out's molecules that no seed trained on under another identifier."""
+        return len(set(self.held_out_smiles[holdout]) - set(self.trained_smiles))
+
 
 class MeasuredSpread(BaseModel):
     """How far the corrected band positions move under one change that leaves a molecule itself.
 
+    The numbers are the largest seen on a handful of molecules, not bounds.
+
     Attributes:
         with_linear_group_cm: The largest change of any band, cm⁻¹, over the molecules
-            measured that have a linear group (a nitrile, an alkyne).
+            measured that have a linear group (a nitrile, an alkyne); None when no such
+            molecule was measured.
+        n_with_linear_group: How many such molecules were measured.
         without_linear_group_cm: The same over the molecules without one.
-        n_molecules: The molecules it was measured on.
+        n_without_linear_group: How many of those were measured.
         n_trials: The changes tried per molecule.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    with_linear_group_cm: float = Field(ge=0)
-    without_linear_group_cm: float = Field(ge=0)
-    n_molecules: int = Field(ge=1)
+    with_linear_group_cm: float | None = Field(ge=0, allow_inf_nan=False)
+    n_with_linear_group: int = Field(ge=0)
+    without_linear_group_cm: float | None = Field(ge=0, allow_inf_nan=False)
+    n_without_linear_group: int = Field(ge=0)
     n_trials: int = Field(ge=1)
 
-    def of(self, *, linear_group: bool) -> float:
-        """Return the spread that applies to a molecule with or without a linear group."""
-        return self.with_linear_group_cm if linear_group else self.without_linear_group_cm
+    @model_validator(mode="after")
+    def _a_number_for_every_molecule_measured(self) -> Self:
+        for value, count in (
+            (self.with_linear_group_cm, self.n_with_linear_group),
+            (self.without_linear_group_cm, self.n_without_linear_group),
+        ):
+            if (value is None) != (count == 0):
+                msg = "a spread is given exactly when at least one molecule was measured"
+                raise ValueError(msg)
+        return self
+
+    def of(self, *, linear_group: bool) -> tuple[float | None, int]:
+        """Return the spread for molecules with or without a linear group, and their count."""
+        if linear_group:
+            return self.with_linear_group_cm, self.n_with_linear_group
+        return self.without_linear_group_cm, self.n_without_linear_group
 
 
 class Invariance(BaseModel):
@@ -266,9 +317,61 @@ def _reasons_to_refuse(
         reasons.append(f"its parts are of different network versions: {sorted(versions)}")
     if len({(recipe.architecture, recipe.inputs) for recipe in recipes}) > 1:
         reasons.append("its seeds differ in architecture or input settings")
-    if len({recipe.seed for recipe in recipes}) < len(recipes):
-        reasons.append("two of its weight files are of the same seed")
+    return reasons + _records_that_disagree(evaluation, training)
+
+
+def _records_that_disagree(evaluation: Evaluation, training: Training) -> list[str]:
+    """Name where the evaluation and the training record describe different hold-outs."""
+    if set(evaluation.holdouts) != set(training.held_out_smiles):
+        names = (
+            f"{EVALUATION_FILE} has the hold-outs {sorted(evaluation.holdouts)}, "
+            f"{TRAINING_FILE} {sorted(training.held_out_smiles)}"
+        )
+        return [names]
+    reasons = []
+    for name, holdout in evaluation.holdouts.items():
+        listed = training.n_held_out(name)
+        if holdout.n_molecules != listed:
+            reasons.append(
+                f"hold-out ({name}): {EVALUATION_FILE} counts {holdout.n_molecules} molecules, "
+                f"{TRAINING_FILE} lists {listed} that were never trained on"
+            )
     return reasons
+
+
+def _field_reasons(path: Path, invalid: ValidationError) -> list[str]:
+    """Return a record's validation errors, each with the file and the field it is in."""
+    return [
+        ": ".join([str(path), *(str(part) for part in error["loc"]), str(error["msg"])])
+        for error in invalid.errors()
+    ]
+
+
+def _record(model: type[_Record], folder: Path, name: str) -> _Record:
+    """Read one JSON record of a release; a file that does not hold it is a refusal."""
+    path = folder / name
+    try:
+        return model.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError as invalid:
+        raise RefusedError(_field_reasons(path, invalid)) from invalid
+    except (OSError, UnicodeDecodeError) as error:
+        raise RefusedError([f"{path} cannot be read as UTF-8 text: {error}"]) from error
+
+
+def _load_seeds(folder: Path) -> list[tuple[Path, DeltaHessianNetwork, weights.Recipe]]:
+    """Load every seed of a release folder; a file that is missing or damaged is a refusal."""
+    loaded = []
+    for path in sorted(folder.glob(SEED_FILES)):
+        try:
+            network, recipe = weights.load(path)
+        except ValidationError as invalid:
+            raise RefusedError(_field_reasons(path, invalid)) from invalid
+        except (OSError, ValueError, SafetensorError) as error:
+            raise RefusedError([f"{path}: {error}"]) from error
+        if path.name != f"seed-{recipe.seed}.json":
+            raise RefusedError([f"{path} holds the recipe of seed {recipe.seed}"])
+        loaded.append((path, network, recipe))
+    return loaded
 
 
 def bundled() -> Path:
@@ -285,25 +388,20 @@ def load(folder: Path) -> Release:
     missing = [name for name in (EVALUATION_FILE, TRAINING_FILE) if not (folder / name).is_file()]
     if missing:
         raise RefusedError([f"{folder}: no {name}" for name in missing])
-    evaluation = Evaluation.model_validate_json(
-        (folder / EVALUATION_FILE).read_text(encoding="utf-8")
-    )
-    training = Training.model_validate_json((folder / TRAINING_FILE).read_text(encoding="utf-8"))
+    evaluation = _record(Evaluation, folder, EVALUATION_FILE)
+    training = _record(Training, folder, TRAINING_FILE)
     invariance = None
     if (folder / INVARIANCE_FILE).is_file():
-        invariance = Invariance.model_validate_json(
-            (folder / INVARIANCE_FILE).read_text(encoding="utf-8")
-        )
-    seed_files = sorted(folder.glob(SEED_FILES))
-    loaded = [weights.load(path) for path in seed_files]
-    recipes = tuple(recipe for _, recipe in loaded)
+        invariance = _record(Invariance, folder, INVARIANCE_FILE)
+    loaded = _load_seeds(folder)
+    recipes = tuple(recipe for _, _, recipe in loaded)
     reasons = _reasons_to_refuse(recipes, evaluation, training, invariance)
     if reasons:
         raise RefusedError([f"{folder}: {reason}" for reason in reasons])
     return Release(
-        networks=tuple(network for network, _ in loaded),
+        networks=tuple(network for _, network, _ in loaded),
         recipes=recipes,
-        tensor_sha256=tuple(weights.recorded_sha256(path) for path in seed_files),
+        tensor_sha256=tuple(weights.recorded_sha256(path) for path, _, _ in loaded),
         evaluation=evaluation,
         training=training,
         invariance=invariance,

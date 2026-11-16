@@ -53,7 +53,9 @@ def _no_correction() -> release.Corrections:
 def test_without_a_correction_every_band_is_its_own_b3lyp_band(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
-    rows = certificate.bands(benzene, low, _no_correction(), loaded.evaluation)
+    rows = certificate.bands(
+        benzene, low, _no_correction(), loaded.evaluation, inside_training_sizes=True
+    )
     plain = spectrum.harmonic_bands(low.hessian, benzene, low.polar_tensor)
     scaled = spectrum.scaled(plain)
     assert len(rows) == N_BANDS
@@ -70,7 +72,9 @@ def test_each_band_carries_its_familys_record(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
-    rows = certificate.bands(benzene, low, corrections, loaded.evaluation)
+    rows = certificate.bands(
+        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True
+    )
     positions = [row.wavenumber_cm for row in rows]
     assert positions == sorted(positions)
     for row in rows:
@@ -85,7 +89,9 @@ def test_the_seeds_range_is_their_lowest_and_highest_position(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
-    rows = certificate.bands(benzene, low, corrections, loaded.evaluation)
+    rows = certificate.bands(
+        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True
+    )
     per_seed = [
         vib.vibrational_modes(low.hessian + delta, benzene).wavenumbers
         for delta in corrections.per_seed
@@ -135,7 +141,7 @@ def test_the_record_and_its_text(
     assert "on every hold-out (ring-ip, CH-stretch, CH-oop)" in record["statement"]
     assert "Not in that error" not in record["statement"]
     assert "harmonic" in record["positions"]
-    assert record["warnings"] == []
+    assert not any("imaginary (negative) position" in warning for warning in record["warnings"])
     assert json.loads(json.dumps(record)) == record
     text = certificate.to_markdown(record)
     assert text.startswith("# Certificate: c1ccccc1\n")

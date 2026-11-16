@@ -49,7 +49,7 @@ def test_every_reason_is_reported_at_once() -> None:
 
 def test_a_string_that_is_no_smiles_is_refused() -> None:
     with pytest.raises(RefusedError, match="does not parse as a SMILES"):
-        admission.parse_smiles("not a molecule")
+        admission.parse_smiles("c1ccccc")
 
 
 def test_an_xyz_file_is_read_with_its_bonds(tmp_path: Path) -> None:

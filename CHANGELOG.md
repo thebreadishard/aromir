@@ -36,20 +36,42 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - A band is licensed for the molecule it belongs to, not for its family alone: the
   family's error must be within the licence line on every hold-out, the molecule inside
-  the training sizes, and the band real and of the kind the family names. An O–H or N–H
-  stretch, which the family rule counts as CH-stretch, a band of a molecule outside the
-  training sizes and an imaginary band are printed as `no` with the reason
-  (`licence_note` in `certificate.json`).
+  the training sizes, the band real for the seeds' mean and for every seed, and a
+  CH-stretch or CH-oop band must move carbon-bound hydrogens (at most 10 % of its
+  hydrogen motion on N–H, O–H or S–H). An O–H or N–H stretch, which the family rule
+  counts as CH-stretch, a band of a molecule outside the training sizes and an
+  imaginary band are printed as `no` with the reason (`licence_note` in
+  `certificate.json`). A ring-ip band is licensed as the rule takes it.
 - The certificate states what the measured error does not cover: how far the positions
   move for another atom order, a rotation, the mirror image and another listing of an
   xyz file, each marked where it exceeds the licence line; that the heights are
-  B3LYP's; that one conformer was computed; and each family's rule in words.
+  B3LYP's; that one conformer was computed, and which stereo the SMILES left open; and
+  each family's rule in words. A stereoisomer of a training molecule is no longer
+  reported as never seen.
 - A release can hold `invariance.json`, the measured spreads under a rotation, a
-  reflection and another atom listing; v1.3's is measured and shipped: up to 5.34 cm⁻¹
-  under a rotation of a molecule with a nitrile or an alkyne (0.00 without one),
-  5.22 / 2.60 cm⁻¹ for the mirror image, 5.27 / 3.07 cm⁻¹ between listings of one xyz
-  geometry. The model card and the README no longer say that the correction turns with
+  reflection and another atom listing; v1.3's is measured and shipped, the largest seen
+  on three molecules with a nitrile or an alkyne and on four without: 5.34 / 0.00 cm⁻¹
+  under a rotation, 5.22 / 2.60 cm⁻¹ for the mirror image, 5.27 / 3.07 cm⁻¹ between
+  listings of one xyz geometry. The model card and the README no longer say that the correction turns with
   the molecule by construction, or that every input gets one canonical atom order.
+
+- Refused with a reason, before anything is computed: an isotope label (the masses are
+  those of the most abundant isotopes), a SMILES followed by a blank, a name or a
+  non-ASCII character (RDKit reads only up to the blank), an input without atoms, and,
+  for `aromir spectrum`, a molecule outside the release's training sizes unless
+  `--outside-training-sizes` is given.
+- No failure a user can cause ends in a traceback: no 3D start geometry, `--out` naming
+  a file, an xyz file or a release record that is not UTF-8, a missing, truncated or
+  damaged weight file and a recipe under another seed's name are refusals (exit 2);
+  any other file or numerical error is one line with its kind (exit 1).
+- `aromir card --out` refuses an existing file and a missing folder.
+- `aromir spectrum` exits with 3, not 0, when a corrected band is imaginary for the
+  seeds' mean or for one seed; the result is still written.
+- A release is refused when its records disagree or cannot be true: an error that is
+  negative or not finite, an element the package does not know, a smallest molecule
+  larger than the largest, hold-outs named differently in the two records, or a
+  hold-out count that the training record's list does not explain. A record's
+  validation error names its file.
 
 ### Fixed
 

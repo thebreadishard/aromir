@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from rdkit import Chem
+
 from aromir import families, spectrum, vibrations
 from aromir.network import primitives
 from aromir.release import error_text, level_name
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
 
 POSITIONS_NOTE: Final = "harmonic positions: the anharmonic shift is not included in this version"
 LEVEL_NOTE: Final = "B3LYP/6-31G* corrected"
-ATOM_ORDER: Final = "another atom order of the same molecule (aromir computes in one)"
+ATOM_ORDER: Final = "another atom order of the same molecule"
 HEIGHTS_NOTE: Final = "the heights are B3LYP's: the dipole derivatives are not corrected"
 CONFORMER_NOTE: Final = (
     "one conformer was computed, the one the optimisation reached from aromir's start "
@@ -37,6 +39,14 @@ NOT_PLANAR_NOTE: Final = (
     "the molecule is not planar, so no band counts as CH-oop: its C–H wags are printed as "
     "other or, between 950 and 1050 cm⁻¹, as ring-ip"
 )
+C_H_FAMILIES: Final[tuple[families.Family, ...]] = ("CH-stretch", "CH-oop")
+"""The families whose name promises carbon-bound hydrogens."""
+IMAGINARY: Final = "imaginary position"
+IMAGINARY_FOR_A_SEED: Final = "imaginary for at least one seed"
+OFF_CARBON_SHARE: Final = 0.1
+"""A band of a C–H family is not licensed when more than this share of its hydrogen motion
+is on hydrogens bound to another element: an O–H or N–H stretch or wag, or a mode that
+mixes one with the C–H motion."""
 
 
 @dataclass(frozen=True)
@@ -50,10 +60,11 @@ class Band:
         b3lyp_cm: The position of the uncorrected mode that moves most like it.
         scaled_b3lyp_cm: That mode's position under the conventional scale factors.
         family: The mode family, by the rule the network's error is measured in.
-        licensed: Whether the family's measured error may be read as this band's: the
-            family is within the licence line on every hold-out, the molecule lies inside
-            the training sizes, and the band is real and of the kind the family names.
-        licence_note: Why the band is not licensed; empty when it is.
+        licensed: Whether the band passes every condition of the licence: its family's
+            error is within the licence line on every hold-out, the molecule lies inside
+            the training sizes, the band is real for the seed mean and for every seed,
+            and a band of a C–H family moves carbon-bound hydrogens.
+        licence_note: The first condition the band fails; empty when it is licensed.
         measured_error_cm: The family's seed-mean error per hold-out.
     """
 
@@ -68,23 +79,31 @@ class Band:
     measured_error_cm: dict[str, float]
 
 
-def _licence_note(
-    family: families.Family,
-    position_cm: float,
-    carrier: str,
-    evaluation: Evaluation,
-    *,
-    inside_training_sizes: bool,
-) -> str:
-    """Return the first reason a band is not licensed, or "" when it is."""
-    if position_cm < 0:
-        return "imaginary position"
-    if not evaluation.licensed(family):
+@dataclass(frozen=True)
+class Mode:
+    """What the licence reads of one band before rounding."""
+
+    family: families.Family
+    position_cm: float
+    lowest_seed_cm: float
+    off_carbon: float
+
+
+def licence_note(mode: Mode, evaluation: Evaluation, *, inside_training_sizes: bool) -> str:
+    """Return the first condition of the licence a band fails, or "" when it passes all."""
+    if mode.position_cm < 0:
+        return IMAGINARY
+    if mode.lowest_seed_cm < 0:
+        return IMAGINARY_FOR_A_SEED
+    if not evaluation.licensed(mode.family):
         return "the family's error is above the licence line"
     if not inside_training_sizes:
         return "the molecule is outside the training sizes"
-    if family == "CH-stretch" and carrier != "C":
-        return f"an {carrier}–H stretch, which the rule counts as CH-stretch"
+    if mode.family in C_H_FAMILIES and mode.off_carbon > OFF_CARBON_SHARE:
+        return (
+            f"{mode.off_carbon:.0%} of its hydrogen motion is on N–H, O–H or S–H, which "
+            f"the rule counts as {mode.family}"
+        )
     return ""
 
 
@@ -94,12 +113,12 @@ def bands(
     corrections: Corrections,
     evaluation: Evaluation,
     *,
-    inside_training_sizes: bool = True,
+    inside_training_sizes: bool,
 ) -> list[Band]:
     """Return the corrected spectrum's bands in ascending order, each with its record."""
     low_modes = vibrations.vibrational_modes(low.hessian, geometry)
     low_families = families.classify(geometry, low_modes)
-    carriers = families.hydrogen_carriers(geometry, low_modes)
+    off_carbon = families.hydrogen_motion_off_carbon(geometry, low_modes)
     scaled = spectrum.scaled(spectrum.harmonic_bands(low.hessian, geometry, low.polar_tensor))
     corrected_hessian = low.hessian + corrections.mean
     corrected = spectrum.harmonic_bands(corrected_hessian, geometry, low.polar_tensor)
@@ -109,18 +128,16 @@ def bands(
     ranges = spectrum.seed_ranges(low.hessian, geometry, corrections.per_seed)
     rows = []
     for index, low_index in enumerate(partner):
-        family = low_families[low_index]
-        position = round(float(corrected.wavenumbers[index]), 1)
-        note = _licence_note(
-            family,
-            position,
-            carriers[low_index],
-            evaluation,
-            inside_training_sizes=inside_training_sizes,
+        mode = Mode(
+            family=low_families[low_index],
+            position_cm=float(corrected.wavenumbers[index]),
+            lowest_seed_cm=float(ranges[index, 0]),
+            off_carbon=float(off_carbon[low_index]),
         )
+        note = licence_note(mode, evaluation, inside_training_sizes=inside_training_sizes)
         rows.append(
             Band(
-                wavenumber_cm=position,
+                wavenumber_cm=round(mode.position_cm, 1),
                 intensity_km_mol=round(float(corrected.intensities[index]), 2),
                 seed_range_cm=(
                     round(float(ranges[index, 0]), 1),
@@ -128,22 +145,38 @@ def bands(
                 ),
                 b3lyp_cm=round(float(low_modes.wavenumbers[low_index]), 1),
                 scaled_b3lyp_cm=round(float(scaled.wavenumbers[low_index]), 1),
-                family=family,
+                family=mode.family,
                 licensed=not note,
                 licence_note=note,
-                measured_error_cm=dict(evaluation.errors_cm[family]),
+                measured_error_cm=dict(evaluation.errors_cm[mode.family]),
             )
         )
     return rows
 
 
+def _without_stereo(smiles: str) -> str:
+    """Return a SMILES with its stereo labels dropped, canonical again."""
+    molecule = Chem.MolFromSmiles(smiles)
+    return smiles if molecule is None else str(Chem.MolToSmiles(molecule, isomericSmiles=False))
+
+
 def acquaintance(smiles: str, training: Training) -> str:
-    """Say whether the network has met a molecule, by its canonical SMILES."""
+    """Say whether the network has met a molecule, by its canonical SMILES.
+
+    A molecule written without its stereo labels is compared without them too, so that a
+    trained stereoisomer is not reported as never seen.
+    """
     if smiles in training.trained_smiles:
         return "in the network's training set: the hold-out error is not this molecule's measure"
     for holdout, held_out in training.held_out_smiles.items():
         if smiles in held_out:
             return f"in hold-out ({holdout}): never trained on; the measured error includes it"
+    plain = _without_stereo(smiles)
+    if plain in {_without_stereo(trained) for trained in training.trained_smiles}:
+        return (
+            "a stereoisomer of it, or the molecule itself written with other stereo labels, "
+            "is in the network's training set"
+        )
     return "not in the training set or a hold-out: the network has not seen it"
 
 
@@ -153,10 +186,11 @@ def has_linear_group(geometry: Geometry, release: Release) -> bool:
     return any(primitives.kind(p) == primitives.LINEAR_ANGLE for p in built.internals)
 
 
-def _domain(admitted: Admission, geometry: Geometry, release: Release) -> dict[str, Any]:
+def _molecule(admitted: Admission, geometry: Geometry, release: Release) -> dict[str, Any]:
     training = release.training
     inside = training.min_atoms <= admitted.n_atoms <= training.max_atoms
-    return {
+    return asdict(admitted) | {
+        "unassigned_stereo": list(admitted.unassigned_stereo),
         "training_atoms": [training.min_atoms, training.max_atoms],
         "inside_training_sizes": inside,
         "seen": acquaintance(admitted.smiles, training),
@@ -165,19 +199,23 @@ def _domain(admitted: Admission, geometry: Geometry, release: Release) -> dict[s
     }
 
 
-def spreads_cm(release: Release, *, linear_group: bool) -> dict[str, float]:
-    """Return how far a molecule's positions move under each change that leaves it itself.
+def spreads_cm(release: Release, *, linear_group: bool) -> dict[str, tuple[float, int]]:
+    """Return how far positions were seen to move under each change that leaves a molecule itself.
 
-    The family errors do not hold these: they were measured in one orientation and one
-    atom order per molecule.
+    Each entry is the largest change, cm⁻¹, and the number of molecules it was seen on:
+    for the atom order all that were measured, for the others those that, like the
+    molecule at hand, have or lack a linear group. The family errors do not hold these:
+    each hold-out molecule was read in one orientation and one atom order.
     """
     spreads = {}
     order = release.evaluation.atom_order_spread
     if order is not None:
-        spreads[ATOM_ORDER] = order.max_cm
+        spreads[ATOM_ORDER] = (order.max_cm, order.n_molecules)
     if release.invariance is not None:
         for name, spread in release.invariance.spreads().items():
-            spreads[name] = spread.of(linear_group=linear_group)
+            value, n_molecules = spread.of(linear_group=linear_group)
+            if value is not None:
+                spreads[name] = (value, n_molecules)
     return spreads
 
 
@@ -186,10 +224,13 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
     line = release.evaluation.licence_line_cm
     group = "with" if molecule["linear_group"] else "without"
     lines = []
-    for name, value in spreads_cm(release, linear_group=molecule["linear_group"]).items():
-        measured_on = "" if name == ATOM_ORDER else f" on molecules {group} a linear group"
-        above = f", more than the licence line of {line:g} cm⁻¹" if value > line else ""
-        lines.append(f"{name} moves a position by up to {value:.2f} cm⁻¹{measured_on}{above}")
+    for name, (value, n) in spreads_cm(release, linear_group=molecule["linear_group"]).items():
+        which = "" if name == ATOM_ORDER else f" {group} a linear group"
+        above = f"; that is more than the licence line of {line:g} cm⁻¹" if value > line else ""
+        lines.append(
+            f"{name} moved a position by up to {value:.2f} cm⁻¹, the largest seen on {n} "
+            f"molecule(s){which}{above}"
+        )
     if release.evaluation.atom_order_spread is None:
         lines.append("the spread between atom orders was not measured for this release")
     if release.invariance is None:
@@ -197,7 +238,20 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
             "the spread under a rotation, a reflection and another listing of an xyz file's "
             "atoms was not measured for this release"
         )
+    elif any(
+        spread.of(linear_group=molecule["linear_group"])[0] is None
+        for spread in release.invariance.spreads().values()
+    ):
+        lines.append(
+            "the spread under a rotation, a reflection or another listing of an xyz file's "
+            f"atoms was not measured on a molecule {group} a linear group"
+        )
     lines += [HEIGHTS_NOTE, CONFORMER_NOTE]
+    if molecule["unassigned_stereo"]:
+        lines.append(
+            f"the SMILES leaves {' and '.join(molecule['unassigned_stereo'])} unassigned: one "
+            "isomer was computed, the one aromir's start geometry happened to take"
+        )
     if not molecule["planar"]:
         lines.append(NOT_PLANAR_NOTE)
     return lines
@@ -209,12 +263,14 @@ def _statement(
     evaluation = release.evaluation
     line = evaluation.licence_line_cm
     within = [family for family in families.FAMILIES if evaluation.licensed(family)]
-    spreads = spreads_cm(release, linear_group=molecule["linear_group"])
+    seen = [
+        value for value, _ in spreads_cm(release, linear_group=molecule["linear_group"]).values()
+    ]
     beyond = ""
-    if spreads and max(spreads.values()) > line:
+    if seen and max(seen) > line:
         beyond = (
             "Not in that error: the same molecule turned, mirrored or listed in another "
-            f"atom order gets positions up to {max(spreads.values()):.2f} cm⁻¹ away, more "
+            f"atom order was seen to get positions up to {max(seen):.2f} cm⁻¹ away, more "
             "than the licence line. "
         )
     return (
@@ -224,7 +280,8 @@ def _statement(
         f"saw. {sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every hold-out "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
-        f"and the band is real and of the kind the family names. {beyond}"
+        "the band is real for every seed, and a band of a C–H family moves carbon-bound "
+        f"hydrogens. {beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. The scaled B3LYP positions are a "
         "baseline for comparison only."
     )
@@ -232,15 +289,20 @@ def _statement(
 
 def _warnings(rows: list[Band]) -> list[str]:
     """Return what a reader must know before using the bands at all."""
-    n_imaginary = sum(row.wavenumber_cm < 0 for row in rows)
-    if not n_imaginary:
-        return []
-    return [
-        (
+    n_imaginary = sum(row.licence_note == IMAGINARY for row in rows)
+    n_for_a_seed = sum(row.licence_note == IMAGINARY_FOR_A_SEED for row in rows)
+    warnings = []
+    if n_imaginary:
+        warnings.append(
             f"{n_imaginary} corrected band(s) have an imaginary (negative) position: the "
             "correction made a soft mode unstable, and those bands are not physical"
         )
-    ]
+    if n_for_a_seed:
+        warnings.append(
+            f"{n_for_a_seed} corrected band(s) are imaginary for at least one seed, though "
+            "not for the seeds' mean"
+        )
+    return warnings
 
 
 def build(
@@ -253,7 +315,7 @@ def build(
     """Build the certificate's record for one computed molecule."""
     evaluation = release.evaluation
     within = [family for family in families.FAMILIES if evaluation.licensed(family)]
-    molecule = asdict(admitted) | _domain(admitted, geometry, release)
+    molecule = _molecule(admitted, geometry, release)
     rows = bands(
         geometry,
         low,

@@ -74,25 +74,28 @@ def is_planar(geometry: Geometry) -> bool:
     return _plane_normal(geometry) is not None
 
 
-def hydrogen_carriers(geometry: Geometry, modes: Modes) -> list[str]:
-    """Return, per mode, the element whose hydrogens carry most of the mode's hydrogen motion.
+def hydrogen_motion_off_carbon(geometry: Geometry, modes: Modes) -> FloatArray:
+    """Return, per mode, the share of its hydrogen motion on hydrogens not bound to carbon.
 
-    A hydrogen belongs to the heavy atom nearest to it. The answer tells a C–H stretch from
-    an O–H or N–H stretch, which the family rule does not; it is "" for a molecule without
-    hydrogens.
+    A hydrogen belongs to the heavy atom nearest to it. The share tells a C–H stretch or
+    wag (0) from an O–H or N–H one (1) and from a mode that mixes the two, which the
+    family rule does not; it is 0 for a mode that moves no hydrogen.
     """
     symbols = np.array(geometry.symbols)
     hydrogens = np.flatnonzero(symbols == "H")
     heavy = np.flatnonzero(symbols != "H")
+    n_modes = modes.vectors.shape[1]
     if not len(hydrogens) or not len(heavy):
-        return [""] * modes.vectors.shape[1]
+        return np.zeros(n_modes)
     x = geometry.coords_bohr
     distances = np.linalg.norm(x[hydrogens][:, None, :] - x[heavy][None, :, :], axis=-1)
-    carrier = symbols[heavy[np.argmin(distances, axis=1)]]
+    off_carbon = symbols[heavy[np.argmin(distances, axis=1)]] != "C"
     amplitude = (modes.vectors.reshape(geometry.n_atoms, 3, -1) ** 2).sum(axis=1)[hydrogens]
-    elements = sorted(set(carrier))
-    shares = np.array([amplitude[carrier == element].sum(axis=0) for element in elements])
-    return [elements[int(index)] for index in np.argmax(shares, axis=0)]
+    total = amplitude.sum(axis=0)
+    moving = total > 0
+    share = np.zeros(n_modes)
+    share[moving] = amplitude[off_carbon].sum(axis=0)[moving] / total[moving]
+    return share
 
 
 def classify(geometry: Geometry, modes: Modes) -> list[Family]:

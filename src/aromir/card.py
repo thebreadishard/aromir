@@ -167,8 +167,8 @@ def _order_statement(release: Release) -> str:
     if primitives.angle_choice == "canonical" and primitives.dihedral_encoding != "raw":
         design = (
             "The internal coordinates are built on the atoms in a canonical order and "
-            "dihedrals enter by their cosine, so the answer does not depend on how the "
-            "molecule's atoms are numbered."
+            "dihedrals enter by their cosine, which is meant to make the answer independent "
+            "of how the molecule's atoms are numbered; the measurements say how far it is."
         )
     else:
         design = (
@@ -193,17 +193,23 @@ def _sameness(release: Release) -> list[str]:
         return [unmeasured]
     lines = []
     for name, spread in invariance.spreads().items():
+        seen = " and ".join(
+            f"{value:.2f} cm⁻¹ on {n} molecule(s) {group} a linear group"
+            for group, (value, n) in (
+                ("with", spread.of(linear_group=True)),
+                ("without", spread.of(linear_group=False)),
+            )
+            if value is not None
+        )
         lines.append(
-            f"- **{name[0].upper()}{name[1:]}** moves band positions by up to "
-            f"{spread.with_linear_group_cm:.2f} cm⁻¹ in a molecule with a linear group (a "
-            f"nitrile, an alkyne) and {spread.without_linear_group_cm:.2f} cm⁻¹ in one without "
-            f"({spread.n_molecules} molecules, {spread.n_trials} each)."
+            f"- **{name[0].upper()}{name[1:]}** moved band positions by up to {seen} "
+            f"({spread.n_trials} each). These are the largest seen, not bounds."
         )
     reason = (
-        "A linear angle is measured against a fixed axis in space, and a dihedral enters "
-        "with its sign"
+        "A linear angle (in a nitrile, an alkyne) is measured against a fixed axis in "
+        "space, and a dihedral enters with its sign"
         if release.recipes[0].inputs.primitives.dihedral_encoding == "raw"
-        else "A linear angle is measured against a fixed axis in space"
+        else "A linear angle (in a nitrile, an alkyne) is measured against a fixed axis in space"
     )
     return [
         *lines,
@@ -241,8 +247,10 @@ def _limits(release: Release) -> list[str]:
         (
             "- **A family is a rule, not a kind of bond.** "
             + " ".join(f"{family}: {rule}." for family, rule in families.RULES.items())
-            + " aromir's certificate licenses a band only when it is of the kind its family "
-            "names and the molecule lies inside the training sizes."
+            + " aromir's certificate licenses a band only when its family is within the "
+            "licence line, the molecule lies inside the training sizes, the band is real for "
+            "every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens. A "
+            "ring-ip band is licensed as the rule takes it, C=O stretches included."
         ),
     ]
 

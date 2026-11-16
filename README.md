@@ -28,7 +28,12 @@ SMILES or xyz
 ```
 
 The network is trained on neutral, closed-shell aromatic molecules of H, C, N, O, F, S
-and Cl. A molecule outside that domain is refused with the reasons, not answered badly.
+and Cl. A molecule outside that domain is refused with the reasons, not answered badly:
+so is an isotope label, a SMILES with anything after it, and, for `aromir spectrum`, a
+molecule smaller or larger than the training molecules unless
+`--outside-training-sizes` asks for it. The command's exit code is 0 for a result, 2
+for a refusal, 1 for a failure, and 3 for a corrected spectrum that was written but
+holds an imaginary band.
 
 ## What works today
 
@@ -70,9 +75,9 @@ another atom order). The result folder then also holds
   mode's position and motion, which the certificate spells out) and the error measured
   for that family on molecules the network never saw;
 - whether the band is licensed: the family's error is within the licence line on every
-  hold-out, the molecule lies inside the training sizes, and the band is real and of the
-  kind the family names (an O–H stretch falls under the CH-stretch rule and is not
-  licensed);
+  hold-out, the molecule lies inside the training sizes, the band is real for every
+  seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens (an O–H stretch
+  falls under the CH-stretch rule and is not licensed), with the reason where it is not;
 
 and says whether the molecule lies inside the sizes the network was trained on, whether
 the network has seen it, and what the measured error does not cover: how far the
@@ -84,7 +89,7 @@ package: every number comes from the release's records.
 the network is, what it was trained on, its measured error per family, and where it
 stops being known.
 
-Two checks guard every result, and a repair the results it applies to:
+Two checks guard every result; a repair guards the results it applies to:
 
 - **The geometry is a minimum.** A geometry with an imaginary mode has no harmonic
   spectrum, and none is written.
@@ -111,9 +116,9 @@ agree to 3e-7 relative in ΔH, with every integer input identical.
 The correction is symmetric and free of translations by construction. It is free of
 rotations and turns with the molecule where the internal coordinates hold no linear
 angle; the tests check that on biphenyl with random networks. A nitrile or an alkyne
-has linear angles, which are measured against a fixed axis in space: release v1.3 moves
-such a molecule's bands by up to 5.34 cm⁻¹ when it is turned, and its model card and
-every certificate state the measured spreads. With the `canonical` angle choice and
+has linear angles, which are measured against a fixed axis in space: release v1.3 moved
+the bands of three such molecules by up to 5.34 cm⁻¹ when they were turned, and its
+model card and every certificate state the measured spreads. With the `canonical` angle choice and
 `cos`-encoded dihedrals the network also gives one answer for every atom order; that
 is tested on a molecule without symmetry-equivalent atoms, and v1.3 was not trained
 with those settings.
