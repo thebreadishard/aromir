@@ -163,7 +163,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - a geometry that after that one step and a second optimisation still has an
     imaginary mode softer than 20 cm⁻¹ is printed, with that band named a flat
     coordinate, never licensed and named in the statement. An imaginary mode beyond
-    20 cm⁻¹ still ends the run as not a minimum.
+    20 cm⁻¹ still ends the run as not a minimum. `aromir spectrum` says on its last line
+    how many bands lie on a flat coordinate, and `baseline.json` marks each such band.
+- The tests of the atom order hold what it promises: every listing of benzene gets one
+  bond graph position by position, and every listing of a molecule without symmetry
+  one geometry exactly (a walk of any ring passed the earlier test).
 - The dependencies have upper bounds, the series the package is tested with; the
   internal coordinates of seven molecules are pinned atom by atom (a digest of
   geomeTRIC's own description of every primitive), so a new RDKit or geomeTRIC that

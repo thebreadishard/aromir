@@ -137,6 +137,9 @@ def _spectrum(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -
         f"{len(record['bands'])} bands, {n_licensed} of them licensed; "
         f"certificate in {request.out / pipeline.CERTIFICATE_TEXT_FILE}"
     )
+    n_flat = sum(band["licence_note"] == certificate.FLAT_COORDINATE for band in record["bands"])
+    if n_flat:
+        summary += f"; {n_flat} band(s) on a flat coordinate, which are no band positions"
     n_imaginary = sum(band["licence_note"] == certificate.IMAGINARY for band in record["bands"])
     if n_imaginary:
         # The result is written, but it is no spectrum to use as it stands.

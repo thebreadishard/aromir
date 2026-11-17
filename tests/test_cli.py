@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import aromir
-from aromir import cli, pipeline, release
+from aromir import certificate, cli, pipeline, release
 from aromir.errors import ConvergenceError
 
 if TYPE_CHECKING:
@@ -99,6 +99,26 @@ def test_spectrum_reports_the_licensed_bands(
     assert loaded_from == [tmp_path / "r"]
     assert capsys.readouterr().out == (
         f"done: 3 bands, 2 of them licensed; certificate in {out / 'certificate.md'}\n"
+    )
+
+
+def test_a_spectrum_with_a_flat_coordinate_is_done_and_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A flat band's corrected number may be negative: it is no band position, so the run
+    # is done, and the line says what the certificate says.
+    def run(_request: pipeline.Request, _loaded: str) -> dict[str, Any]:
+        notes = (certificate.FLAT_COORDINATE, "")
+        return {"bands": [{"licensed": not note, "licence_note": note} for note in notes]}
+
+    monkeypatch.setattr(release, "load", lambda _folder: "the release")
+    monkeypatch.setattr(pipeline, "run_spectrum", run)
+    out = tmp_path / "vinylfuran"
+    arguments = ["spectrum", "C=Cc1ccoc1", "--out", str(out), "--release", str(tmp_path / "r")]
+    assert cli.main(arguments) == cli.EXIT_DONE
+    assert capsys.readouterr().out == (
+        f"done: 2 bands, 1 of them licensed; certificate in {out / 'certificate.md'}; "
+        "1 band(s) on a flat coordinate, which are no band positions\n"
     )
 
 

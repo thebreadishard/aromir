@@ -16,6 +16,10 @@ from support import BENZENE_XYZ
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from numpy.typing import NDArray
+
+    from aromir.molecule import Geometry
+
 PHENANTHRENE_WRITINGS = ("c1ccc2c(c1)ccc1ccccc12", "C1=CC=C2C(=C1)C=CC3=CC=CC=C32")
 
 
@@ -71,6 +75,46 @@ def test_the_canonical_order_follows_the_bond_graph_not_the_file(tmp_path: Path)
     # Consecutive carbons are bonded in both: the order walks the ring, whatever the file's.
     for walk in ring_walks:
         np.testing.assert_allclose(walk, 1.397 / 0.529177, atol=1e-3)
+
+
+def _bonded(start: Geometry) -> NDArray[np.bool_]:
+    """Return which atoms are within bonding distance of each other (3 bohr: C–C 2.64, C–H 2.05)."""
+    distances = np.linalg.norm(start.coords_bohr[:, None] - start.coords_bohr[None], axis=2)
+    return np.asarray((distances > 0) & (distances < 3.0))
+
+
+def test_every_listing_of_benzene_gets_one_bond_graph_in_one_order(tmp_path: Path) -> None:
+    # The order promises the bond graph, position by position; a walk of any ring would
+    # keep consecutive carbons bonded, but not each hydrogen beside its own carbon.
+    graphs = [
+        _bonded(geometry.start_from_xyz(admission.parse_xyz(_shuffled_xyz(tmp_path, seed))))
+        for seed in range(1, 6)
+    ]
+    for graph in graphs[1:]:
+        np.testing.assert_array_equal(graph, graphs[0])
+    assert graphs[0][:6, 6:].sum(axis=1).tolist() == [1] * 6
+
+
+def test_a_molecule_without_symmetry_gets_one_geometry_whatever_its_listing(tmp_path: Path) -> None:
+    # 2-fluoro-4-hydroxypyridine: no two atoms alike in the graph but the hydrogens on
+    # one atom, of which it has none twice, so every listing is put in one order exactly.
+    made = geometry.start_from_smiles(
+        admission.admit(admission.parse_smiles("Oc1ccnc(F)c1")).smiles
+    )
+    angstrom = made.coords_bohr * 0.529177210903
+    rows = [
+        f"{s} {x:.8f} {y:.8f} {z:.8f}" for s, (x, y, z) in zip(made.symbols, angstrom, strict=True)
+    ]
+    starts = []
+    for seed in range(4):
+        order = np.random.default_rng(seed).permutation(len(rows))
+        path = tmp_path / f"listing_{seed}.xyz"
+        text = "\n".join([str(len(rows)), "listed", *(rows[k] for k in order)]) + "\n"
+        path.write_text(text, encoding="utf-8")
+        starts.append(geometry.start_from_xyz(admission.parse_xyz(path)))
+    for start in starts:
+        assert start.symbols == made.symbols
+        np.testing.assert_allclose(start.coords_bohr, made.coords_bohr, atol=1e-7)
 
 
 def test_a_lone_hydrogen_is_not_silently_dropped() -> None:

@@ -879,7 +879,13 @@ def _flat_at_minus_ten(monkeypatch: pytest.MonkeyPatch) -> None:
     _imaginary_at(monkeypatch, -10.0)
 
 
-@pytest.mark.parametrize("wavenumbers", [(-25.0,), (-30.0, -10.0)], ids=["one", "one of two"])
+# Exactly -20 cm⁻¹ does not survive the arithmetic that makes a Hessian of it (it comes back
+# a few 1e-12 either side), so the line is tested from just beyond it.
+@pytest.mark.parametrize(
+    "wavenumbers",
+    [(-25.0,), (-20.01,), (-30.0, -10.0)],
+    ids=["one", "just beyond the line", "one of two"],
+)
 def test_an_imaginary_mode_beyond_the_soft_mode_line_still_gets_no_spectrum(
     wavenumbers: tuple[float, ...],
     tmp_path: Path,
@@ -928,15 +934,21 @@ def test_the_first_attempts_progress_is_not_the_second_attempts(
     assert synthetic_chemistry["optimise"] == 2
 
 
-@pytest.mark.parametrize("n_steps", [0, -5])
-def test_a_saved_progress_without_a_gradient_is_a_damaged_run(
-    n_steps: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("n_steps", "coordinate"),
+    [(0, 0.0), (-5, 0.0), (3, float("nan"))],
+    ids=["no gradient", "fewer than none", "no number"],
+)
+def test_a_saved_progress_that_cannot_be_a_runs_is_a_damaged_run(
+    n_steps: int, coordinate: float, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class StoppedError(Exception):
         """The stand-in's end: not an interrupt, which would end the test session if it escaped."""
 
     def stopped(start: Geometry, *_arguments: object, **progress: Any) -> None:  # noqa: ANN401
-        progress["keep"](optimisation.Progress(start.coords_bohr.tolist(), n_steps))
+        coords = start.coords_bohr.copy()
+        coords[0, 0] += coordinate
+        progress["keep"](optimisation.Progress(coords.tolist(), n_steps))
         raise StoppedError
 
     monkeypatch.setattr(optimisation, "optimise", stopped)
@@ -1010,6 +1022,9 @@ def test_the_baseline_names_a_flat_coordinate(
         "the molecule is flat along 1 coordinate(s): the mode(s) at -10.0 cm⁻¹ are imaginary"
     )
     assert record["harmonic"]["bands"][0]["wavenumber_cm"] == pytest.approx(-10.0, abs=0.05)
+    for kind in ("harmonic", "scaled"):
+        marked = [band["flat_coordinate"] for band in record[kind]["bands"]]
+        assert marked == [True] + [False] * (len(marked) - 1)
 
 
 @pytest.mark.parametrize(

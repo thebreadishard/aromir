@@ -522,9 +522,14 @@ def _computation_record(
     }
 
 
-def _bands_record(bands: spectrum.Bands) -> list[dict[str, float]]:
+def _bands_record(bands: spectrum.Bands) -> list[dict[str, float | bool]]:
+    """Return the bands, each marked where it lies on a flat coordinate: no band position."""
     return [
-        {"wavenumber_cm": round(float(position), 2), "intensity_km_mol": round(float(height), 3)}
+        {
+            "wavenumber_cm": round(float(position), 2),
+            "intensity_km_mol": round(float(height), 3),
+            "flat_coordinate": bool(position < 0),
+        }
         for position, height in zip(bands.wavenumbers, bands.intensities, strict=True)
     ]
 
