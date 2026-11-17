@@ -172,9 +172,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   internal coordinates of seven molecules are pinned atom by atom (a digest of
   geomeTRIC's own description of every primitive), so a new RDKit or geomeTRIC that
   numbers or chooses differently for one of them fails a test.
-- pyscf is held at 2.15.0, the version the tests ran on: 2.15.1, released on
-  17 November 2026, has no wheel for macOS on Apple silicon, and pip's build of it from
-  source fails there, so an install that admitted it failed on such a Mac.
+- pyscf is held at 2.15.0: 2.15.1, released on 17 November 2026, passes the tests on
+  Linux but has no wheel for macOS on Apple silicon, and its source distribution lacks
+  `pyscf/lib/libxcfun.patch`, so pip's build of it fails; an install that admitted it
+  failed on such a Mac.
 - A step file that does not name the run that made it, a `lowlevel.npz` whose arrays
   have another molecule's shape, whose record contradicts itself or that does not
   decompress: each is a damaged run, said in words before anything is computed on it.

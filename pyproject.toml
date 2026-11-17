@@ -30,10 +30,11 @@ dependencies = [
     # internal coordinates from geomeTRIC, and the pseudo-inverse incident of November
     # 2026 was one numpy build's. A newer series is allowed after
     # tests/test_order_pins.py and the release pins pass with it. pydantic and
-    # safetensors are bounded at their next major version. pyscf is held at the 2.15.0
-    # the tests ran on: 2.15.1 (17 Nov 2026) has no wheel for macOS on Apple silicon,
-    # and its source build fails there fetching libxcfun; the bound moves once it has
-    # wheels and the tests pass on it.
+    # safetensors are bounded at their next major version. pyscf is held at 2.15.0:
+    # 2.15.1 (17 Nov 2026) passes the tests on Linux but cannot be installed on macOS on
+    # Apple silicon — it has no wheel there, and its sdist lacks pyscf/lib/libxcfun.patch,
+    # so every build from source fails. The bound moves when an arm64 wheel or a whole
+    # sdist of a 2.15 release exists and the tests pass on it on every platform.
     "geometric>=1.1,<1.2",
     "numpy>=1.26,<2.6",
     "pydantic>=2.6,<3",
