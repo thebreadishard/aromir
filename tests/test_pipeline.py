@@ -879,8 +879,9 @@ def _flat_at_minus_ten(monkeypatch: pytest.MonkeyPatch) -> None:
     _imaginary_at(monkeypatch, -10.0)
 
 
-# Exactly -20 cm⁻¹ does not survive the arithmetic that makes a Hessian of it (it comes back
-# a few 1e-12 either side), so the line is tested from just beyond it.
+# Exactly -20 cm⁻¹ does not survive the arithmetic that makes a Hessian of it (it came back
+# about 3e-10 on the soft side), so these cases stand just beyond the line; the line itself
+# is the next test's.
 @pytest.mark.parametrize(
     "wavenumbers",
     [(-25.0,), (-20.01,), (-30.0, -10.0)],
@@ -898,6 +899,27 @@ def test_an_imaginary_mode_beyond_the_soft_mode_line_still_gets_no_spectrum(
         pipeline.run_baseline(_benzene(tmp_path / "benzene"))
     assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
     assert not (tmp_path / "benzene" / "baseline.json").exists()
+
+
+def test_a_mode_exactly_at_the_soft_mode_line_gets_no_spectrum(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    # 'At or beyond the line refuses': the mode is set to the line where the run reads it.
+    _imaginary_at(monkeypatch, -19.0)
+    modes_of = vibrations.vibrational_modes
+
+    def at_the_line(hessian: FloatArray, geometry: Geometry) -> vibrations.Modes:
+        modes = modes_of(hessian, geometry)
+        if modes.wavenumbers[0] >= 0:
+            return modes
+        wavenumbers = modes.wavenumbers.copy()
+        wavenumbers[0] = -repair.SOFT_BELOW_CM
+        return vibrations.Modes(wavenumbers, modes.vectors)
+
+    monkeypatch.setattr(vibrations, "vibrational_modes", at_the_line)
+    with pytest.raises(NotAMinimumError, match=r"1 imaginary mode\(s\), the lowest at -20 cm"):
+        pipeline.run_baseline(_benzene(tmp_path / "benzene"))
+    assert synthetic_chemistry == {"optimise": 2, "low level": 2, "repair": 2}
 
 
 def test_the_first_attempts_progress_is_not_the_second_attempts(

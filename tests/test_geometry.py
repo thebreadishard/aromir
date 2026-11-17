@@ -9,6 +9,7 @@ import pytest
 from rdkit.Chem import rdDistGeom
 
 from aromir import admission, geometry
+from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.errors import RefusedError
 
 from support import BENZENE_XYZ
@@ -101,7 +102,7 @@ def test_a_molecule_without_symmetry_gets_one_geometry_whatever_its_listing(tmp_
     made = geometry.start_from_smiles(
         admission.admit(admission.parse_smiles("Oc1ccnc(F)c1")).smiles
     )
-    angstrom = made.coords_bohr * 0.529177210903
+    angstrom = made.coords_bohr * ANGSTROM_PER_BOHR
     rows = [
         f"{s} {x:.8f} {y:.8f} {z:.8f}" for s, (x, y, z) in zip(made.symbols, angstrom, strict=True)
     ]
