@@ -177,7 +177,8 @@ and builds the package with hatchling, which pip fetches from PyPI; everything a
 imports is declared and installed with it, and the weights of the bundled release are
 inside the package.
 
-The tests run on Linux and macOS with RDKit 2026.9, geomeTRIC 1.1, pyscf 2.15 and torch
+The tests run on Linux and macOS with RDKit 2026.9, geomeTRIC 1.1, pyscf 2.15.0 (2.15.1
+has no wheel for Apple silicon yet, so the bound is 2.15.0 itself) and torch
 2.15 (2.14 on the development machine); on Python 3.12 and 3.13 with numpy 2.5 and scipy
 1.18, on Python 3.11 with numpy 2.4 and scipy 1.17, the last series that support it. The
 upper bounds in `pyproject.toml` are those series; the lower bounds are not tested. RDKit
