@@ -178,8 +178,8 @@ def test_the_command_writes_what_it_measured_and_never_over_a_file(
     assert "exists: a result is never overwritten" in capsys.readouterr().err
 
 
-def test_the_bundled_release_is_licensed_on_what_it_delivers() -> None:
-    bundled = release.load(release.bundled())
+def test_release_v13_is_licensed_on_what_it_delivers() -> None:
+    bundled = release.load(release.bundled().parent / "v1.3")
     recorded = bundled.evaluation
     assert recorded.record_version == 2
     assert "chosen on 16 November 2026" in recorded.licence_basis
@@ -238,8 +238,8 @@ def test_what_was_measured_becomes_the_tables_of_a_record(
     assert list(tables["first_order_error_per_seed_mean_cm"]["other"]) == ["a", "b"]
 
 
-def test_the_bundled_record_is_what_the_tables_of_a_measurement_look_like() -> None:
-    recorded = release.load(release.bundled()).evaluation
+def test_the_v13_record_is_what_the_tables_of_a_measurement_look_like() -> None:
+    recorded = release.load(release.bundled().parent / "v1.3").evaluation
     measured = {
         name: {
             "n_molecules": holdout.n_molecules,
@@ -296,7 +296,8 @@ def test_a_damaged_molecule_file_is_refused_in_words(
 ) -> None:
     (tmp_path / "a").mkdir()
     (tmp_path / "a" / "x.npz").write_bytes(content)
-    assert cli.main(["evaluate", str(tmp_path)]) == cli.EXIT_REFUSED
+    asked = ["evaluate", str(tmp_path), "--release", str(release.bundled().parent / "v1.3")]
+    assert cli.main(asked) == cli.EXIT_REFUSED
     assert "x.npz cannot be read as a hold-out molecule" in capsys.readouterr().err
 
 

@@ -242,8 +242,16 @@ def evaluate(release: Release, folder: Path) -> dict[str, Any]:
         hold-out has the count 0 and no error.
 
     Raises:
-        RefusedError: The folder holds no hold-out, or a hold-out no molecule.
+        RefusedError: The folder holds no hold-out, or a hold-out no molecule, or the
+            release's seeds are release networks, which trained on the hold-outs.
     """
+    if release.shipped is not None:
+        reason = (
+            f"the folder ships release networks of v{release.network_version}, which trained "
+            "on the hold-outs: their error there is no measurement. Evaluate the version's "
+            "measurement networks"
+        )
+        raise RefusedError([reason])
     holdouts = sorted(path for path in folder.iterdir() if path.is_dir()) if folder.is_dir() else []
     if not holdouts:
         raise RefusedError([f"{folder}: no hold-out folder in it"])

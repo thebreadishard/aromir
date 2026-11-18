@@ -6,7 +6,7 @@ and a certificate that says how far each band can be trusted.
 > **Status: pre-alpha (0.1.0.dev0).** The whole chain is in the package: the low level,
 > the network, the corrected spectrum and its certificate. Each step is tested on its
 > own; no test yet runs the full chain with a release on a real molecule. The trained
-> weights of network v1.3 ship inside the package. Positions are harmonic: the
+> weights of network v1.4 ship inside the package. Positions are harmonic: the
 > anharmonic step is not in this version; see
 > [What works today](#what-works-today) and the [roadmap](#roadmap).
 
@@ -22,7 +22,7 @@ SMILES or xyz
   → atom order from the bond graph, start geometry (RDKit)
   → geometry optimisation                       (pyscf + geomeTRIC)
   → analytic Hessian and dipole derivatives     (pyscf)
-  → ΔH, the learned correction to the Hessian   (network v1.3, inside the package)
+  → ΔH, the learned correction to the Hessian   (network v1.4, inside the package)
   → band positions and heights
   → certificate: what each band rests on
 ```
@@ -56,8 +56,9 @@ Hessian and the polar tensor), `baseline.json` (bands, checks and provenance) an
 `pyscf.log` (the quantum-chemistry log, written as the calculation runs).
 
 `aromir spectrum` adds the learned correction and the certificate, with the network
-release that ships inside the package (v1.3, in `src/aromir/releases/v1.3`, with its
-[model card](src/aromir/releases/v1.3/MODEL_CARD.md)):
+release that ships inside the package (v1.4, in `src/aromir/releases/v1.4`, with its
+[model card](src/aromir/releases/v1.4/MODEL_CARD.md); v1.3 stays beside it in
+`src/aromir/releases/v1.3` for `--release`):
 
 ```console
 $ aromir spectrum "c1ccccc1" --out results/benzene
@@ -68,7 +69,22 @@ and recipe per seed, `evaluation.json` (the
 version's measured error per mode family and hold-out), `training.json` (the elements,
 sizes and molecules it was trained on) and, where it was measured, `invariance.json`
 (how far the answer moves when the same molecule is turned, mirrored or listed in
-another atom order). The result folder then also holds
+another atom order).
+
+A version can be a pair of networks trained on one recipe. Its *measurement networks* are
+trained without the hold-out molecules, and every error and the licence are read on them;
+its *release networks* are trained on every molecule with labels, the hold-outs included,
+and are what the folder ships. v1.4 is such a pair. Its folder holds the release networks'
+seeds and `training.json`, the measurement networks' training record as
+`measurement.json`, and `release.json`: the checkpoints of both kinds by hash and the
+checks the release networks passed before they were shipped (the same recipe, agreement
+with the measurement networks on the pool, the hold-outs learnt, early stopping off the
+cap, and benzene by name). The certificate and the card say in one sentence that the
+spectrum is made by the release networks and that its error bars are the measurement
+networks', and a molecule the release networks trained on is said to be in their
+training data, where the error bar is not its out-of-sample error.
+
+The result folder then also holds
 `correction.npz` (each seed's ΔH and their mean) and the certificate, as
 `certificate.json` and `certificate.md`. The certificate lists every band with
 
@@ -76,7 +92,8 @@ another atom order). The result folder then also holds
 - the uncorrected B3LYP band that moves most like it, plain and scaled;
 - its family (CH-stretch, CH-oop, ring-ip or other: the evaluation's names for rules on a
   mode's position and motion, which the certificate spells out) and the error measured
-  for that family on molecules the network never saw;
+  for that family on molecules the network never saw (for release networks: that the
+  measurement networks never saw);
 - whether the band is licensed: the family's error is within the licence line on every
   hold-out, the molecule lies inside the training sizes, its low-level mode is real, the
   band is real for the seeds'
@@ -95,9 +112,11 @@ positions of the seeds' mean against the reference, on molecules the network nev
 trained on. `aromir evaluate <folder>` measures it for a release on a folder of hold-out
 molecules with stored Hessians (the format is in `aromir.evaluation`), together with the
 first-order error of each seed that a training run reports, which is a different and
-larger number. For v1.3 all four families are within the licence line; on the smaller
-hold-out the family 'other' rests on eight molecules, and the card and the certificate
-say what that is worth.
+larger number. It refuses release networks, which trained on the hold-outs: v1.4's errors
+were measured with it on the version's measurement networks, and agree with the training
+project's own read to 0.01 cm⁻¹ in the same atom order. For v1.4 all four families are
+within the licence line; on the smaller hold-out the families CH-oop and 'other' rest on
+five and eight molecules, and the card and the certificate say what that is worth.
 
 `aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it
@@ -152,8 +171,9 @@ has linear angles, which are measured against a fixed axis in space: release v1.
 the bands of three such molecules by up to 5.34 cm⁻¹ when they were turned, and its
 model card and every certificate state the measured spreads. With the `canonical` angle choice and
 `cos`-encoded dihedrals the network also gives one answer for every atom order; that
-is tested on a molecule without symmetry-equivalent atoms, and v1.3 was not trained
-with those settings.
+is tested on a molecule without symmetry-equivalent atoms, and neither v1.3 nor v1.4
+was trained with those settings. For v1.4 the spreads under a rotation, a mirror image and
+another atom order are not measured yet, and its certificate says so.
 
 A checkpoint of the training code becomes weight files with
 
@@ -182,8 +202,8 @@ cannot be installed on Apple silicon yet, so the bound is 2.15.0 itself) and tor
 2.15 (2.14 on the development machine); on Python 3.12 and 3.13 with numpy 2.5 and scipy
 1.18, on Python 3.11 with numpy 2.4 and scipy 1.17, the last series that support it. The
 upper bounds in `pyproject.toml` are those series; the lower bounds are not tested. RDKit
-decides the atom order and geomeTRIC the internal coordinates, and release v1.3's answer
-depends on both, so a newer series of either is allowed only after the pins in
+decides the atom order and geomeTRIC the internal coordinates, and the releases' answers
+depend on both, so a newer series of either is allowed only after the pins in
 `tests/test_order_pins.py` pass with it. Those pins hold seven molecules' internal
 coordinates atom by atom; they are no proof for a molecule that is not among them. The
 versions are what pip chose in CI on 16 November 2026, not pins; each CI job lists its own.

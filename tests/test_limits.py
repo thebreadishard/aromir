@@ -358,8 +358,8 @@ def test_an_invariance_record_of_another_version_is_refused(tmp_path: Path) -> N
         release.load(folder)
 
 
-def test_the_bundled_release_states_its_measured_spreads() -> None:
-    bundled = release.load(release.bundled())
+def test_release_v13_states_its_measured_spreads() -> None:
+    bundled = release.load(release.bundled().parent / "v1.3")
     assert bundled.invariance is not None
     assert bundled.invariance.rotation.of(linear_group=True) == (5.34, 3)
     assert bundled.invariance.rotation.of(linear_group=False) == (0.0, 4)

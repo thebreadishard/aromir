@@ -9,6 +9,15 @@ A release is a folder:
                                        reflection and another atom listing (optional)
     measured.json                      the output of ``aromir evaluate`` on the hold-outs,
                                        which the evaluation's tables are (optional)
+    release.json, measurement.json     present together, when the seeds are release
+                                       networks: which networks the folder ships, the
+                                       checks that let them ship, and the training record
+                                       of the measurement networks the errors belong to
+
+A version can be a pair trained on one recipe. Its measurement networks are trained
+without the hold-outs, and every error and the licence are read on them; its release
+networks are trained on every molecule with labels, hold-outs included, and are what the
+folder ships. They have no held-out error of their own, and the certificate says so.
 
 The JSON files are written from the training project's own records. Nothing the
 certificate states about a network is typed into this package.
@@ -41,6 +50,8 @@ EVALUATION_FILE: Final = "evaluation.json"
 TRAINING_FILE: Final = "training.json"
 INVARIANCE_FILE: Final = "invariance.json"
 MEASURED_FILE: Final = "measured.json"
+RELEASE_FILE: Final = "release.json"
+MEASUREMENT_FILE: Final = "measurement.json"
 """What ``aromir evaluate`` wrote on the hold-outs: the source of the evaluation record's
 error tables, shipped beside it where a release has it."""
 SEED_FILES: Final = "seed-*.json"
@@ -49,7 +60,7 @@ MIN_SEEDS: Final = 2
 _MEAN_TOLERANCE_CM: Final = 0.011
 """A record holds two decimals: a mean of rounded seeds may differ from the rounded mean."""
 _Record = TypeVar("_Record", bound=BaseModel)
-BUNDLED_VERSION: Final = "1.3"
+BUNDLED_VERSION: Final = "1.4"
 """The network version whose release ships inside the package."""
 
 
@@ -236,6 +247,27 @@ class Evaluation(BaseModel):
         }
 
 
+class CationTest(BaseModel):
+    """What training on a neutral molecule's radical cation was seen to do to that molecule.
+
+    Attributes:
+        molecule: The neutral molecule the test was made on.
+        without_cm: Its corrected positions' rms error, cm⁻¹, for networks trained without
+            the radical cations.
+        with_cm: The same for networks trained with them.
+        n_networks: The networks the test was made with.
+        source: The record the numbers were read from.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    molecule: str = Field(min_length=1)
+    without_cm: float = Field(ge=0, allow_inf_nan=False)
+    with_cm: float = Field(ge=0, allow_inf_nan=False)
+    n_networks: int = Field(ge=1)
+    source: str = Field(min_length=1)
+
+
 class Training(BaseModel):
     """What a network version was trained on.
 
@@ -244,10 +276,15 @@ class Training(BaseModel):
         elements: The elements of the training molecules.
         min_atoms: The smallest training molecule's atom count.
         max_atoms: The largest's.
-        trained_smiles: Canonical SMILES of every molecule a seed fitted or stopped on.
+        trained_smiles: Canonical SMILES of every neutral molecule a seed fitted or
+            stopped on.
         held_out_smiles: Canonical SMILES of the hold-out molecules, by hold-out.
         soft_mode_repair: Whether the training Hessians had their soft modes repaired; a
             molecule's Hessian is then prepared the same way before the network reads it.
+        cation_parent_smiles: Canonical SMILES of the neutral parents of the radical
+            cations a seed fitted or stopped on; None where the record does not say.
+        cation_test: What such training was seen to do to a neutral parent; given exactly
+            when there are such cations.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -259,6 +296,8 @@ class Training(BaseModel):
     trained_smiles: list[str]
     held_out_smiles: dict[str, list[str]]
     soft_mode_repair: bool
+    cation_parent_smiles: list[str] | None = None
+    cation_test: CationTest | None = None
 
     @model_validator(mode="after")
     def _a_set_that_can_exist(self) -> Self:
@@ -269,11 +308,85 @@ class Training(BaseModel):
         if self.min_atoms > self.max_atoms:
             msg = f"the smallest molecule has {self.min_atoms} atoms, the largest {self.max_atoms}"
             raise ValueError(msg)
+        if bool(self.cation_parent_smiles) != (self.cation_test is not None):
+            msg = (
+                "a record that names radical cations in the training data carries the test "
+                "of what they do to their neutral parents, and only such a record does"
+            )
+            raise ValueError(msg)
         return self
 
     def n_held_out(self, holdout: str) -> int:
         """Count a hold-out's molecules that no seed trained on under another identifier."""
         return len(set(self.held_out_smiles[holdout]) - set(self.trained_smiles))
+
+
+class ReleaseNetworks(BaseModel):
+    """Which networks a folder ships when they are not the ones its errors were measured on.
+
+    Attributes:
+        network_version: The version the pair belongs to.
+        n_molecules: The molecules with labels, radical cations included, that a release
+            network fitted or stopped on.
+        fitted_share: The share of them each network was fitted on; the others stopped its
+            training, a different draw for each seed.
+        checks: Each check the release networks had to pass before they ship, by name.
+        release_checkpoints: The training checkpoints of the shipped seeds, by file name,
+            with the first 16 hex digits of their SHA-256.
+        measurement_checkpoints: The same for the measurement networks.
+        source: The record of the checks.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    network_version: str
+    n_molecules: int = Field(ge=1)
+    fitted_share: float = Field(gt=0, lt=1)
+    checks: dict[str, bool] = Field(min_length=1)
+    release_checkpoints: dict[str, str] = Field(min_length=1)
+    measurement_checkpoints: dict[str, str] = Field(min_length=1)
+    source: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _every_check_passed(self) -> Self:
+        failed = sorted(name for name, passed in self.checks.items() if not passed)
+        if failed:
+            msg = (
+                f"release check(s) {', '.join(failed)} failed: such release networks are not "
+                "shipped, and the version's measurement networks are the product"
+            )
+            raise ValueError(msg)
+        return self
+
+    @property
+    def stopping_share(self) -> float:
+        """The share of the molecules that stopped a network's training instead of fitting it."""
+        return 1 - self.fitted_share
+
+
+_SUPERSCRIPT: Final = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+
+def made_by(release: Release) -> str:
+    """Say which networks make a release's spectrum and which ones its errors belong to."""
+    shipped = release.shipped
+    if shipped is None:
+        return "with the error measured on molecules the network never saw."
+    n = len(release.networks)
+    held = shipped.stopping_share
+    return (
+        f"The spectrum is made by the release networks of version {release.network_version}, "
+        f"trained on all {shipped.n_molecules} molecules with labels: each of the {n} networks "
+        f"is fitted on a random {100 * shipped.fitted_share:.0f} % of the molecules and stopped "
+        f"on the other {100 * held:.0f} %, a different {100 * held:.0f} % per seed, so not every "
+        "molecule is fitted by every network (with "
+        f"{n} networks about {held:g}{str(n).translate(_SUPERSCRIPT)} ≈ "
+        f"{100 * held**n:.1f} % by none). Its error bars were measured on the measurement "
+        "networks of the same version — the same recipe trained without the hold-out "
+        "molecules — on molecules those networks never saw; the release networks themselves "
+        "have seen every molecule we hold labels for, so they have no held-out error of "
+        "their own."
+    )
 
 
 class MeasuredSpread(BaseModel):
@@ -391,11 +504,22 @@ class Release:
     evaluation: Evaluation
     training: Training
     invariance: Invariance | None = None
+    shipped: ReleaseNetworks | None = None
+    measurement: Training | None = None
 
     @property
     def network_version(self) -> str:
         """The version every part of the release belongs to."""
         return self.evaluation.network_version
+
+    @property
+    def measured_training(self) -> Training:
+        """Return the training record the errors belong to.
+
+        That is the measurement networks' where the seeds are release networks, else the
+        seeds' own.
+        """
+        return self.training if self.measurement is None else self.measurement
 
     def corrections(self, geometry: Geometry, hessian: FloatArray) -> Corrections:
         """Return every seed's ΔH for a molecule, and their mean."""
@@ -423,6 +547,49 @@ def _reasons_to_refuse(
         reasons.append("its seeds differ in architecture or input settings")
     reasons += _seeds_that_disagree(recipes, evaluation)
     return reasons + _records_that_disagree(evaluation, training)
+
+
+def _pair_reasons(
+    n_seeds: int,
+    evaluation: Evaluation,
+    training: Training,
+    pair: tuple[ReleaseNetworks, Training] | None,
+) -> list[str]:
+    """Name where release networks and the measurement networks of their errors do not fit."""
+    if pair is None:
+        return []
+    shipped, measurement = pair
+    reasons = []
+    versions = {shipped.network_version, measurement.network_version, evaluation.network_version}
+    if len(versions) > 1:
+        named = f"{RELEASE_FILE} and {MEASUREMENT_FILE}"
+        reasons.append(f"{named} are of other versions: {sorted(versions)}")
+    if training.held_out_smiles:
+        reasons.append(f"{TRAINING_FILE} lists hold-outs, and release networks hold nothing out")
+    lacking = set(measurement.trained_smiles) - set(training.trained_smiles)
+    if lacking:
+        reasons.append(
+            f"the release networks lack {len(lacking)} molecule(s) the measurement networks "
+            "trained on: a release set holds its measurement set"
+        )
+    if len(shipped.release_checkpoints) != n_seeds:
+        reasons.append(
+            f"{RELEASE_FILE} names {len(shipped.release_checkpoints)} checkpoint(s), the "
+            f"folder holds {n_seeds} seed(s)"
+        )
+    return reasons
+
+
+def _pair(folder: Path) -> tuple[ReleaseNetworks, Training] | None:
+    """Read a folder's release and measurement records; one without the other is a refusal."""
+    present = [name for name in (RELEASE_FILE, MEASUREMENT_FILE) if (folder / name).exists()]
+    if not present:
+        return None
+    if len(present) == 1:
+        other = MEASUREMENT_FILE if present == [RELEASE_FILE] else RELEASE_FILE
+        raise RefusedError([f"{folder}: {present[0]} without {other}: release networks need both"])
+    shipped = _record(ReleaseNetworks, folder, RELEASE_FILE)
+    return shipped, _record(Training, folder, MEASUREMENT_FILE)
 
 
 def _seeds_that_disagree(recipes: tuple[weights.Recipe, ...], evaluation: Evaluation) -> list[str]:
@@ -515,9 +682,14 @@ def load(folder: Path) -> Release:
     invariance = None
     if (folder / INVARIANCE_FILE).exists():
         invariance = _record(Invariance, folder, INVARIANCE_FILE)
+    pair = _pair(folder)
+    measured = training if pair is None else pair[1]
     loaded = _load_seeds(folder)
     recipes = tuple(recipe for _, _, recipe in loaded)
-    reasons = _reasons_to_refuse(recipes, evaluation, training, invariance)
+    reasons = _reasons_to_refuse(recipes, evaluation, measured, invariance)
+    reasons += _pair_reasons(len(recipes), evaluation, training, pair)
+    if pair is not None and training.network_version != evaluation.network_version:
+        reasons.append(f"{TRAINING_FILE} is of version {training.network_version}")
     if reasons:
         raise RefusedError([f"{folder}: {reason}" for reason in reasons])
     return Release(
@@ -527,4 +699,6 @@ def load(folder: Path) -> Release:
         evaluation=evaluation,
         training=training,
         invariance=invariance,
+        shipped=None if pair is None else pair[0],
+        measurement=None if pair is None else pair[1],
     )

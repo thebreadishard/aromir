@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from aromir import dft, families, repair
-from aromir.release import error_text, level_name
+from aromir.release import error_text, level_name, made_by
 
 if TYPE_CHECKING:
     from aromir.release import Evaluation, Release, Training
@@ -56,6 +56,7 @@ def _summary(release: Release) -> list[str]:
             f"({', '.join(str(recipe.seed) for recipe in release.recipes)}); the applied "
             "correction is their mean, and their spread is reported per band."
         ),
+        *([] if release.shipped is None else [f"- **Networks:** {made_by(release)}"]),
         f"- **Licensed families:** {', '.join(licensed) or 'none'}.",
         f"- **Not licensed:** {', '.join(unlicensed) or 'none'}.",
         *(f"- **On thin ground:** {caveat}." for caveat in evaluation.caveats()),
@@ -99,13 +100,20 @@ def _first_order_table(evaluation: Evaluation) -> list[str]:
 
 def _evaluation(release: Release) -> list[str]:
     evaluation = release.evaluation
+    networks = (
+        "the network never trained on: the error of what aromir prints"
+        if release.shipped is None
+        else "the measurement networks never trained on — the same recipe trained without "
+        "the hold-outs, whose error is the error bar of what aromir prints; the release "
+        "networks aromir runs trained on these molecules too"
+    )
     return [
         "## How well it is known",
         "",
         (
             "The rms error of the corrected band positions of the seeds' mean against "
-            f"{level_name(evaluation.higher_level)}, in cm⁻¹, on molecules the network never "
-            "trained on: the error of what aromir prints. In square brackets the 95 % "
+            f"{level_name(evaluation.higher_level)}, in cm⁻¹, on molecules {networks}. "
+            "In square brackets the 95 % "
             "interval when the hold-out's molecules are resampled. The licence is read on "
             f"{evaluation.licence_basis}."
         ),
@@ -155,9 +163,29 @@ def _held_out(training: Training) -> str:
     return "; ".join(parts) or "none"
 
 
+def _molecule_count(release: Release) -> str:
+    training = release.training
+    shipped = release.shipped
+    if shipped is None:
+        n = len(training.trained_smiles)
+        return f"{n} molecules, neutral and closed-shell, each with an aromatic ring."
+    cations = len(training.cation_parent_smiles or ())
+    return (
+        f"{shipped.n_molecules} molecules with labels, each with an aromatic ring: "
+        f"{len(training.trained_smiles)} neutral closed-shell molecules by SMILES, and the "
+        f"radical cations of {cations} of them; the measurement networks, on which every "
+        f"error is read, trained on {len(release.measured_training.trained_smiles)} of the "
+        "neutral ones."
+    )
+
+
 def _training(release: Release) -> list[str]:
     training = release.training
-    held_out = _held_out(training)
+    held_out = _held_out(release.measured_training)
+    if release.shipped is not None:
+        held_out += (
+            " — held out from the measurement networks only; the release networks trained on them"
+        )
     prepared = (
         "with their soft modes (below "
         f"{repair.SOFT_BELOW_CM:g} cm⁻¹) measured from gradients that include the grid's response"
@@ -167,10 +195,7 @@ def _training(release: Release) -> list[str]:
     return [
         "## What it was trained on",
         "",
-        (
-            f"- {len(training.trained_smiles)} molecules, neutral and closed-shell, each with an "
-            "aromatic ring."
-        ),
+        f"- {_molecule_count(release)}",
         f"- Elements: {', '.join(training.elements)}.",
         f"- Sizes: {training.min_atoms} to {training.max_atoms} atoms.",
         f"- Held out and never trained on: {held_out}.",

@@ -268,12 +268,14 @@ def test_a_release_that_is_damaged_or_contradicts_itself_is_refused_in_one_line(
 
 
 def test_the_bundled_release_passes_its_own_cross_checks(tmp_path: Path) -> None:
-    copy = tmp_path / "v1.3"
+    copy = tmp_path / "bundled"
     shutil.copytree(release.bundled(), copy)
     loaded = release.load(copy)
     for name, holdout in loaded.evaluation.holdouts.items():
-        assert holdout.n_molecules == loaded.training.n_held_out(name)
-    assert set(TRAINING) == set(loaded.training.model_dump())
+        assert holdout.n_molecules == loaded.measured_training.n_held_out(name)
+    cations = {"cation_parent_smiles", "cation_test"}
+    for training in (loaded.training, loaded.measured_training):
+        assert set(training.model_dump()) == set(TRAINING) | cations
 
 
 def test_an_error_nobody_foresaw_is_one_line_with_its_kind(

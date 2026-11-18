@@ -44,7 +44,7 @@ error, rms per family. Its bands: 13 ring-ip, 6 CH-stretch, 6 CH-oop, 5 other.""
 
 @pytest.fixture(scope="module")
 def bundled() -> release.Release:
-    return release.load(release.bundled())
+    return release.load(release.bundled().parent / "v1.3")
 
 
 def _stored(name: str) -> tuple[Geometry, FloatArray]:

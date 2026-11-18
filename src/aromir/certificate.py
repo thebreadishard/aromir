@@ -19,13 +19,13 @@ from rdkit import Chem
 
 from aromir import families, repair, spectrum, vibrations
 from aromir.network import primitives
-from aromir.release import error_text, level_name
+from aromir.release import error_text, level_name, made_by
 
 if TYPE_CHECKING:
     from aromir.admission import Admission
     from aromir.lowlevel import LowLevel
     from aromir.molecule import Geometry
-    from aromir.release import Corrections, Evaluation, Release, Training
+    from aromir.release import CationTest, Corrections, Evaluation, Release, Training
 
 POSITIONS_NOTE: Final = "harmonic positions: the anharmonic shift is not included in this version"
 LEVEL_NOTE: Final = "B3LYP/6-31G* corrected"
@@ -180,24 +180,73 @@ def _without_stereo(smiles: str) -> str:
     return smiles if molecule is None else str(Chem.MolToSmiles(molecule, isomericSmiles=False))
 
 
-def acquaintance(smiles: str, training: Training) -> str:
-    """Say whether the network has met a molecule, by its canonical SMILES.
+UNSEEN: Final = "not in the training set or a hold-out: the network has not seen it"
+UNSEEN_NEUTRAL: Final = (
+    "not in the training set or a hold-out as a neutral molecule: the network has not seen it "
+    "as one"
+)
+RELEASE_TRAINED: Final = (
+    "in the release networks' training data: the error bars are not an out-of-sample error "
+    "for this molecule; expect it to be smaller"
+)
 
-    A molecule written without its stereo labels is compared without them too, so that a
-    trained stereoisomer is not reported as never seen.
-    """
+
+def _a_stereoisomer_of(smiles: str, training: Training) -> bool:
+    plain = _without_stereo(smiles)
+    return plain in {_without_stereo(trained) for trained in training.trained_smiles}
+
+
+def _met(smiles: str, training: Training) -> str:
+    """Say whether the networks of a training record have met a molecule."""
     if smiles in training.trained_smiles:
         return "in the network's training set: the hold-out error is not this molecule's measure"
     for holdout, held_out in training.held_out_smiles.items():
         if smiles in held_out:
             return f"in hold-out ({holdout}): never trained on; the measured error includes it"
-    plain = _without_stereo(smiles)
-    if plain in {_without_stereo(trained) for trained in training.trained_smiles}:
+    if _a_stereoisomer_of(smiles, training):
         return (
             "a stereoisomer of it, or the molecule itself written with other stereo labels, "
             "is in the network's training set"
         )
-    return "not in the training set or a hold-out: the network has not seen it"
+    return UNSEEN
+
+
+def _cation_clause(test: CationTest) -> str:
+    networks = "one network" if test.n_networks == 1 else f"{test.n_networks} networks"
+    return (
+        "its radical cation is in the networks' training data; in a test, training on "
+        f"{test.molecule}'s cation raised neutral {test.molecule}'s error from "
+        f"{test.without_cm:.1f} to {test.with_cm:.1f} cm⁻¹ for {networks}, so this "
+        "molecule's error may be larger than the measured one"
+    )
+
+
+def acquaintance(smiles: str, training: Training, measured: Training | None = None) -> str:
+    """Say whether the networks have met a molecule, by its canonical SMILES.
+
+    ``training`` is the record of the networks that make the spectrum. ``measured`` is
+    given when they are release networks: the record of the measurement networks their
+    error bars belong to. A molecule in the release networks' training data is said to be
+    there, for those error bars were measured on networks that did not train on it; any
+    other molecule is read against the record the errors belong to. A molecule written
+    without its stereo labels is compared without them too, so that a trained stereoisomer
+    is not reported as never seen. A neutral molecule whose radical cation the networks
+    trained on, while they did not train on the molecule itself, gets the clause of the
+    cation test.
+    """
+    if measured is not None and smiles in training.trained_smiles:
+        return RELEASE_TRAINED
+    if measured is not None and _a_stereoisomer_of(smiles, training):
+        return (
+            "a stereoisomer of it, or the molecule itself written with other stereo labels, "
+            "is in the release networks' training data"
+        )
+    said = _met(smiles, training if measured is None else measured)
+    test = training.cation_test
+    trained = smiles in training.trained_smiles
+    if test is None or trained or smiles not in (training.cation_parent_smiles or ()):
+        return said
+    return f"{UNSEEN_NEUTRAL if said == UNSEEN else said}; {_cation_clause(test)}"
 
 
 def has_linear_group(geometry: Geometry, release: Release) -> bool:
@@ -213,7 +262,7 @@ def _molecule(admitted: Admission, geometry: Geometry, release: Release) -> dict
         "unassigned_stereo": list(admitted.unassigned_stereo),
         "training_atoms": [training.min_atoms, training.max_atoms],
         "inside_training_sizes": inside,
-        "seen": acquaintance(admitted.smiles, training),
+        "seen": acquaintance(admitted.smiles, training, release.measurement),
         "linear_group": has_linear_group(geometry, release),
         "planar": families.is_planar(geometry),
     }
@@ -306,8 +355,8 @@ def _statement(
     return (
         f"{admitted.smiles}: the harmonic infrared spectrum of ΔH network "
         f"v{release.network_version} ({len(release.networks)} seeds), {LEVEL_NOTE} towards "
-        f"{evaluation.higher_level}, with the error measured on molecules the network never "
-        f"saw. {sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
+        f"{evaluation.higher_level}, {made_by(release)} "
+        f"{sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every hold-out "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
         "its low-level mode is real, the band is real for the seeds' mean and for every "
@@ -389,6 +438,10 @@ def build(
             "version": release.network_version,
             "seeds": [recipe.seed for recipe in release.recipes],
             "higher_level": evaluation.higher_level,
+            "kind": "measured" if release.shipped is None else "release",
+            "errors_measured_on": (
+                None if release.shipped is None else release.shipped.measurement_checkpoints
+            ),
         },
         "positions": POSITIONS_NOTE,
         "soft_modes": _soft_mode_note(low, release),

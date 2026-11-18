@@ -5,19 +5,33 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
+import pytest
 from rdkit import Chem
 
 from aromir import card, cli, evaluation, release
 from aromir.molecule import Geometry
 
-if TYPE_CHECKING:
-    import pytest
-
 N_SEEDS = 3
-PLATFORM_PIN = Path(__file__).parent / "data" / "release" / "delta_h_biphenyl_cn_v1.3.npz"
+PINS = Path(__file__).parent / "data" / "release"
+PLATFORM_PINS = (
+    ("1.3", "delta_h_biphenyl_cn_v1.3.npz", "delta_h_windows"),
+    ("1.4", "delta_h_biphenyl_cn_v1.4.npz", "delta_h_linux"),
+)
+"""Each shipped release's ΔH for 4-cyanobiphenyl, computed on the platform the key names."""
+RELEASE_CHECKPOINTS = {
+    "E7_rungC_v14s3clean_c00_control_release_model_n1132_seed0.pt": "6f52c9d8570fbcf5",
+    "E7_rungC_v14s3clean_c00_control_release_model_n1132_seed1.pt": "1e820b8755078b90",
+    "E7_rungC_v14s3clean_c00_control_release_model_n1132_seed2.pt": "bc4de0b6458e44f2",
+}
+MEASUREMENT_CHECKPOINTS = {
+    "E7_rungC_v14s3clean_c00_control_model_n1082_seed0.pt": "89574ed1b69c4e10",
+    "E7_rungC_v14s3clean_c00_control_model_n1082_seed1.pt": "03dbbf9f29b59186",
+    "E7_rungC_v14s3clean_c00_control_model_n1082_seed2.pt": "8dd85f3f1ba5bbeb",
+}
+"""The training checkpoints v1.4 was converted from, as the training project's certificate of
+benzene on 18 November 2026 names them."""
 DELTA_H_TOLERANCE = 1e-6
 """hartree/bohr². Single-precision arithmetic on another build: Linux and Windows differ by
 7e-9 for this molecule, whose largest ΔH element is 0.040, and by 2.4e-7 at most over 76
@@ -51,20 +65,52 @@ def test_the_shipped_model_card_is_the_one_the_release_writes() -> None:
     assert shipped == card.to_markdown(release.load(release.bundled()))
 
 
-def test_the_release_corrects_a_twisted_biphenyl_alike_on_every_platform() -> None:
+@pytest.mark.parametrize(("version", "name", "key"), PLATFORM_PINS)
+def test_each_release_corrects_a_twisted_biphenyl_alike_on_every_platform(
+    version: str, name: str, key: str
+) -> None:
     # The pin is the Windows build's ΔH for 4-cyanobiphenyl. Before
     # `primitives.pseudo_inverse` this failed on numpy 2.5.4's Linux wheels: a null singular
     # value of this molecule's B matrix came back above `np.linalg.pinv`'s default cutoff
     # and every seed's ΔH was 1e29. A numerical step that depends on the platform shows
     # here as a difference above single-precision noise.
-    with np.load(PLATFORM_PIN) as pin:
+    with np.load(PINS / name) as pin:
         geometry = Geometry(tuple(str(symbol) for symbol in pin["symbols"]), pin["coords_bohr"])
-        hessian, pinned = pin["hessian"], pin["delta_h_windows"]
-    corrections = release.load(release.bundled()).corrections(geometry, hessian)
+        hessian, pinned = pin["hessian"], pin[key]
+    folder = release.bundled().parent / f"v{version}"
+    corrections = release.load(folder).corrections(geometry, hessian)
     assert len(corrections.per_seed) == len(pinned) == N_SEEDS
     for ours, theirs in zip(corrections.per_seed, pinned, strict=True):
-        assert 0.03 < float(np.abs(theirs).max()) < 0.05
+        assert 0.01 < float(np.abs(theirs).max()) < 0.1
         assert float(np.abs(ours - theirs).max()) <= DELTA_H_TOLERANCE
+
+
+def test_the_bundled_release_ships_release_networks_and_names_both_kinds() -> None:
+    loaded = release.load(release.bundled())
+    assert loaded.shipped is not None
+    assert loaded.measurement is not None
+    assert loaded.shipped.release_checkpoints == RELEASE_CHECKPOINTS
+    assert loaded.shipped.measurement_checkpoints == MEASUREMENT_CHECKPOINTS
+    assert loaded.shipped.n_molecules == 1132
+    assert loaded.shipped.fitted_share == 0.85
+    assert set(loaded.shipped.checks) == {
+        "same_recipe",
+        "pool_agreement",
+        "holdouts_learnt",
+        "early_stopping",
+        "benzene",
+    }
+    held_out = {s for smiles in loaded.measurement.held_out_smiles.values() for s in smiles}
+    assert held_out <= set(loaded.training.trained_smiles)
+    assert set(loaded.measurement.trained_smiles) <= set(loaded.training.trained_smiles)
+
+
+def test_the_bundled_release_networks_have_no_error_of_their_own(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "a").mkdir()
+    assert cli.main(["evaluate", str(tmp_path)]) == cli.EXIT_REFUSED
+    assert "their error there is no measurement" in capsys.readouterr().err
 
 
 def test_the_evaluation_record_is_the_measurement_that_ships_beside_it() -> None:
@@ -78,10 +124,15 @@ def test_the_evaluation_record_is_the_measurement_that_ships_beside_it() -> None
 
 
 def test_every_smiles_of_the_release_is_in_rdkits_present_canonical_form() -> None:
-    training = release.load(release.bundled()).training
+    loaded = release.load(release.bundled())
     listed = [
-        *training.trained_smiles,
-        *(s for held in training.held_out_smiles.values() for s in held),
+        *(
+            s
+            for training in (loaded.training, loaded.measured_training)
+            for s in training.trained_smiles
+        ),
+        *(s for held in loaded.measured_training.held_out_smiles.values() for s in held),
+        *(loaded.training.cation_parent_smiles or ()),
     ]
     assert len(listed) > 700
     rewritten = [s for s in listed if Chem.MolToSmiles(Chem.MolFromSmiles(s)) != s]
