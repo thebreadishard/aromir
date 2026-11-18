@@ -14,7 +14,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   errors belong to). Such a folder is refused when one record comes without the other, a
   check failed, the seeds are not the ones `release.json` names, the release networks lack
   a molecule the measurement networks trained on or a hold-out molecule, or they list
-  hold-outs. The certificate and the card
+  hold-outs; or when the two training records give another domain (elements, sizes, the
+  soft-mode repair, the cation test, cations the release lacks), `release.json` counts
+  fewer entries than the molecules and cations it trained on, names other checks than the
+  five, or names measurement checkpoints the evaluation's sources do not, or a record is
+  not the one `release.json` binds by the SHA-256 of its content. The certificate and the card
   say which networks made the spectrum and which ones the error bars are of; a molecule in
   the release networks' training data is said to be there; a neutral molecule whose
   radical cation the networks trained on, but not the molecule itself, gets the measured
@@ -23,6 +27,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   1078 distinct neutral molecules and the radical cations of 50), with the errors and
   licence of its measurement networks, measured with `aromir evaluate`; v1.3's folder stays
   in the package for `--release`.
+- The evaluation record's format 3: each family's band error counts the hold-out molecules
+  that have a band of the family, and a caveat says "on 5 of the hold-out's 8 molecules"
+  where it said "on 8". A record of format 2 is refused with the reason; v1.3's and
+  v1.4's records are measured again with `aromir evaluate` (every number unchanged).
+- The loader refuses an evaluation record whose rms lies outside its own resampling
+  interval, whose share of resamples within the line contradicts the interval, that counts
+  more molecules with a band than bands, or whose tables differ from the `measured.json`
+  beside it.
 
 - Admission: a molecule is parsed from a SMILES or an xyz file and refused, with every
   reason, unless it is one neutral, closed-shell aromatic molecule of H, C, N, O, F, S

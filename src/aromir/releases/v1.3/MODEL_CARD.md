@@ -31,7 +31,7 @@ The rms error of the corrected band positions of the seeds' mean against ωB97X/
 | other | 2.78 [1.68–3.76], 156 bands | 2.77 [2.56–2.97], 1225 bands | yes |
 
 - (a): eight molecules set aside on 19 September 2026, before any network was trained, and never trained on in any form (two more molecules of that set, 2-naphthoic acid and benzonitrile, are left out of this read because the network had trained on them under another identifier)
-- (b): every substituted molecule of two ring scaffolds, set aside on 8 October 2026; the network trained on no molecule of either scaffold
+- (b): 39 substituted molecules of two ring scaffolds, fluorene (20) and fluoranthene (19), set aside on 8 October 2026, those with analytic Hessians at both levels when v1.3 was read; 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. The network trained on no molecule containing either ring system
 
 For comparison, the first-order error of each seed alone, the number a training run reports and the one earlier versions of this card printed as the error: its mean over the seeds, each seed's value in brackets. It is not the error of what aromir prints.
 
@@ -46,7 +46,7 @@ A family is licensed when the band error of the seeds' mean, as recorded to two 
 
 Coupled cluster: not measured for this network version.
 
-Sources: every error in this record: `aromir evaluate` on the two hold-outs as probes/results_m1/aromir_audit_fixes_2026-11-16/holdouts_for_aromir.py of thebreadishard/udacity-capstone-plan (plan 05) writes them; counterpart for the band errors: probes/results_m1/aromir_product_error_2026-11-16/product_error.json; the hold-outs' molecules, and the first-order errors the training runs recorded themselves (within 0.08 cm⁻¹): E7_rungC_chain35_analytic_eval_frozenb_seed0.json, E7_rungC_chain35_analytic_eval_frozenb_seed1.json, E7_rungC_chain35_analytic_eval_frozenb_seed2.json, E7_rungC_chain35_analytic_a8read_seed0.json, E7_rungC_chain35_analytic_a8read_seed1.json, E7_rungC_chain35_analytic_a8read_seed2.json; the molecules with a band of each family: the same `aromir evaluate` (format 3); counterpart, equal in every cell: probes/results_m1/aromir_266_counts_2026-11-18/count_bands.py of thebreadishard/udacity-capstone-plan (plan 05), the molecules with a low-level mode of the family.
+Sources: every error in this record: `aromir evaluate` on the two hold-outs as probes/results_m1/aromir_audit_fixes_2026-11-16/holdouts_for_aromir.py of thebreadishard/udacity-capstone-plan (plan 05) writes them; counterpart for the band errors: probes/results_m1/aromir_product_error_2026-11-16/product_error.json; the hold-outs' molecules, and the first-order errors the training runs recorded themselves (within 0.08 cm⁻¹): E7_rungC_chain35_analytic_eval_frozenb_seed0.json, E7_rungC_chain35_analytic_eval_frozenb_seed1.json, E7_rungC_chain35_analytic_eval_frozenb_seed2.json, E7_rungC_chain35_analytic_a8read_seed0.json, E7_rungC_chain35_analytic_a8read_seed1.json, E7_rungC_chain35_analytic_a8read_seed2.json; the molecules with a band of each family: the same `aromir evaluate` (format 3); counterpart, equal in every cell: probes/results_m1/aromir_266_counts_2026-11-18/count_bands.py of thebreadishard/udacity-capstone-plan (plan 05), the molecules with a low-level mode of the family; hold-out (b)'s description: modules/05_support_predictor/corpus/holdout_b_frozen_2026-10-08.txt (41 molecules) and probes/results_m1/aromir_audit_answers_2026-11-18/scaffolds.log and murcko.log of thebreadishard/udacity-capstone-plan (plan 05); 9-nitrofluorene's imaginary mode and set b+: probes/results_m1/aromir_audit_v14_2026-11-18/AUDIT.md, K2.
 
 ## What it was trained on
 
@@ -88,7 +88,7 @@ An equivariant message-passing encoder (PaiNN type) over the atoms, and a head t
 | seed-1.safetensors | 1 | `96a15a89b6ac129c527fa643de07f51c7bf075b8de05a7898b9b9382dba2958e` |
 | seed-2.safetensors | 2 | `4a3fda6248785ee6dc198095342ebb19cc66bb47c40823834c9ba9f4ff6a91d8` |
 
-Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json` and `training.json` hold the records this card is written from.
+Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json`, `training.json`, `invariance.json` hold the records this card is written from, and `measured.json`, where the folder has it, is the output of `aromir evaluate` the error tables are copied from: the loader refuses tables that differ from it.
 
 ## Use
 

@@ -205,6 +205,7 @@ def test_release_v13_is_licensed_on_what_it_delivers() -> None:
     others = [band for band in record["bands"] if band["family"] == "other"]
     assert others
     assert text.count("| other | yes, on thin ground (see above) |") == len(others)
+    assert "in cm⁻¹: what this certificate's positions are. In square brackets" in text
     assert "| ring-ip | yes |" in text
     assert "chosen on 16 November 2026" in text
 
@@ -231,9 +232,9 @@ def test_what_was_measured_becomes_the_tables_of_a_record(
     ]
     if missing:
         with pytest.raises(RefusedError, match=rf"hold-out \(a\) has no {missing[0]} band"):
-            evaluation.record_tables(measured)
+            release.record_tables(measured)
         return
-    tables = evaluation.record_tables(measured)
+    tables = release.record_tables(measured)
     assert list(tables["band_error_seed_mean_cm"]) == list(families.FAMILIES)
     assert list(tables["first_order_error_per_seed_mean_cm"]["other"]) == ["a", "b"]
 
@@ -279,7 +280,7 @@ def test_the_v13_record_is_what_the_tables_of_a_measurement_look_like() -> None:
         }
         for name, holdout in recorded.holdouts.items()
     }
-    tables = evaluation.record_tables(measured)
+    tables = release.record_tables(measured)
     again = recorded.model_dump(mode="json") | tables
     assert release.Evaluation.model_validate(again) == recorded
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -13,7 +14,7 @@ from aromir import admission, card, certificate, evaluation, geometry, lowlevel,
 from aromir.errors import RefusedError
 from aromir.network import weights
 
-from support import TRAINING, random_hessian, write_release
+from support import TRAINING, measured_of, random_hessian, write_release
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -39,11 +40,13 @@ SHIPPED: dict[str, Any] = {
     "network_version": "1.3",
     "n_entries": 4,
     "fitted_share": 0.85,
-    "checks": {"same_recipe": True, "early_stopping": True},
+    "checks": dict.fromkeys(release.RELEASE_CHECKS, True),
     "release_checkpoints": {"release_seed0.pt": "0" * 16, "release_seed1.pt": "1" * 16},
-    "measurement_checkpoints": {"seed0.pt": "2" * 16, "seed1.pt": "3" * 16},
+    "measurement_checkpoints": {"measured_seed0.pt": "2" * 16, "measured_seed1.pt": "3" * 16},
     "source": "a made-up record",
 }
+MEASURED_BY = "a made-up measurement of measured_seed0.pt and measured_seed1.pt"
+"""The evaluation's source that names the measurement checkpoints."""
 
 
 def write_pair(
@@ -54,13 +57,21 @@ def write_pair(
 ) -> Path:
     """Write a folder of release networks for ``TRAINING``'s measurement networks."""
     write_release(folder)
+    path = folder / release.EVALUATION_FILE
+    evaluation_record = json.loads(path.read_text(encoding="utf-8"))
+    evaluation_record["sources"] = [*evaluation_record["sources"], MEASURED_BY]
+    path.write_text(json.dumps(evaluation_record), encoding="utf-8")
+    (folder / release.MEASURED_FILE).write_text(
+        json.dumps(measured_of(evaluation_record)), encoding="utf-8"
+    )
     (folder / release.MEASUREMENT_FILE).write_text(
         json.dumps(TRAINING if measurement is None else measurement), encoding="utf-8"
     )
     record = RELEASE_TRAINING if training is None else training
     (folder / release.TRAINING_FILE).write_text(json.dumps(record), encoding="utf-8")
     hashes = {path.stem: weights.recorded_sha256(path) for path in folder.glob("seed-*.json")}
-    written = {"seed_sha256": hashes} | SHIPPED | ({} if shipped is None else shipped)
+    bound = {name: release.record_sha256(folder / name) for name in release.RECORDED_FILES}
+    written = {"seed_sha256": hashes, "record_sha256": bound} | SHIPPED | (shipped or {})
     (folder / release.RELEASE_FILE).write_text(json.dumps(written))
     return folder
 
@@ -114,7 +125,7 @@ def test_one_record_of_the_pair_without_the_other_is_refused(tmp_path: Path, pre
 
 
 def test_release_networks_that_failed_a_check_are_not_shipped(tmp_path: Path) -> None:
-    failed = SHIPPED | {"checks": {"same_recipe": True, "early_stopping": False}}
+    failed = SHIPPED | {"checks": SHIPPED["checks"] | {"early_stopping": False}}
     with pytest.raises(RefusedError, match="release check\\(s\\) early_stopping failed"):
         release.load(write_pair(tmp_path, shipped=failed))
 
@@ -153,6 +164,38 @@ def test_release_networks_that_failed_a_check_are_not_shipped(tmp_path: Path) ->
             SHIPPED | {"seed_sha256": {"seed-0": "0" * 64, "seed-1": "1" * 64}},
             "names other weights than the seeds beside it",
         ),
+        (
+            RELEASE_TRAINING | {"soft_mode_repair": True},
+            SHIPPED,
+            "measurement.json gives soft_mode_repair False, training.json True",
+        ),
+        (
+            RELEASE_TRAINING | {"max_atoms": TRAINING["max_atoms"] + 1},
+            SHIPPED,
+            "measurement.json gives max_atoms",
+        ),
+        (
+            RELEASE_TRAINING | {"elements": [*TRAINING["elements"], "S"]},
+            SHIPPED,
+            "measurement.json gives elements",
+        ),
+        (RELEASE_TRAINING, SHIPPED | {"n_entries": 2}, "counts 2 entries, fewer than the 4"),
+        (
+            RELEASE_TRAINING,
+            SHIPPED | {"measurement_checkpoints": {"a.pt": "2" * 16, "b.pt": "3" * 16}},
+            "does not name a.pt, b.pt as its source",
+        ),
+        (
+            RELEASE_TRAINING,
+            SHIPPED | {"checks": {"same_recipe": True}},
+            "release check\\(s\\): \\[.*'benzene'.*\\] missing",
+        ),
+        (
+            RELEASE_TRAINING,
+            SHIPPED
+            | {"release_checkpoints": {"release_seed0.pt": "zz", "release_seed1.pt": "1" * 16}},
+            "String should match pattern",
+        ),
     ],
 )
 def test_a_pair_that_does_not_fit_together_is_refused(
@@ -160,6 +203,59 @@ def test_a_pair_that_does_not_fit_together_is_refused(
 ) -> None:
     with pytest.raises(RefusedError, match=reason):
         release.load(write_pair(tmp_path, training=training, shipped=shipped))
+
+
+@pytest.mark.parametrize(
+    ("measurement", "reason"),
+    [
+        (
+            TRAINING | {"cation_parent_smiles": ["c1ccsc1"], "cation_test": CATION_TEST},
+            "the release networks lack 1 radical cation\\(s\\)",
+        ),
+        (
+            TRAINING
+            | {"cation_parent_smiles": ["c1ccncc1"], "cation_test": CATION_TEST | {"with_cm": 6.0}},
+            "measurement.json gives another cation test",
+        ),
+    ],
+)
+def test_measurement_networks_of_other_cations_are_refused(
+    tmp_path: Path, measurement: dict[str, Any], reason: str
+) -> None:
+    with pytest.raises(RefusedError, match=reason):
+        release.load(write_pair(tmp_path, measurement=measurement))
+
+
+@pytest.mark.parametrize("name", list(release.RECORDED_FILES))
+def test_a_record_changed_after_the_release_was_written_is_refused(
+    tmp_path: Path, name: str
+) -> None:
+    folder = write_pair(tmp_path)
+    path = folder / name
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if "trained_smiles" in record:  # the same set with a molecule listed twice: valid, and changed
+        record["trained_smiles"] = [*record["trained_smiles"], record["trained_smiles"][0]]
+    elif "coupled_cluster" in record:
+        record["coupled_cluster"] += " (edited)"
+    else:
+        record["a"]["band_error_seed_mean"]["ring-ip"]["n_modes"] += 0.0  # 199 -> 199.0
+    path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    said = re.escape(f"{name} is not the record release.json was written")
+    with pytest.raises(RefusedError, match=said):
+        release.load(folder)
+
+
+def test_a_record_the_release_binds_cannot_be_missing(tmp_path: Path) -> None:
+    folder = write_pair(tmp_path)
+    (folder / release.MEASURED_FILE).unlink()
+    with pytest.raises(RefusedError, match=re.escape("measured.json, which release.json binds")):
+        release.load(folder)
+
+
+def test_the_card_of_release_networks_names_every_record(pair: release.Release) -> None:
+    text = card.to_markdown(pair)
+    assert "`release.json`, `measurement.json` hold the records this card is written from" in text
+    assert "`release.json` binds the other records by the SHA-256 of their content." in text
 
 
 def test_a_measurement_record_of_another_version_is_refused(tmp_path: Path) -> None:
@@ -270,6 +366,9 @@ def test_the_certificate_of_release_networks_names_both(
     assert record["network"]["kind"] == "release"
     assert record["network"]["errors_measured_on"] == SHIPPED["measurement_checkpoints"]
     assert record["molecule"]["seen"] == certificate.RELEASE_TRAINED
+    text = certificate.to_markdown(record)
+    assert "and the error bar of this certificate's positions. In square brackets" in text
+    assert "what this certificate's positions are" not in text
 
 
 def test_the_error_of_release_networks_on_the_hold_outs_is_not_measured(

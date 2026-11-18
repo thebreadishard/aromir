@@ -12,7 +12,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from aromir import dft, families, repair
-from aromir.release import error_text, level_name, made_by, pool
+from aromir.release import (
+    EVALUATION_FILE,
+    INVARIANCE_FILE,
+    MEASURED_FILE,
+    MEASUREMENT_FILE,
+    RELEASE_FILE,
+    TRAINING_FILE,
+    error_text,
+    level_name,
+    made_by,
+    pool,
+)
 
 if TYPE_CHECKING:
     from aromir.release import Evaluation, Release, Training
@@ -357,12 +368,23 @@ def _files(release: Release) -> list[str]:
         f"| seed-{recipe.seed}.safetensors | {recipe.seed} | `{sha256}` |"
         for recipe, sha256 in zip(release.recipes, release.tensor_sha256, strict=True)
     ]
+    records = [EVALUATION_FILE, TRAINING_FILE]
+    records += [INVARIANCE_FILE] if release.invariance is not None else []
+    records += [RELEASE_FILE, MEASUREMENT_FILE] if release.shipped is not None else []
+    bound = (
+        f" `{RELEASE_FILE}` binds the other records by the SHA-256 of their content."
+        if release.shipped is not None
+        else ""
+    )
     return [
         *lines,
         "",
         (
             "Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; "
-            "`evaluation.json` and `training.json` hold the records this card is written from."
+            f"{', '.join(f'`{name}`' for name in records)} hold the records this card is "
+            f"written from, and `{MEASURED_FILE}`, where the folder has it, is the output of "
+            "`aromir evaluate` the error tables are copied from: the loader refuses tables "
+            f"that differ from it.{bound}"
         ),
     ]
 

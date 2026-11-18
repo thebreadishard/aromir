@@ -270,34 +270,3 @@ def evaluate(release: Release, folder: Path) -> dict[str, Any]:
         molecules = [molecule_errors(read(path), release) for path in files]
         measured[holdout.name] = holdout_errors(molecules, line)
     return measured
-
-
-def record_tables(measured: dict[str, Any]) -> dict[str, Any]:
-    """Return what ``evaluate`` measured as the tables an evaluation record holds.
-
-    A record lists every family on every hold-out, so a hold-out without a band of some
-    family cannot carry a record.
-
-    Raises:
-        RefusedError: A family has no band in a hold-out.
-    """
-    empty = [
-        f"hold-out ({name}) has no {family} band"
-        for name, holdout in measured.items()
-        for family, entry in holdout["band_error_seed_mean"].items()
-        if not entry["n_modes"]
-    ]
-    if empty:
-        raise RefusedError(empty)
-    names = {
-        "band_error_seed_mean_cm": "band_error_seed_mean",
-        "first_order_error_per_seed_cm": "first_order_error_per_seed",
-        "first_order_error_per_seed_mean_cm": "first_order_error_per_seed_mean",
-    }
-    return {
-        field: {
-            family: {name: holdout[key][family] for name, holdout in measured.items()}
-            for family in families.FAMILIES
-        }
-        for field, key in names.items()
-    }

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import torch
 
+from aromir.families import FAMILIES
 from aromir.network import weights
 from aromir.network.inputs import InputSettings
 from aromir.network.model import Architecture, DeltaHessianNetwork
@@ -116,6 +117,23 @@ UNLICENSED_OTHER = {
 }
 """The made-up release keeps one family above the licence line, so that a test sees both kinds
 of band; v1.3 itself has all four within it."""
+
+
+def measured_of(evaluation: dict[str, Any]) -> dict[str, Any]:
+    """Return what ``aromir evaluate`` writes for the tables of an evaluation record."""
+    tables = {
+        "band_error_seed_mean": "band_error_seed_mean_cm",
+        "first_order_error_per_seed": "first_order_error_per_seed_cm",
+        "first_order_error_per_seed_mean": "first_order_error_per_seed_mean_cm",
+    }
+    return {
+        name: {"n_molecules": holdout["n_molecules"]}
+        | {
+            key: {family: evaluation[field][family][name] for family in FAMILIES}
+            for key, field in tables.items()
+        }
+        for name, holdout in evaluation["holdouts"].items()
+    }
 
 
 def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = "1.3") -> Path:

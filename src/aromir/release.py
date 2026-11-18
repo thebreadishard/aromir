@@ -28,13 +28,22 @@ download and works on a machine without a network connection.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Literal, Self, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, Self, TypeVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 from safetensors import SafetensorError
 
 from aromir.constants import ELEMENTS
@@ -54,6 +63,22 @@ MEASURED_FILE: Final = "measured.json"
 error tables, shipped beside it where a release has it."""
 RELEASE_FILE: Final = "release.json"
 MEASUREMENT_FILE: Final = "measurement.json"
+RECORDED_FILES: Final = (EVALUATION_FILE, TRAINING_FILE, MEASUREMENT_FILE, MEASURED_FILE)
+"""The records ``release.json`` binds by the hash of their content, beside the seeds' tensors."""
+RELEASE_CHECKS: Final = (
+    "same_recipe",
+    "pool_agreement",
+    "holdouts_learnt",
+    "early_stopping",
+    "benzene",
+)
+"""The checks release networks pass before they ship, as the training project names them."""
+_INTERVAL_TOLERANCE_CM: Final = 0.01
+"""A record holds two decimals, so an rms may lie that far outside its rounded interval."""
+_SHARE_AT_A_PERCENTILE: Final = 0.97
+"""A 97.5th percentile within the line puts 97.5 % of the resamples there, 0.97 in two decimals."""
+Hex16 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{16}$")]
+Hex64 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 SEED_FILES: Final = "seed-*.json"
 MIN_SEEDS: Final = 2
 """A band's spread over the seeds needs at least two of them."""
@@ -119,6 +144,12 @@ class BandError(BaseModel):
         if not (math.isfinite(low) and math.isfinite(high) and 0 <= low <= high):
             msg = f"{self.interval_cm} is no interval of an rms error"
             raise ValueError(msg)
+        if not low - _INTERVAL_TOLERANCE_CM <= self.rms_cm <= high + _INTERVAL_TOLERANCE_CM:
+            msg = f"an rms of {self.rms_cm} outside its own resampling interval {self.interval_cm}"
+            raise ValueError(msg)
+        if self.n_molecules > self.n_modes:
+            msg = f"bands on {self.n_molecules} molecules, and only {self.n_modes} bands"
+            raise ValueError(msg)
         return self
 
 
@@ -126,7 +157,8 @@ class Evaluation(BaseModel):
     """A network version's measured error, as its evaluation records state it.
 
     Two quantities are kept apart by name (``aromir.evaluation`` defines both): the band
-    error of the seeds' mean, which is what the product delivers and what the licence is
+    error of the seeds' mean, which is what the product delivers (for release networks, the
+    error bar of it, measured on their measurement networks) and what the licence is
     read on, and the trainer's first-order error per seed.
 
     Attributes:
@@ -199,6 +231,23 @@ class Evaluation(BaseModel):
                     msg = (
                         f"{family}: errors on {sorted(per_holdout)}, "
                         f"hold-outs {sorted(self.holdouts)}"
+                    )
+                    raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _shares_fit_the_line(self) -> Self:
+        line = self.licence_line_cm
+        for family, per_holdout in self.band_error_seed_mean_cm.items():
+            for holdout, error in per_holdout.items():
+                low, high = error.interval_cm
+                share = error.share_of_resamples_within_line
+                if (high <= line and share < _SHARE_AT_A_PERCENTILE) or (
+                    low > line and share > 1 - _SHARE_AT_A_PERCENTILE
+                ):
+                    msg = (
+                        f"{family} on ({holdout}): {share:.0%} of the resamples within the line "
+                        f"of {line:g} cm⁻¹ does not fit the interval {error.interval_cm}"
                     )
                     raise ValueError(msg)
         return self
@@ -364,9 +413,12 @@ class ReleaseNetworks(BaseModel):
             radical cation is an entry of its own.
         fitted_share: The share of them each network was fitted on; the others stopped its
             training, a different draw for each seed.
-        checks: Each check the release networks had to pass before they ship, by name.
+        checks: Each check the release networks had to pass before they ship, by name:
+            exactly those of ``RELEASE_CHECKS``.
         seed_sha256: The SHA-256 of each shipped seed's tensor file, by seed name
             (``seed-0``): what binds this record to the weights beside it.
+        record_sha256: The SHA-256 of each record of ``RECORDED_FILES``, of its content
+            (``record_sha256``): what binds the records to this one.
         release_checkpoints: The training checkpoints of the shipped seeds, by file name,
             with the first 16 hex digits of their SHA-256.
         measurement_checkpoints: The same for the measurement networks, which are not
@@ -380,10 +432,26 @@ class ReleaseNetworks(BaseModel):
     n_entries: int = Field(ge=1)
     fitted_share: float = Field(gt=0, lt=1)
     checks: dict[str, bool] = Field(min_length=1)
-    seed_sha256: dict[str, str] = Field(min_length=1)
-    release_checkpoints: dict[str, str] = Field(min_length=1)
-    measurement_checkpoints: dict[str, str] = Field(min_length=1)
+    seed_sha256: dict[str, Hex64] = Field(min_length=1)
+    record_sha256: dict[str, Hex64]
+    release_checkpoints: dict[str, Hex16] = Field(min_length=1)
+    measurement_checkpoints: dict[str, Hex16] = Field(min_length=1)
     source: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _named_as_expected(self) -> Self:
+        for what, named, expected in (
+            ("release check(s)", self.checks, RELEASE_CHECKS),
+            ("record(s) by hash", self.record_sha256, RECORDED_FILES),
+        ):
+            missing, unknown = set(expected) - set(named), set(named) - set(expected)
+            if missing or unknown:
+                msg = (
+                    f"{what}: {sorted(missing)} missing and {sorted(unknown)} unknown; "
+                    f"expected exactly {list(expected)}"
+                )
+                raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def _every_check_passed(self) -> Self:
@@ -650,7 +718,139 @@ def _pair_reasons(
             f"{RELEASE_FILE} names {len(shipped.release_checkpoints)} checkpoint(s), the "
             f"folder holds {len(seeds)} seed(s)"
         )
+    return (
+        reasons
+        + _scope_reasons(training, measurement)
+        + _entry_reasons(shipped, training, evaluation)
+    )
+
+
+def _scope_reasons(training: Training, measurement: Training) -> list[str]:
+    """Name where the measurement networks covered another domain than the release networks."""
+    compared = {
+        "elements": (sorted(measurement.elements), sorted(training.elements)),
+        "min_atoms": (measurement.min_atoms, training.min_atoms),
+        "max_atoms": (measurement.max_atoms, training.max_atoms),
+        "soft_mode_repair": (measurement.soft_mode_repair, training.soft_mode_repair),
+    }
+    reasons = [
+        f"{MEASUREMENT_FILE} gives {name} {mine}, {TRAINING_FILE} {theirs}: the error bars "
+        "would belong to networks of another domain"
+        for name, (mine, theirs) in compared.items()
+        if mine != theirs
+    ]
+    if measurement.cation_test is not None and measurement.cation_test != training.cation_test:
+        reasons.append(
+            f"{MEASUREMENT_FILE} gives another cation test than {TRAINING_FILE}: the certificate "
+            "would state one the error bars do not belong to"
+        )
+    lacking = set(measurement.cation_parent_smiles or ()) - set(training.cation_parent_smiles or ())
+    if lacking:
+        reasons.append(
+            f"the release networks lack {len(lacking)} radical cation(s) the measurement "
+            "networks trained on"
+        )
     return reasons
+
+
+def _entry_reasons(
+    shipped: ReleaseNetworks, training: Training, evaluation: Evaluation
+) -> list[str]:
+    """Name a count of entries or a measurement checkpoint that the other records contradict."""
+    reasons = []
+    least = len(set(training.trained_smiles)) + len(training.cation_parent_smiles or ())
+    if shipped.n_entries < least:
+        reasons.append(
+            f"{RELEASE_FILE} counts {shipped.n_entries} entries, fewer than the {least} "
+            f"molecules and cations {TRAINING_FILE} lists"
+        )
+    unnamed = sorted(
+        name
+        for name in shipped.measurement_checkpoints
+        if not any(name in source for source in evaluation.sources)
+    )
+    if unnamed:
+        reasons.append(
+            f"{EVALUATION_FILE} does not name {', '.join(unnamed)} as its source: its errors "
+            "may be other networks'"
+        )
+    return reasons
+
+
+def record_sha256(path: Path) -> str:
+    """Return the SHA-256 of a JSON record's content, written out in one canonical way.
+
+    The content is hashed, not the bytes, so a checkout that changes line endings keeps it.
+    """
+    content = json.loads(path.read_text(encoding="utf-8"))
+    canonical = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _record_hash_reasons(folder: Path, shipped: ReleaseNetworks) -> list[str]:
+    """Name a record that is not the one ``release.json`` was written with."""
+    reasons = []
+    for name in RECORDED_FILES:
+        try:
+            digest = record_sha256(folder / name)
+        except (OSError, UnicodeDecodeError, ValueError) as error:
+            reasons.append(f"{name}, which {RELEASE_FILE} binds by hash, cannot be read: {error}")
+            continue
+        if digest != shipped.record_sha256[name]:
+            reasons.append(
+                f"{name} is not the record {RELEASE_FILE} was written with: it was changed after"
+            )
+    return reasons
+
+
+def _measured_reasons(folder: Path, evaluation: Evaluation) -> list[str]:
+    """Name an evaluation record whose tables are not what ``aromir evaluate`` wrote beside it."""
+    path = folder / MEASURED_FILE
+    if not path.exists():
+        return []
+    try:
+        tables = record_tables(json.loads(path.read_text(encoding="utf-8")))
+        again = Evaluation.model_validate(evaluation.model_dump(mode="json") | tables)
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError, RefusedError) as error:
+        return [f"{MEASURED_FILE} cannot be read as the output of `aromir evaluate`: {error}"]
+    if again == evaluation:
+        return []
+    reason = (
+        f"{EVALUATION_FILE} holds other errors than {MEASURED_FILE}, the measurement it is "
+        "written from"
+    )
+    return [reason]
+
+
+def record_tables(measured: dict[str, Any]) -> dict[str, Any]:
+    """Return what ``evaluate`` measured as the tables an evaluation record holds.
+
+    A record lists every family on every hold-out, so a hold-out without a band of some
+    family cannot carry a record.
+
+    Raises:
+        RefusedError: A family has no band in a hold-out.
+    """
+    empty = [
+        f"hold-out ({name}) has no {family} band"
+        for name, holdout in measured.items()
+        for family, entry in holdout["band_error_seed_mean"].items()
+        if not entry["n_modes"]
+    ]
+    if empty:
+        raise RefusedError(empty)
+    names = {
+        "band_error_seed_mean_cm": "band_error_seed_mean",
+        "first_order_error_per_seed_cm": "first_order_error_per_seed",
+        "first_order_error_per_seed_mean_cm": "first_order_error_per_seed_mean",
+    }
+    return {
+        field: {
+            family: {name: holdout[key][family] for name, holdout in measured.items()}
+            for family in FAMILIES
+        }
+        for field, key in names.items()
+    }
 
 
 def _pair(folder: Path) -> tuple[ReleaseNetworks, Training] | None:
@@ -762,6 +962,9 @@ def load(folder: Path) -> Release:
     seeds = {f"seed-{recipe.seed}": weights.recorded_sha256(path) for path, _, recipe in loaded}
     reasons = _reasons_to_refuse(recipes, evaluation, measured, invariance)
     reasons += _pair_reasons(seeds, evaluation, training, pair)
+    reasons += _measured_reasons(folder, evaluation)
+    if pair is not None:
+        reasons += _record_hash_reasons(folder, pair[0])
     if reasons:
         raise RefusedError([f"{folder}: {reason}" for reason in reasons])
     return Release(

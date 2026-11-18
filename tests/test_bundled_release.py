@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from aromir import card, cli, evaluation, release
+from aromir import card, cli, release
 from aromir.molecule import Geometry
 
 N_SEEDS = 3
@@ -131,7 +131,7 @@ def test_the_evaluation_record_is_the_measurement_that_ships_beside_it() -> None
     folder = release.bundled()
     measured = json.loads((folder / release.MEASURED_FILE).read_text(encoding="utf-8"))
     recorded = release.load(folder).evaluation.model_dump(mode="json")
-    for field, table in evaluation.record_tables(measured).items():
+    for field, table in release.record_tables(measured).items():
         assert recorded[field] == table
     for name, holdout in measured.items():
         assert recorded["holdouts"][name]["n_molecules"] == holdout["n_molecules"]

@@ -524,6 +524,16 @@ def _accuracy_lines(accuracy: dict[str, Any]) -> list[str]:
     return [*lines, *(f"- {family}: {rule}." for family, rule in families.RULES.items())]
 
 
+def _whose_error(kind: str) -> str:
+    """Say whose error the table is: the printed positions', or their error bar."""
+    if kind == "measurement":
+        return "what this certificate's positions are"
+    return (
+        "the error of the version's measurement networks, the same recipe trained without the "
+        "hold-outs, and the error bar of this certificate's positions"
+    )
+
+
 def to_markdown(record: dict[str, Any]) -> str:
     """Render a certificate record as a Markdown document."""
     molecule, network = record["molecule"], record["network"]
@@ -566,9 +576,9 @@ def to_markdown(record: dict[str, Any]) -> str:
         "",
         (
             "The rms error of the corrected band positions of the seeds' mean against "
-            f"{level_name(network['higher_level'])}, in cm⁻¹: what this certificate's "
-            "positions are. In square brackets the 95 % interval when the hold-out's "
-            "molecules are resampled. The licence is read on "
+            f"{level_name(network['higher_level'])}, in cm⁻¹: "
+            f"{_whose_error(network['kind'])}. In square brackets the 95 % interval when the "
+            "hold-out's molecules are resampled. The licence is read on "
             f"{record['accuracy']['licence_basis']}."
         ),
         "",

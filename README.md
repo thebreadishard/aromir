@@ -27,8 +27,9 @@ SMILES or xyz
   → certificate: what each band rests on
 ```
 
-The network is trained on neutral, closed-shell aromatic molecules of H, C, N, O, F, S
-and Cl. A molecule outside that domain is refused with the reasons, not answered badly:
+aromir accepts neutral, closed-shell aromatic molecules of H, C, N, O, F, S and Cl, the
+molecules its networks are trained on (v1.4's also trained on the radical cations of 50 of
+them). A molecule outside that domain is refused with the reasons, not answered badly:
 so is an isotope label, a SMILES with anything after it, and, for `aromir spectrum`, a
 molecule smaller or larger than the training molecules unless
 `--outside-training-sizes` asks for it. The command's exit code is 0 for a result, 2
@@ -77,7 +78,9 @@ its *release networks* are trained on the labelled entries of their training poo
 hold-out molecules included, and are what the folder ships. v1.4 is such a pair. Its folder holds the release networks'
 seeds and `training.json`, the measurement networks' training record as
 `measurement.json`, and `release.json`: the hashes of the shipped seeds' tensor files
-(a folder whose seeds are other ones is refused), the checkpoints of both kinds by hash and the
+(a folder whose seeds are other ones is refused), the SHA-256 of the content of the four
+records beside it (a record changed afterwards is refused), the checkpoints of both kinds by
+hash and the
 checks the release networks passed before they were shipped (the same recipe, agreement
 with the measurement networks on the pool, the hold-outs learnt, early stopping off the
 cap, and benzene by name). The certificate and the card say in one sentence that the
@@ -108,9 +111,10 @@ positions move when the same molecule is turned, mirrored or listed in another a
 order. Nothing it states about the network is typed into the
 package: every number comes from the release's records.
 
-The error printed for a family is the error of what aromir delivers: the corrected band
-positions of the seeds' mean against the reference, on molecules the network never
-trained on. `aromir evaluate <folder>` measures it for a release on a folder of hold-out
+The error printed for a family is the error of the corrected band positions of the seeds'
+mean against the reference, on molecules the networks never trained on: for v1.3 the error
+of what aromir delivers, for v1.4 that of its measurement networks, the error bar of what
+its release networks deliver. `aromir evaluate <folder>` measures it for a release on a folder of hold-out
 molecules with stored Hessians (the format is in `aromir.evaluation`), together with the
 first-order error of each seed that a training run reports, which is a different and
 larger number. It refuses release networks, which trained on the hold-outs: v1.4's errors
@@ -187,8 +191,11 @@ $ python -m aromir.network.convert checkpoint.pt weights/ v1.3-seed0 --network-v
 
 ## Install
 
-Linux and macOS; on Windows, use WSL (pyscf does not build natively there). pyscf's
-macOS wheels run on one thread, whatever `--threads` says.
+Linux and macOS are tested in CI. Native Windows is not: there the two commands below
+install aromir with pyscf's Windows wheel (pyscf 2.15.0 on Python 3.14, 18 November 2026,
+where water's B3LYP/6-31G* energy and frequencies equal Linux's in every printed digit), but
+no full `aromir spectrum` has been checked there, so WSL 2 (Ubuntu 26.04 was used) is the
+tested route on Windows. pyscf's macOS wheels run on one thread, whatever `--threads` says.
 
 ```console
 $ pip install torch --index-url https://download.pytorch.org/whl/cpu   # Linux: see below

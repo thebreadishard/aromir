@@ -17,6 +17,8 @@ from aromir.network.inputs import InputSettings
 from support import (
     RELEASE_DATA,
     SMALL_ARCHITECTURE,
+    UNLICENSED_OTHER,
+    measured_of,
     random_hessian,
     random_network,
     write_release,
@@ -61,7 +63,11 @@ def test_the_licence_follows_the_measured_errors() -> None:
 
 def test_one_hold_out_above_the_line_withdraws_the_licence() -> None:
     record = _evaluation()
-    record["band_error_seed_mean_cm"]["ring-ip"]["b"]["rms_cm"] = 3.01
+    record["band_error_seed_mean_cm"]["ring-ip"]["b"] |= {
+        "rms_cm": 3.01,
+        "interval_cm": [2.9, 3.2],
+        "share_of_resamples_within_line": 0.4,
+    }
     assert not release.Evaluation.model_validate(record).licensed("ring-ip")
 
 
@@ -123,6 +129,37 @@ def test_bands_on_more_molecules_than_the_hold_out_holds_are_refused() -> None:
         ValueError, match=r"CH-oop on \(b\): bands on 40 molecules of a hold-out of 39"
     ):
         release.Evaluation.model_validate(record)
+
+
+@pytest.mark.parametrize(
+    ("family", "holdout", "change", "reason"),
+    [
+        ("other", "a", {"interval_cm": [0.1, 0.2]}, "outside its own resampling interval"),
+        ("ring-ip", "a", {"share_of_resamples_within_line": 0.5}, "does not fit the interval"),
+        ("other", "b", {"share_of_resamples_within_line": 0.5}, "does not fit the interval"),
+        ("other", "a", {"n_modes": 3}, "bands on 8 molecules, and only 3 bands"),
+    ],
+)
+def test_an_error_table_that_contradicts_itself_is_refused(
+    family: str, holdout: str, change: dict[str, Any], reason: str
+) -> None:
+    record = _evaluation()
+    record["band_error_seed_mean_cm"]["other"]["b"] |= UNLICENSED_OTHER
+    record["band_error_seed_mean_cm"][family][holdout] |= change
+    with pytest.raises(ValueError, match=reason):
+        release.Evaluation.model_validate(record)
+
+
+def test_an_evaluation_other_than_its_measurement_is_refused(tmp_path: Path) -> None:
+    folder = write_release(tmp_path)
+    record = json.loads((folder / release.EVALUATION_FILE).read_text(encoding="utf-8"))
+    measured = measured_of(record)
+    (folder / release.MEASURED_FILE).write_text(json.dumps(measured), encoding="utf-8")
+    assert release.load(folder).evaluation.holdouts
+    measured["a"]["band_error_seed_mean"]["ring-ip"]["rms_cm"] = 1.5
+    (folder / release.MEASURED_FILE).write_text(json.dumps(measured), encoding="utf-8")
+    with pytest.raises(RefusedError, match=r"holds other errors than measured\.json"):
+        release.load(folder)
 
 
 def test_a_record_of_format_2_is_refused_and_told_why() -> None:

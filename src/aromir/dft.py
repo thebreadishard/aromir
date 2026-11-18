@@ -1,8 +1,10 @@
 """The low level of theory: B3LYP/6-31G* in pyscf, converged tightly.
 
-The level is not a setting. The learned correction is trained on Hessians of exactly this
-level, so another functional, basis or grid would feed it inputs it has never seen. Only
-the machine's resources are the caller's to choose.
+The level is not a setting. The learned correction is trained on B3LYP/6-31G* Hessians, so
+another functional or basis would feed it inputs it has never seen. Those Hessians were
+computed with psi4 (density-fitted, grid (75, 302)) at psi4's minima, not with this code at
+its own; how far that moves a corrected band has not been measured end to end. Only the
+machine's resources are the caller's to choose.
 """
 
 from __future__ import annotations

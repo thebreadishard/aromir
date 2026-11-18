@@ -23,7 +23,7 @@ A correction to the Hessian of an aromatic molecule. The network reads a cheap B
 
 ## How well it is known
 
-The rms error of the corrected band positions of the seeds' mean against ωB97X/6-31G*, in cm⁻¹, on molecules the measurement networks never trained on — the same recipe trained without the hold-outs, whose error is the error bar of what aromir prints; the release networks aromir runs trained on these molecules too. In square brackets the 95 % interval when the hold-out's molecules are resampled. The licence is read on the band error of the seeds' mean, the error of what the release delivers, as recorded to two decimals; chosen on 16 November 2026, after it and the first-order error per seed had both been measured on both hold-outs.
+The rms error of the corrected band positions of the seeds' mean against ωB97X/6-31G*, in cm⁻¹, on molecules the measurement networks never trained on — the same recipe trained without the hold-outs, whose error is the error bar of what aromir prints; the release networks aromir runs trained on these molecules too. In square brackets the 95 % interval when the hold-out's molecules are resampled. The licence is read on the band error of the measurement networks' seed mean, the error bar of what the release networks deliver, as recorded to two decimals; chosen on 16 November 2026, after it and the first-order error per seed had both been measured on both hold-outs.
 
 | family | (a), 8 molecules | (b), 40 molecules | licensed |
 |---|---|---|---|
@@ -33,7 +33,7 @@ The rms error of the corrected band positions of the seeds' mean against ωB97X/
 | other | 2.38 [1.45–3.19], 156 bands | 2.10 [1.88–2.34], 1258 bands | yes |
 
 - (a): eight of the ten molecules set aside on 19 September 2026, before any network was trained; the other two have a twin in another layer of the training pool and are left out of the read (30 October 2026)
-- (b): every substituted molecule of two ring scaffolds, set aside on 8 October 2026; no measurement network trained on a molecule of either scaffold
+- (b): the 40 substituted molecules of two ring scaffolds, fluorene (21) and fluoranthene (19), set aside on 8 October 2026, that have analytic Hessians at both levels and a minimum at the low level: of the 41 on that list, 9-nitrofluorene has an imaginary low-level mode, and 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. No measurement network trained on a molecule containing fluorene's ring system; five that contain fluoranthene's, benzo[k]fluoranthene and four of its derivatives, were trained on
 
 For comparison, the first-order error of each seed alone, the number a training run reports and the one earlier versions of this card printed as the error: its mean over the seeds, each seed's value in brackets. It is not the error of what aromir prints.
 
@@ -48,7 +48,7 @@ A family is licensed when the band error of the seeds' mean, as recorded to two 
 
 Coupled cluster: not measured for this network version.
 
-Sources: every error in this record: `aromir evaluate` with the measurement networks (E7_rungC_v14s3clean_c00_control_model_n1082_seed0.pt, E7_rungC_v14s3clean_c00_control_model_n1082_seed1.pt, E7_rungC_v14s3clean_c00_control_model_n1082_seed2.pt) on the two hold-outs as probes/results_m1/aromir_audit_fixes_2026-11-16/holdouts_for_aromir.py of thebreadishard/udacity-capstone-plan (plan 05) writes them; counterpart, within 0.01 cm⁻¹ in every cell: probes/results_m1/aromir_v14_release_2026-11-18/product_error.json (aromir's code on the stored Hessians, in aromir's atom order); the capstone's read in the corpus's atom order is modules/05_support_predictor/out/v14/E7_rungC_v14s3clean_c00_control_product_error.json; the molecules with a band of each family: the same `aromir evaluate` (format 3); counterpart, equal in every cell: probes/results_m1/aromir_266_counts_2026-11-18/count_bands.py of thebreadishard/udacity-capstone-plan (plan 05), the molecules with a low-level mode of the family.
+Sources: every error in this record: `aromir evaluate` with the measurement networks (E7_rungC_v14s3clean_c00_control_model_n1082_seed0.pt, E7_rungC_v14s3clean_c00_control_model_n1082_seed1.pt, E7_rungC_v14s3clean_c00_control_model_n1082_seed2.pt) on the two hold-outs as probes/results_m1/aromir_audit_fixes_2026-11-16/holdouts_for_aromir.py of thebreadishard/udacity-capstone-plan (plan 05) writes them; counterpart, within 0.01 cm⁻¹ in every cell: probes/results_m1/aromir_v14_release_2026-11-18/product_error.json (aromir's code on the stored Hessians, in aromir's atom order); the capstone's read in the corpus's atom order is modules/05_support_predictor/out/v14/E7_rungC_v14s3clean_c00_control_product_error.json; the molecules with a band of each family: the same `aromir evaluate` (format 3); counterpart, equal in every cell: probes/results_m1/aromir_266_counts_2026-11-18/count_bands.py of thebreadishard/udacity-capstone-plan (plan 05), the molecules with a low-level mode of the family; hold-out (b)'s description: modules/05_support_predictor/corpus/holdout_b_frozen_2026-10-08.txt (41 molecules) and probes/results_m1/aromir_audit_answers_2026-11-18/scaffolds.log and murcko.log of thebreadishard/udacity-capstone-plan (plan 05); 9-nitrofluorene's imaginary mode and set b+: probes/results_m1/aromir_audit_v14_2026-11-18/AUDIT.md, K2.
 
 ## What it was trained on
 
@@ -87,7 +87,7 @@ An equivariant message-passing encoder (PaiNN type) over the atoms, and a head t
 | seed-1.safetensors | 1 | `14059360ed350c1bfaa2ca51bb852fa22eccb6e2644226b2250ccb6652a831aa` |
 | seed-2.safetensors | 2 | `c6451ca246977bd704392d45911233b8d7ea581bfc33268212b54bc504400b0c` |
 
-Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json` and `training.json` hold the records this card is written from.
+Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json`, `training.json`, `release.json`, `measurement.json` hold the records this card is written from, and `measured.json`, where the folder has it, is the output of `aromir evaluate` the error tables are copied from: the loader refuses tables that differ from it. `release.json` binds the other records by the SHA-256 of their content.
 
 ## Use
 
