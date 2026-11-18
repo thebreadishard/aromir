@@ -76,7 +76,8 @@ trained without the hold-out molecules, and every error and the licence are read
 its *release networks* are trained on the labelled entries of their training pool, the
 hold-out molecules included, and are what the folder ships. v1.4 is such a pair. Its folder holds the release networks'
 seeds and `training.json`, the measurement networks' training record as
-`measurement.json`, and `release.json`: the checkpoints of both kinds by hash and the
+`measurement.json`, and `release.json`: the hashes of the shipped seeds' tensor files
+(a folder whose seeds are other ones is refused), the checkpoints of both kinds by hash and the
 checks the release networks passed before they were shipped (the same recipe, agreement
 with the measurement networks on the pool, the hold-outs learnt, early stopping off the
 cap, and benzene by name). The certificate and the card say in one sentence that the

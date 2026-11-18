@@ -34,6 +34,7 @@ from aromir import families, spectrum, vibrations
 from aromir.constants import WAVENUMBERS_PER_HARTREE
 from aromir.errors import RefusedError
 from aromir.molecule import Geometry
+from aromir.release import RELEASE_FILE
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -246,12 +247,11 @@ def evaluate(release: Release, folder: Path) -> dict[str, Any]:
             release's seeds are release networks, which trained on the hold-outs.
     """
     if release.shipped is not None:
-        release_file = "release.json"
         reason = (
             f"the folder ships release networks of v{release.network_version}, which trained "
             "on the hold-outs: their error there is no measurement. The folder's errors were "
             "measured on the version's measurement networks, which the package does not ship "
-            f"({release_file} names their checkpoints)"
+            f"({RELEASE_FILE} names their checkpoints)"
         )
         raise RefusedError([reason])
     holdouts = sorted(path for path in folder.iterdir() if path.is_dir()) if folder.is_dir() else []

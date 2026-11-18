@@ -93,7 +93,7 @@ def test_the_sentence_says_what_made_the_spectrum_and_what_the_errors_are_of(
     assert sentence.startswith(
         "The spectrum is made by the release networks of version 1.3, trained on the 4 "
         "labelled entries of their training pool, the hold-out molecules included (3 distinct "
-        "neutral molecules by SMILES and the radical cations of 1 molecules): each of the 2 "
+        "neutral molecules by SMILES and the radical cations of 1 molecule): each of the 2 "
         "networks is fitted on a random 85 % of the entries and stopped on the other 15 %, a "
         "different 15 % per seed,"
     )
@@ -253,7 +253,7 @@ def test_the_measurement_networks_hold_out_molecules_that_the_release_networks_t
     assert (
         "- 4 labelled entries of the training pool, each a closed-shell molecule or radical "
         "cation with an aromatic ring: 3 distinct neutral molecules by SMILES and the radical "
-        "cations of 1 molecules; the measurement networks, on which every error is read, "
+        "cations of 1 molecule; the measurement networks, on which every error is read, "
         "trained on 1 of those neutral molecules." in text
     )
 

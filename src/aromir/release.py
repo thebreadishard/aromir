@@ -376,7 +376,9 @@ def pool(training: Training) -> str:
     """Count a training record's molecules: neutral ones and the parents of radical cations."""
     cations = len(training.cation_parent_smiles or ())
     neutral = f"{len(training.trained_smiles)} distinct neutral molecules by SMILES"
-    return neutral if not cations else f"{neutral} and the radical cations of {cations} molecules"
+    if not cations:
+        return neutral
+    return f"{neutral} and the radical cations of {cations} molecule{'' if cations == 1 else 's'}"
 
 
 def made_by(release: Release) -> str:
