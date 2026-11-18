@@ -180,11 +180,21 @@ def _molecule_count(release: Release) -> str:
     if shipped is None:
         n = len(training.trained_smiles)
         return f"{n} molecules, neutral and closed-shell, each with an aromatic ring."
+    neutral = shipped.n_entries - len(training.cation_parent_smiles or ())
+    distinct = len(training.trained_smiles)
+    twice = (
+        f" (the {neutral} neutral entries hold {distinct} distinct molecules: a molecule may "
+        "be an entry under more than one identifier)"
+        if neutral != distinct
+        else ""
+    )
     return (
-        f"{shipped.n_entries} labelled entries of the training pool, each a closed-shell "
-        f"molecule or radical cation with an aromatic ring: {pool(training)}; the measurement "
-        f"networks, on which every error is read, trained on "
-        f"{len(release.measured_training.trained_smiles)} of those neutral molecules."
+        f"{shipped.n_entries} labelled entries of the training pool, each a neutral "
+        f"closed-shell molecule or the radical cation of one, with an aromatic ring: "
+        f"{pool(training)}{twice}. The measurement networks, on which every error is read, "
+        "trained on "
+        f"{len(release.measured_training.trained_smiles)} of those neutral molecules; the "
+        "release networks on these and on the hold-out molecules."
     )
 
 
@@ -394,6 +404,7 @@ def _use(release: Release) -> list[str]:
         "## Use",
         "",
         "```console",
+        "$ pip install torch --index-url https://download.pytorch.org/whl/cpu",
         f"$ pip install git+{REPOSITORY}",
         '$ aromir spectrum "c1ccc2ccccc2c1" --out results/naphthalene',
         "```",

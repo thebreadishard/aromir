@@ -93,6 +93,7 @@ Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evalu
 ## Use
 
 ```console
+$ pip install torch --index-url https://download.pytorch.org/whl/cpu
 $ pip install git+https://github.com/thebreadishard/aromir
 $ aromir spectrum "c1ccc2ccccc2c1" --out results/naphthalene
 ```

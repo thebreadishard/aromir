@@ -5,7 +5,9 @@ and a certificate that says how far each band can be trusted.
 
 > **Status: pre-alpha (0.1.0.dev0).** The whole chain is in the package: the low level,
 > the network, the corrected spectrum and its certificate. Each step is tested on its
-> own; no test yet runs the full chain with a release on a real molecule. The trained
+> own; the test suite does not run the full chain (a real molecule takes minutes of
+> quantum chemistry), and the full chain has been run by hand, with network v1.3, on
+> benzene and a few more molecules. The trained
 > weights of network v1.4 ship inside the package. Positions are harmonic: the
 > anharmonic step is not in this version; see
 > [What works today](#what-works-today) and the [roadmap](#roadmap).
@@ -15,7 +17,9 @@ and a certificate that says how far each band can be trusted.
 A harmonic infrared spectrum needs a Hessian (band positions) and dipole derivatives
 (band heights). An accurate Hessian is expensive, and a cheap one puts bands tens of
 cm⁻¹ away from where they belong. aromir computes the cheap one, B3LYP/6-31G*, and
-corrects it with a neural network trained on the difference to a better functional:
+corrects it with a neural network trained on the difference to ωB97X/6-31G*, a more
+expensive functional (the "DFT proxy" of the model card: the level the network is taught
+to reach, standing in for a still better one that is too expensive to train on):
 
 ```
 SMILES or xyz
@@ -26,6 +30,17 @@ SMILES or xyz
   → band positions and heights
   → certificate: what each band rests on
 ```
+
+**What the numbers mean.** A corrected position aims at the harmonic position
+ωB97X/6-31G* would give, not at a measured spectrum, and every error aromir prints is
+against that calculation. Measured bands lie below harmonic ones (most for the CH
+stretches), and aromir does not yet add that anharmonic shift. The scaled B3LYP position
+printed beside each band is the conventional estimate of a measured position, and is
+there as the baseline; band heights are B3LYP's and carry no error bar. A band is
+*licensed* — a word for "passes the accuracy test", not the software licence — when its
+family's error on molecules the network never saw is at most 3 cm⁻¹ on every hold-out
+set and the band meets the other conditions listed under
+[What works today](#what-works-today).
 
 aromir accepts neutral, closed-shell aromatic molecules of H, C, N, O, F, S and Cl, the
 molecules its networks are trained on (v1.4's also trained on the radical cations of 50 of
@@ -79,7 +94,8 @@ hold-out molecules included, and are what the folder ships. v1.4 is such a pair.
 seeds and `training.json`, the measurement networks' training record as
 `measurement.json`, and `release.json`: the hashes of the shipped seeds' tensor files
 (a folder whose seeds are other ones is refused), the SHA-256 of the content of the four
-records beside it (a record changed afterwards is refused: a guard against an accidental
+records beside it (the content as Python's JSON reader gives it, so 1 and 1.0 differ; a
+record changed afterwards is refused: a guard against an accidental
 change, not a signature, and `release.json`'s own fields are bound by nothing), the
 checkpoints of both kinds by hash and the
 checks the release networks passed before they were shipped (the same recipe, agreement
@@ -95,7 +111,8 @@ The result folder then also holds
 
 - its corrected position and height, and how far the seeds disagree about the position;
 - the uncorrected B3LYP band that moves most like it, plain and scaled;
-- its family (CH-stretch, CH-oop, ring-ip or other: the evaluation's names for rules on a
+- its family (CH-stretch; CH-oop, a CH out-of-plane bend; ring-ip, a ring in-plane mode;
+  or other: the evaluation's names for rules on a
   mode's position and motion, which the certificate spells out) and the error measured
   for that family on molecules the network never saw (for release networks: that the
   measurement networks never saw);
@@ -202,7 +219,7 @@ characters, and in a deep folder its installation fails. pyscf's macOS wheels ru
 thread, whatever `--threads` says.
 
 ```console
-$ pip install torch --index-url https://download.pytorch.org/whl/cpu   # Linux: see below
+$ pip install torch --index-url https://download.pytorch.org/whl/cpu   # every platform; see below
 $ pip install git+https://github.com/thebreadishard/aromir
 ```
 

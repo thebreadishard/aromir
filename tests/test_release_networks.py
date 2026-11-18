@@ -361,11 +361,19 @@ def test_the_measurement_networks_hold_out_molecules_that_the_release_networks_t
     )
     assert "Held out and never trained on" not in text
     assert (
-        "- 4 labelled entries of the training pool, each a closed-shell molecule or radical "
-        "cation with an aromatic ring: 3 distinct neutral molecules by SMILES and the radical "
-        "cations of 1 molecule; the measurement networks, on which every error is read, "
-        "trained on 1 of those neutral molecules." in text
+        "- 4 labelled entries of the training pool, each a neutral closed-shell molecule or the "
+        "radical cation of one, with an aromatic ring: 3 distinct neutral molecules by SMILES "
+        "and the radical cations of 1 molecule. The measurement networks, on which every error "
+        "is read, trained on 1 of those neutral molecules; the release networks on these and on "
+        "the hold-out molecules." in text
     )
+
+
+def test_the_card_says_when_a_molecule_is_an_entry_twice(pair: release.Release) -> None:
+    assert pair.shipped is not None
+    shipped = pair.shipped.model_copy(update={"n_entries": pair.shipped.n_entries + 2})
+    text = card.to_markdown(dataclasses.replace(pair, shipped=shipped))
+    assert "(the 5 neutral entries hold 3 distinct molecules: a molecule may be an entry" in text
 
 
 def test_the_certificate_of_release_networks_names_both(

@@ -52,7 +52,7 @@ Sources: every error in this record: `aromir evaluate` with the measurement netw
 
 ## What it was trained on
 
-- 1132 labelled entries of the training pool, each a closed-shell molecule or radical cation with an aromatic ring: 1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules; the measurement networks, on which every error is read, trained on 1028 of those neutral molecules.
+- 1132 labelled entries of the training pool, each a neutral closed-shell molecule or the radical cation of one, with an aromatic ring: 1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules (the 1082 neutral entries hold 1078 distinct molecules: a molecule may be an entry under more than one identifier). The measurement networks, on which every error is read, trained on 1028 of those neutral molecules; the release networks on these and on the hold-out molecules.
 - Elements: C, Cl, F, H, N, O, S.
 - Sizes: 8 to 40 atoms.
 - Held out from the measurement networks, on which every error is read: 8 in (a); 40 in (b); the release networks trained on these molecules.
@@ -92,6 +92,7 @@ Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evalu
 ## Use
 
 ```console
+$ pip install torch --index-url https://download.pytorch.org/whl/cpu
 $ pip install git+https://github.com/thebreadishard/aromir
 $ aromir spectrum "c1ccc2ccccc2c1" --out results/naphthalene
 ```
