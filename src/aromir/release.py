@@ -412,8 +412,9 @@ class ReleaseNetworks(BaseModel):
     Attributes:
         network_version: The version the pair belongs to.
         n_entries: The labelled entries of the training pool a release network fitted or
-            stopped on: a molecule may be an entry under more than one identifier, and a
-            radical cation is an entry of its own.
+            stopped on: a neutral molecule may be an entry under more than one identifier,
+            and each radical cation of the training record is one entry of its own (the card
+            counts the neutral entries as the rest).
         fitted_share: The share of them each network was fitted on; the others stopped its
             training, a different draw for each seed.
         checks: Each check the release networks had to pass before they ship, by name:

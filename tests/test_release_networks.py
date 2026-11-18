@@ -364,8 +364,8 @@ def test_the_measurement_networks_hold_out_molecules_that_the_release_networks_t
         "- 4 labelled entries of the training pool, each a neutral closed-shell molecule or the "
         "radical cation of one, with an aromatic ring: 3 distinct neutral molecules by SMILES "
         "and the radical cations of 1 molecule. The measurement networks, on which every error "
-        "is read, trained on 1 of those neutral molecules; the release networks on these and on "
-        "the hold-out molecules." in text
+        "is read, trained on 1 of those neutral molecules; the release networks on all of the "
+        "entries, the hold-out molecules included." in text
     )
 
 

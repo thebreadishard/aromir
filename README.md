@@ -6,8 +6,9 @@ and a certificate that says how far each band can be trusted.
 > **Status: pre-alpha (0.1.0.dev0).** The whole chain is in the package: the low level,
 > the network, the corrected spectrum and its certificate. Each step is tested on its
 > own; the test suite does not run the full chain (a real molecule takes minutes of
-> quantum chemistry), and the full chain has been run by hand, with network v1.3, on
-> benzene and a few more molecules. The trained
+> quantum chemistry). The full chain has been run by hand with network v1.3 on benzene,
+> benzonitrile, a methoxypicoline and 3-vinylfuran (16 November 2026; the records are
+> in `probes/results_m1` of thebreadishard/udacity-capstone-plan). The trained
 > weights of network v1.4 ship inside the package. Positions are harmonic: the
 > anharmonic step is not in this version; see
 > [What works today](#what-works-today) and the [roadmap](#roadmap).
@@ -33,13 +34,15 @@ SMILES or xyz
 
 **What the numbers mean.** A corrected position aims at the harmonic position
 ωB97X/6-31G* would give, not at a measured spectrum, and every error aromir prints is
-against that calculation. Measured bands lie below harmonic ones (most for the CH
-stretches), and aromir does not yet add that anharmonic shift. The scaled B3LYP position
+against that calculation. Measured bands lie, for nearly all modes, below harmonic ones,
+by most for the CH stretches (the scaled baseline's factors say as much: 0.960 above
+2500 cm⁻¹, 0.979 below 1111 cm⁻¹), and aromir does not yet add that anharmonic shift. The scaled B3LYP position
 printed beside each band is the conventional estimate of a measured position, and is
 there as the baseline; band heights are B3LYP's and carry no error bar. A band is
 *licensed* — a word for "passes the accuracy test", not the software licence — when its
-family's error on molecules the network never saw is at most 3 cm⁻¹ on every hold-out
-set and the band meets the other conditions listed under
+family's error on the hold-out sets — molecules the networks the error is measured on
+never saw — is at most the release's line (3 cm⁻¹ for v1.3 and v1.4) on every one of them,
+and the band meets the other conditions listed under
 [What works today](#what-works-today).
 
 aromir accepts neutral, closed-shell aromatic molecules of H, C, N, O, F, S and Cl, the

@@ -181,7 +181,7 @@ def _molecule_count(release: Release) -> str:
         n = len(training.trained_smiles)
         return f"{n} molecules, neutral and closed-shell, each with an aromatic ring."
     neutral = shipped.n_entries - len(training.cation_parent_smiles or ())
-    distinct = len(training.trained_smiles)
+    distinct = len(set(training.trained_smiles))
     twice = (
         f" (the {neutral} neutral entries hold {distinct} distinct molecules: a molecule may "
         "be an entry under more than one identifier)"
@@ -194,7 +194,7 @@ def _molecule_count(release: Release) -> str:
         f"{pool(training)}{twice}. The measurement networks, on which every error is read, "
         "trained on "
         f"{len(release.measured_training.trained_smiles)} of those neutral molecules; the "
-        "release networks on these and on the hold-out molecules."
+        "release networks on all of the entries, the hold-out molecules included."
     )
 
 
