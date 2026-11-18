@@ -10,7 +10,7 @@
    "n_molecules": 8
   },
   "b": {
-   "description": "39 substituted molecules of two ring scaffolds, fluorene (20) and fluoranthene (19), set aside on 8 October 2026, those with analytic Hessians at both levels when v1.3 was read; 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. The network trained on no molecule containing either ring system",
+   "description": "39 substituted molecules of two ring scaffolds, fluorene (20) and fluoranthene (19), set aside on 8 October 2026, the 41 on that list less 9-nitrofluorene, which has an imaginary low-level mode, and 1-(trifluoromethyl)fluorene, which v1.3's training run (chain 35) neither trained on nor read: its record lists it only among the molecules given analytic labels; 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. The network trained on no molecule containing either ring system",
    "n_molecules": 39
   }
  },
@@ -177,7 +177,8 @@
   "every error in this record: `aromir evaluate` on the two hold-outs as probes/results_m1/aromir_audit_fixes_2026-11-16/holdouts_for_aromir.py of thebreadishard/udacity-capstone-plan (plan 05) writes them; counterpart for the band errors: probes/results_m1/aromir_product_error_2026-11-16/product_error.json",
   "the hold-outs' molecules, and the first-order errors the training runs recorded themselves (within 0.08 cm⁻¹): E7_rungC_chain35_analytic_eval_frozenb_seed0.json, E7_rungC_chain35_analytic_eval_frozenb_seed1.json, E7_rungC_chain35_analytic_eval_frozenb_seed2.json, E7_rungC_chain35_analytic_a8read_seed0.json, E7_rungC_chain35_analytic_a8read_seed1.json, E7_rungC_chain35_analytic_a8read_seed2.json",
   "the molecules with a band of each family: the same `aromir evaluate` (format 3); counterpart, equal in every cell: probes/results_m1/aromir_266_counts_2026-11-18/count_bands.py of thebreadishard/udacity-capstone-plan (plan 05), the molecules with a low-level mode of the family",
-  "hold-out (b)'s description: modules/05_support_predictor/corpus/holdout_b_frozen_2026-10-08.txt (41 molecules) and probes/results_m1/aromir_audit_answers_2026-11-18/scaffolds.log and murcko.log of thebreadishard/udacity-capstone-plan (plan 05); 9-nitrofluorene's imaginary mode and set b+: probes/results_m1/aromir_audit_v14_2026-11-18/AUDIT.md, K2"
+  "hold-out (b)'s description: modules/05_support_predictor/corpus/holdout_b_frozen_2026-10-08.txt (41 molecules) and probes/results_m1/aromir_audit_answers_2026-11-18/scaffolds.log and murcko.log of thebreadishard/udacity-capstone-plan (plan 05); 9-nitrofluorene's imaginary mode and set b+: probes/results_m1/aromir_audit_v14_2026-11-18/AUDIT.md, K2",
+  "hold-out (b)'s two absent molecules: modules/05_support_predictor/out/E7_rungC_chain35_analytic.json (A2_28eed45ad3 only under substituted_analytic) and probes/results_m1/aromir_audit_v14_2026-11-18/AUDIT.md, K2 (A2_2c22216564's imaginary mode), of thebreadishard/udacity-capstone-plan (plan 05)"
  ],
  "atom_order_spread": {
   "max_cm": 10.73,

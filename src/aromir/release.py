@@ -76,7 +76,8 @@ RELEASE_CHECKS: Final = (
 _INTERVAL_TOLERANCE_CM: Final = 0.01
 """A record holds two decimals, so an rms may lie that far outside its rounded interval."""
 _SHARE_AT_A_PERCENTILE: Final = 0.97
-"""A 97.5th percentile within the line puts 97.5 % of the resamples there, 0.97 in two decimals."""
+"""A 97.5th percentile below the line puts 97.5 % of the resamples within it, 0.97 in two
+decimals. Below, not at: a recorded 3.00 may be a 3.004, which is above a line of 3."""
 Hex16 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{16}$")]
 Hex64 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 SEED_FILES: Final = "seed-*.json"
@@ -124,7 +125,8 @@ class BandError(BaseModel):
             with, cm⁻¹.
         n_modes: The bands it is the rms of.
         n_molecules: The hold-out's molecules with at least one band of the family: those
-            the rms rests on, and those the resampling draws from that count.
+            the rms rests on. The resampling draws from all of the hold-out's molecules, and a
+            draw without such a molecule counts as an rms of zero.
         interval_cm: The 2.5th and 97.5th percentile of that rms when the hold-out's
             molecules are resampled with replacement.
         share_of_resamples_within_line: The share of those resamples below the licence line.
@@ -242,7 +244,7 @@ class Evaluation(BaseModel):
             for holdout, error in per_holdout.items():
                 low, high = error.interval_cm
                 share = error.share_of_resamples_within_line
-                if (high <= line and share < _SHARE_AT_A_PERCENTILE) or (
+                if (high < line and share < _SHARE_AT_A_PERCENTILE) or (
                     low > line and share > 1 - _SHARE_AT_A_PERCENTILE
                 ):
                     msg = (
@@ -297,7 +299,8 @@ class Evaluation(BaseModel):
                 sentences.append(
                     f"'{family}' is within the licence line on hold-out ({holdout}) at "
                     f"{error.rms_cm:.2f} cm⁻¹, {self._resting_on(family, holdout)}: "
-                    f"resampling those molecules puts the error between {low:.2f} and {high:.2f} "
+                    "resampling the hold-out's molecules puts the error between "
+                    f"{low:.2f} and {high:.2f} "
                     f"cm⁻¹, and {1 - error.share_of_resamples_within_line:.0%} of the resamples "
                     "lie above the line"
                 )
@@ -780,7 +783,9 @@ def _entry_reasons(
 def record_sha256(path: Path) -> str:
     """Return the SHA-256 of a JSON record's content, written out in one canonical way.
 
-    The content is hashed, not the bytes, so a checkout that changes line endings keeps it.
+    The content as Python's JSON reader gives it is hashed, not the bytes: line endings,
+    whitespace, key order and escapes do not change it; a number written with another type
+    does (1 and 1.0 differ).
     """
     content = json.loads(path.read_text(encoding="utf-8"))
     canonical = json.dumps(content, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
@@ -809,10 +814,16 @@ def _measured_reasons(folder: Path, evaluation: Evaluation) -> list[str]:
     if not path.exists():
         return []
     try:
-        tables = record_tables(json.loads(path.read_text(encoding="utf-8")))
+        measured = json.loads(path.read_text(encoding="utf-8"))
+        tables = record_tables(measured)
         again = Evaluation.model_validate(evaluation.model_dump(mode="json") | tables)
+        sizes = {name: holdout["n_molecules"] for name, holdout in measured.items()}
     except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError, RefusedError) as error:
         return [f"{MEASURED_FILE} cannot be read as the output of `aromir evaluate`: {error}"]
+    if sizes != {name: holdout.n_molecules for name, holdout in evaluation.holdouts.items()}:
+        return [
+            f"{MEASURED_FILE} was measured on hold-outs of other sizes than {EVALUATION_FILE} gives"
+        ]
     if again == evaluation:
         return []
     reason = (

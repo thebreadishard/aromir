@@ -18,7 +18,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   soft-mode repair, the cation test, cations the release lacks), `release.json` counts
   fewer entries than the molecules and cations it trained on, names other checks than the
   five, or names measurement checkpoints the evaluation's sources do not, or a record is
-  not the one `release.json` binds by the SHA-256 of its content. The certificate and the card
+  not the one `release.json` binds by the SHA-256 of its content (a guard against an
+  accidental change; `release.json`'s own fields are not bound). The certificate and the card
   say which networks made the spectrum and which ones the error bars are of; a molecule in
   the release networks' training data is said to be there; a neutral molecule whose
   radical cation the networks trained on, but not the molecule itself, gets the measured
@@ -33,8 +34,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   v1.4's records are measured again with `aromir evaluate` (every number unchanged).
 - The loader refuses an evaluation record whose rms lies outside its own resampling
   interval, whose share of resamples within the line contradicts the interval, that counts
-  more molecules with a band than bands, or whose tables differ from the `measured.json`
-  beside it.
+  more molecules with a band than bands, or whose tables or hold-out sizes differ from the
+  `measured.json` beside it.
 
 - Admission: a molecule is parsed from a SMILES or an xyz file and refused, with every
   reason, unless it is one neutral, closed-shell aromatic molecule of H, C, N, O, F, S

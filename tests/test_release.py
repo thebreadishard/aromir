@@ -55,7 +55,8 @@ def test_the_licence_follows_the_measured_errors() -> None:
     assert all(not evaluation.thin_ground(family) for family in FAMILIES if family != "other")
     caveat = (
         "'other' is within the licence line on hold-out (a) at 2.78 cm⁻¹, on 8 molecules: "
-        "resampling those molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of the "
+        "resampling the hold-out's molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of "
+        "the "
         "resamples lie above the line"
     )
     assert evaluation.caveats() == [caveat]
@@ -148,6 +149,27 @@ def test_an_error_table_that_contradicts_itself_is_refused(
     record["band_error_seed_mean_cm"][family][holdout] |= change
     with pytest.raises(ValueError, match=reason):
         release.Evaluation.model_validate(record)
+
+
+def test_an_upper_end_rounded_onto_the_line_is_not_read_as_within_it() -> None:
+    # aromir's interval of 10 bands at 1.0 and 10 at 3.004 cm⁻¹ is recorded (1.0, 3.0), 76 % within
+    record = _evaluation()
+    record["band_error_seed_mean_cm"]["other"]["a"] |= {
+        "rms_cm": 2.24,
+        "interval_cm": [1.0, 3.0],
+        "share_of_resamples_within_line": 0.76,
+    }
+    assert release.Evaluation.model_validate(record).licensed("other")
+
+
+def test_a_measurement_of_other_hold_out_sizes_is_refused(tmp_path: Path) -> None:
+    folder = write_release(tmp_path)
+    record = json.loads((folder / release.EVALUATION_FILE).read_text(encoding="utf-8"))
+    measured = measured_of(record)
+    measured["a"]["n_molecules"] += 1
+    (folder / release.MEASURED_FILE).write_text(json.dumps(measured), encoding="utf-8")
+    with pytest.raises(RefusedError, match="measured on hold-outs of other sizes"):
+        release.load(folder)
 
 
 def test_an_evaluation_other_than_its_measurement_is_refused(tmp_path: Path) -> None:

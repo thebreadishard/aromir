@@ -79,8 +79,9 @@ hold-out molecules included, and are what the folder ships. v1.4 is such a pair.
 seeds and `training.json`, the measurement networks' training record as
 `measurement.json`, and `release.json`: the hashes of the shipped seeds' tensor files
 (a folder whose seeds are other ones is refused), the SHA-256 of the content of the four
-records beside it (a record changed afterwards is refused), the checkpoints of both kinds by
-hash and the
+records beside it (a record changed afterwards is refused: a guard against an accidental
+change, not a signature, and `release.json`'s own fields are bound by nothing), the
+checkpoints of both kinds by hash and the
 checks the release networks passed before they were shipped (the same recipe, agreement
 with the measurement networks on the pool, the hold-outs learnt, early stopping off the
 cap, and benzene by name). The certificate and the card say in one sentence that the
@@ -195,7 +196,10 @@ Linux and macOS are tested in CI. Native Windows is not: there the two commands 
 install aromir with pyscf's Windows wheel (pyscf 2.15.0 on Python 3.14, 18 November 2026,
 where water's B3LYP/6-31G* energy and frequencies equal Linux's in every printed digit), but
 no full `aromir spectrum` has been checked there, so WSL 2 (Ubuntu 26.04 was used) is the
-tested route on Windows. pyscf's macOS wheels run on one thread, whatever `--threads` says.
+tested route on Windows. On Windows, make the environment in a short folder (for example
+`C:\Users\<you>\aromir`): torch's files have paths longer than Windows' default limit of 260
+characters, and in a deep folder its installation fails. pyscf's macOS wheels run on one
+thread, whatever `--threads` says.
 
 ```console
 $ pip install torch --index-url https://download.pytorch.org/whl/cpu   # Linux: see below

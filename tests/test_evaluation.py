@@ -194,7 +194,8 @@ def test_release_v13_is_licensed_on_what_it_delivers() -> None:
     assert record["accuracy"]["licensed_families"] == list(families.FAMILIES)
     plain = (
         "'other' is within the licence line on hold-out (a) at 2.78 cm⁻¹, on 8 molecules: "
-        "resampling those molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of the "
+        "resampling the hold-out's molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of "
+        "the "
         "resamples lie above the line."
     )
     assert plain[0].upper() + plain[1:] in record["statement"]

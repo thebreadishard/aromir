@@ -6,7 +6,7 @@
  "licence_basis": "the band error of the measurement networks' seed mean, the error bar of what the release networks deliver, as recorded to two decimals; chosen on 16 November 2026, after it and the first-order error per seed had both been measured on both hold-outs",
  "holdouts": {
   "a": {
-   "description": "eight of the ten molecules set aside on 19 September 2026, before any network was trained; the other two have a twin in another layer of the training pool and are left out of the read (30 October 2026)",
+   "description": "eight of the ten molecules set aside on 19 September 2026, before any network was trained; the licence and the promotion are decided on these eight, the set of 30 October on which v1.3 and v1.4 are both clean. For v1.4 the other two, benzonitrile and 2-naphthoic acid, are clean as well: on all ten its measurement networks read ring-ip 1.10 [0.82–1.34], CH-stretch 0.78 [0.47–1.15], CH-oop 1.75 [0.91–2.83], other 2.23 [1.34–3.02] cm⁻¹, which decides nothing",
    "n_molecules": 8
   },
   "b": {
@@ -176,6 +176,7 @@
  "sources": [
   "every error in this record: `aromir evaluate` with the measurement networks (E7_rungC_v14s3clean_c00_control_model_n1082_seed0.pt, E7_rungC_v14s3clean_c00_control_model_n1082_seed1.pt, E7_rungC_v14s3clean_c00_control_model_n1082_seed2.pt) on the two hold-outs as probes/results_m1/aromir_audit_fixes_2026-11-16/holdouts_for_aromir.py of thebreadishard/udacity-capstone-plan (plan 05) writes them; counterpart, within 0.01 cm⁻¹ in every cell: probes/results_m1/aromir_v14_release_2026-11-18/product_error.json (aromir's code on the stored Hessians, in aromir's atom order); the capstone's read in the corpus's atom order is modules/05_support_predictor/out/v14/E7_rungC_v14s3clean_c00_control_product_error.json",
   "the molecules with a band of each family: the same `aromir evaluate` (format 3); counterpart, equal in every cell: probes/results_m1/aromir_266_counts_2026-11-18/count_bands.py of thebreadishard/udacity-capstone-plan (plan 05), the molecules with a low-level mode of the family",
-  "hold-out (b)'s description: modules/05_support_predictor/corpus/holdout_b_frozen_2026-10-08.txt (41 molecules) and probes/results_m1/aromir_audit_answers_2026-11-18/scaffolds.log and murcko.log of thebreadishard/udacity-capstone-plan (plan 05); 9-nitrofluorene's imaginary mode and set b+: probes/results_m1/aromir_audit_v14_2026-11-18/AUDIT.md, K2"
+  "hold-out (b)'s description: modules/05_support_predictor/corpus/holdout_b_frozen_2026-10-08.txt (41 molecules) and probes/results_m1/aromir_audit_answers_2026-11-18/scaffolds.log and murcko.log of thebreadishard/udacity-capstone-plan (plan 05); 9-nitrofluorene's imaginary mode and set b+: probes/results_m1/aromir_audit_v14_2026-11-18/AUDIT.md, K2",
+  "hold-out (a) on ten, which decides nothing: probes/results_m1/aromir_audit_answers_2026-11-18/a10_measured.json (read_a10.sh: `aromir evaluate` with the measurement networks on set 'a' of E7_rungC_v14s3clean_c00_control_eval_clean_seed0.json) of thebreadishard/udacity-capstone-plan (plan 05)"
  ]
 }

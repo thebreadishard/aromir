@@ -179,6 +179,11 @@ def test_release_networks_that_failed_a_check_are_not_shipped(tmp_path: Path) ->
             SHIPPED,
             "measurement.json gives elements",
         ),
+        (
+            RELEASE_TRAINING | {"min_atoms": TRAINING["min_atoms"] - 1},
+            SHIPPED,
+            "measurement.json gives min_atoms",
+        ),
         (RELEASE_TRAINING, SHIPPED | {"n_entries": 2}, "counts 2 entries, fewer than the 4"),
         (
             RELEASE_TRAINING,
@@ -224,6 +229,15 @@ def test_measurement_networks_of_other_cations_are_refused(
 ) -> None:
     with pytest.raises(RefusedError, match=reason):
         release.load(write_pair(tmp_path, measurement=measurement))
+
+
+def test_measurement_networks_without_cations_beside_release_networks_with_them_load(
+    pair: release.Release,
+) -> None:
+    # the certificate's cation clause is the release record's (certificate.acquaintance)
+    assert pair.measurement is not None
+    assert pair.measurement.cation_test is None
+    assert pair.training.cation_test is not None
 
 
 @pytest.mark.parametrize("name", list(release.RECORDED_FILES))
