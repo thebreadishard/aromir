@@ -118,6 +118,15 @@ def test_the_bundled_release_networks_have_no_error_of_their_own(
     assert "their error there is no measurement" in capsys.readouterr().err
 
 
+def test_v14s_caveats_count_the_molecules_with_a_ch_oop_band() -> None:
+    caveats = release.load(release.bundled()).evaluation.caveats()
+    assert any(
+        caveat.startswith("'CH-oop' is within the licence line on hold-out (a) at ")
+        and "on 5 of the hold-out's 8 molecules (the others have no 'CH-oop' band): " in caveat
+        for caveat in caveats
+    )
+
+
 def test_the_evaluation_record_is_the_measurement_that_ships_beside_it() -> None:
     folder = release.bundled()
     measured = json.loads((folder / release.MEASURED_FILE).read_text(encoding="utf-8"))

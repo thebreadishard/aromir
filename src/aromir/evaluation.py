@@ -211,7 +211,11 @@ def holdout_errors(molecules: list[MoleculeErrors], line_cm: float) -> dict[str,
     for family in families.FAMILIES:
         bands = [_of_family(m.band, m.band_family, family) for m in molecules]
         n_modes = int(sum(len(part) for part in bands))
-        band[family] = {"rms_cm": _recorded(_rms(bands)), "n_modes": n_modes}
+        band[family] = {
+            "rms_cm": _recorded(_rms(bands)),
+            "n_modes": n_modes,
+            "n_molecules": sum(1 for part in bands if part.size),
+        }
         if n_modes:
             low, high, share = interval(bands, line_cm)
             band[family] |= {
@@ -238,9 +242,9 @@ def evaluate(release: Release, folder: Path) -> dict[str, Any]:
 
     Returns:
         Per hold-out (the sub-folder's name): the number of molecules, and per family the
-        band error of the seed mean with its mode count and resampling interval, and the
-        first-order error of each seed with their mean. A family without a mode in a
-        hold-out has the count 0 and no error.
+        band error of the seed mean with its mode count, the number of molecules with such
+        a band and the resampling interval, and the first-order error of each seed with
+        their mean. A family without a mode in a hold-out has the counts 0 and no error.
 
     Raises:
         RefusedError: The folder holds no hold-out, or a hold-out no molecule, or the

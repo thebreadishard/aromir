@@ -98,6 +98,8 @@ class BandError(BaseModel):
         rms_cm: The rms difference to the reference band each corrected band is paired
             with, cm⁻¹.
         n_modes: The bands it is the rms of.
+        n_molecules: The hold-out's molecules with at least one band of the family: those
+            the rms rests on, and those the resampling draws from that count.
         interval_cm: The 2.5th and 97.5th percentile of that rms when the hold-out's
             molecules are resampled with replacement.
         share_of_resamples_within_line: The share of those resamples below the licence line.
@@ -107,6 +109,7 @@ class BandError(BaseModel):
 
     rms_cm: float = Field(ge=0, allow_inf_nan=False)
     n_modes: int = Field(ge=1)
+    n_molecules: int = Field(ge=1)
     interval_cm: tuple[float, float]
     share_of_resamples_within_line: float = Field(ge=0, le=1)
 
@@ -127,7 +130,8 @@ class Evaluation(BaseModel):
     read on, and the trainer's first-order error per seed.
 
     Attributes:
-        record_version: The format of this record; 2 is the first that names both.
+        record_version: The format of this record; 2 is the first that names both, 3 the
+            first that counts, per family, the molecules with a band of it.
         network_version: The version the numbers belong to.
         higher_level: The level of theory the network corrects towards.
         licence_line_cm: A family is licensed when its band error is within this on every
@@ -146,7 +150,7 @@ class Evaluation(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    record_version: Literal[2]
+    record_version: Literal[3]
     network_version: str
     higher_level: str
     licence_line_cm: float = Field(gt=0, allow_inf_nan=False)
@@ -167,7 +171,14 @@ class Evaluation(BaseModel):
                 "a record of the first format: its `errors_cm` are first-order errors per "
                 "seed, which are not the error of what the release delivers and are not read "
                 "as it. Measure the release with `aromir evaluate` and write a record of "
-                "format 2"
+                "format 3"
+            )
+            raise ValueError(msg)
+        if isinstance(record, dict) and record.get("record_version") == 2:
+            msg = (
+                "a record of format 2: it does not count the molecules each family's band "
+                "error rests on, so a caveat would count the whole hold-out. Measure the "
+                "release with `aromir evaluate` and write a record of format 3"
             )
             raise ValueError(msg)
         return record
@@ -188,6 +199,18 @@ class Evaluation(BaseModel):
                     msg = (
                         f"{family}: errors on {sorted(per_holdout)}, "
                         f"hold-outs {sorted(self.holdouts)}"
+                    )
+                    raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def _no_more_molecules_than_the_holdout(self) -> Self:
+        for family, per_holdout in self.band_error_seed_mean_cm.items():
+            for holdout, error in per_holdout.items():
+                if error.n_molecules > self.holdouts[holdout].n_molecules:
+                    msg = (
+                        f"{family} on ({holdout}): bands on {error.n_molecules} molecules of a "
+                        f"hold-out of {self.holdouts[holdout].n_molecules}"
                     )
                     raise ValueError(msg)
         return self
@@ -224,12 +247,22 @@ class Evaluation(BaseModel):
                 low, high = error.interval_cm
                 sentences.append(
                     f"'{family}' is within the licence line on hold-out ({holdout}) at "
-                    f"{error.rms_cm:.2f} cm⁻¹, on {self.holdouts[holdout].n_molecules} molecules: "
+                    f"{error.rms_cm:.2f} cm⁻¹, {self._resting_on(family, holdout)}: "
                     f"resampling those molecules puts the error between {low:.2f} and {high:.2f} "
                     f"cm⁻¹, and {1 - error.share_of_resamples_within_line:.0%} of the resamples "
                     "lie above the line"
                 )
         return sentences
+
+    def _resting_on(self, family: Family, holdout: str) -> str:
+        """Say how many of a hold-out's molecules a family's band error rests on."""
+        with_bands = self.band_error_seed_mean_cm[family][holdout].n_molecules
+        of = self.holdouts[holdout].n_molecules
+        if with_bands == of:
+            return f"on {of} molecules"
+        return (
+            f"on {with_bands} of the hold-out's {of} molecules (the others have no '{family}' band)"
+        )
 
     def thin_ground(self, family: Family) -> dict[str, BandError]:
         """Return the hold-outs on which a family's licence could fall with other molecules.

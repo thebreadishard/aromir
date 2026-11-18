@@ -1,5 +1,5 @@
 {
- "record_version": 2,
+ "record_version": 3,
  "network_version": "1.3",
  "higher_level": "ωB97X/6-31G* (the DFT proxy: the network's ΔH is trained on ωB97X − B3LYP Hessians)",
  "licence_line_cm": 3.0,
@@ -19,6 +19,7 @@
    "a": {
     "rms_cm": 1.43,
     "n_modes": 199,
+    "n_molecules": 8,
     "interval_cm": [
      1.13,
      1.7
@@ -28,6 +29,7 @@
    "b": {
     "rms_cm": 1.91,
     "n_modes": 1164,
+    "n_molecules": 39,
     "interval_cm": [
      1.84,
      2.0
@@ -39,6 +41,7 @@
    "a": {
     "rms_cm": 0.95,
     "n_modes": 73,
+    "n_molecules": 8,
     "interval_cm": [
      0.39,
      1.48
@@ -48,6 +51,7 @@
    "b": {
     "rms_cm": 2.19,
     "n_modes": 401,
+    "n_molecules": 39,
     "interval_cm": [
      1.8,
      2.53
@@ -59,6 +63,7 @@
    "a": {
     "rms_cm": 1.64,
     "n_modes": 46,
+    "n_molecules": 5,
     "interval_cm": [
      1.19,
      1.97
@@ -68,6 +73,7 @@
    "b": {
     "rms_cm": 1.88,
     "n_modes": 84,
+    "n_molecules": 8,
     "interval_cm": [
      1.56,
      2.16
@@ -79,6 +85,7 @@
    "a": {
     "rms_cm": 2.78,
     "n_modes": 156,
+    "n_molecules": 8,
     "interval_cm": [
      1.68,
      3.76
@@ -88,6 +95,7 @@
    "b": {
     "rms_cm": 2.77,
     "n_modes": 1225,
+    "n_molecules": 39,
     "interval_cm": [
      2.56,
      2.97
@@ -167,7 +175,8 @@
  "coupled_cluster": "not measured for this network version",
  "sources": [
   "every error in this record: `aromir evaluate` on the two hold-outs as probes/results_m1/aromir_audit_fixes_2026-11-16/holdouts_for_aromir.py of thebreadishard/udacity-capstone-plan (plan 05) writes them; counterpart for the band errors: probes/results_m1/aromir_product_error_2026-11-16/product_error.json",
-  "the hold-outs' molecules, and the first-order errors the training runs recorded themselves (within 0.08 cm⁻¹): E7_rungC_chain35_analytic_eval_frozenb_seed0.json, E7_rungC_chain35_analytic_eval_frozenb_seed1.json, E7_rungC_chain35_analytic_eval_frozenb_seed2.json, E7_rungC_chain35_analytic_a8read_seed0.json, E7_rungC_chain35_analytic_a8read_seed1.json, E7_rungC_chain35_analytic_a8read_seed2.json"
+  "the hold-outs' molecules, and the first-order errors the training runs recorded themselves (within 0.08 cm⁻¹): E7_rungC_chain35_analytic_eval_frozenb_seed0.json, E7_rungC_chain35_analytic_eval_frozenb_seed1.json, E7_rungC_chain35_analytic_eval_frozenb_seed2.json, E7_rungC_chain35_analytic_a8read_seed0.json, E7_rungC_chain35_analytic_a8read_seed1.json, E7_rungC_chain35_analytic_a8read_seed2.json",
+  "the molecules with a band of each family: the same `aromir evaluate` (format 3); counterpart, equal in every cell: probes/results_m1/aromir_266_counts_2026-11-18/count_bands.py of thebreadishard/udacity-capstone-plan (plan 05), the molecules with a low-level mode of the family"
  ],
  "atom_order_spread": {
   "max_cm": 10.73,

@@ -114,7 +114,7 @@ def test_a_folder_of_holdouts_is_measured_per_family(
         for family in families.FAMILIES:
             entry = holdout["band_error_seed_mean"][family]
             if not entry["n_modes"]:
-                assert entry == {"rms_cm": None, "n_modes": 0}
+                assert entry == {"rms_cm": None, "n_modes": 0, "n_molecules": 0}
                 assert holdout["first_order_error_per_seed"][family] == [None] * N_SEEDS
                 continue
             low, high = entry["interval_cm"]
@@ -181,7 +181,7 @@ def test_the_command_writes_what_it_measured_and_never_over_a_file(
 def test_release_v13_is_licensed_on_what_it_delivers() -> None:
     bundled = release.load(release.bundled().parent / "v1.3")
     recorded = bundled.evaluation
-    assert recorded.record_version == 2
+    assert recorded.record_version == 3
     assert "chosen on 16 November 2026" in recorded.licence_basis
     assert all(recorded.licensed(family) for family in families.FAMILIES)
     assert recorded.band_error_seed_mean_cm["other"]["a"].interval_cm == (1.68, 3.76)
@@ -236,6 +236,27 @@ def test_what_was_measured_becomes_the_tables_of_a_record(
     tables = evaluation.record_tables(measured)
     assert list(tables["band_error_seed_mean_cm"]) == list(families.FAMILIES)
     assert list(tables["first_order_error_per_seed_mean_cm"]["other"]) == ["a", "b"]
+
+
+def test_a_family_counts_only_the_molecules_with_a_band_of_it() -> None:
+    with_oop = evaluation.MoleculeErrors(
+        band=np.array([1.0, 2.0]),
+        band_family=("CH-oop", "other"),
+        first_order=np.zeros((2, 2)),
+        first_order_family=("CH-oop", "other"),
+    )
+    without = evaluation.MoleculeErrors(
+        band=np.array([1.0]),
+        band_family=("other",),
+        first_order=np.zeros((2, 1)),
+        first_order_family=("other",),
+    )
+    measured = evaluation.holdout_errors([with_oop, without, without], line_cm=3.0)
+    band = measured["band_error_seed_mean"]
+    assert measured["n_molecules"] == 3
+    assert (band["CH-oop"]["n_modes"], band["CH-oop"]["n_molecules"]) == (1, 1)
+    assert (band["other"]["n_modes"], band["other"]["n_molecules"]) == (3, 3)
+    assert (band["ring-ip"]["n_modes"], band["ring-ip"]["n_molecules"]) == (0, 0)
 
 
 def test_the_v13_record_is_what_the_tables_of_a_measurement_look_like() -> None:

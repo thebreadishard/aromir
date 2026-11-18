@@ -125,7 +125,11 @@ def test_the_card_warns_about_the_atom_order_unless_the_network_is_order_free(
 
 def test_a_release_with_no_licensed_family_says_so(loaded: release.Release) -> None:
     high = release.BandError(
-        rms_cm=9.0, n_modes=10, interval_cm=(8.0, 10.0), share_of_resamples_within_line=0.0
+        rms_cm=9.0,
+        n_modes=10,
+        n_molecules=1,
+        interval_cm=(8.0, 10.0),
+        share_of_resamples_within_line=0.0,
     )
     errors = {
         family: {"a": high, "b": high} for family in loaded.evaluation.band_error_seed_mean_cm

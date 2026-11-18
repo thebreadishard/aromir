@@ -106,6 +106,31 @@ def test_an_evaluation_must_cover_every_family_and_hold_out() -> None:
         release.Evaluation.model_validate(without_holdout)
 
 
+def test_a_caveat_counts_the_molecules_with_a_band_of_the_family() -> None:
+    record = _evaluation()
+    record["band_error_seed_mean_cm"]["other"]["a"]["n_molecules"] = 5
+    (caveat,) = release.Evaluation.model_validate(record).caveats()
+    assert (
+        "at 2.78 cm⁻¹, on 5 of the hold-out's 8 molecules (the others have no 'other' band): "
+        in caveat
+    )
+
+
+def test_bands_on_more_molecules_than_the_hold_out_holds_are_refused() -> None:
+    record = _evaluation()
+    record["band_error_seed_mean_cm"]["CH-oop"]["b"]["n_molecules"] = 40
+    with pytest.raises(
+        ValueError, match=r"CH-oop on \(b\): bands on 40 molecules of a hold-out of 39"
+    ):
+        release.Evaluation.model_validate(record)
+
+
+def test_a_record_of_format_2_is_refused_and_told_why() -> None:
+    record = _evaluation() | {"record_version": 2}
+    with pytest.raises(ValueError, match="a record of format 2: it does not count the molecules"):
+        release.Evaluation.model_validate(record)
+
+
 def test_the_applied_correction_is_the_seeds_mean(tmp_path: Path) -> None:
     loaded = release.load(write_release(tmp_path))
     benzene = geometry.start_from_smiles("c1ccccc1")

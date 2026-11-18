@@ -130,6 +130,8 @@ def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = 
     evaluation = json.loads((RELEASE_DATA / "evaluation_v1.3.json").read_text(encoding="utf-8"))
     for name, held_out in TRAINING["held_out_smiles"].items():
         evaluation["holdouts"][name]["n_molecules"] = len(held_out)
+        for per_holdout in evaluation["band_error_seed_mean_cm"].values():
+            per_holdout[name]["n_molecules"] = min(per_holdout[name]["n_molecules"], len(held_out))
     evaluation["band_error_seed_mean_cm"]["other"]["b"] |= UNLICENSED_OTHER
     means = evaluation["first_order_error_per_seed_mean_cm"]
     for family, per_holdout in evaluation["first_order_error_per_seed_cm"].items():
