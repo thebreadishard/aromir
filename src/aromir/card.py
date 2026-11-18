@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from aromir import dft, families, repair
-from aromir.release import error_text, level_name, made_by
+from aromir.release import error_text, level_name, made_by, pool
 
 if TYPE_CHECKING:
     from aromir.release import Evaluation, Release, Training
@@ -169,22 +169,22 @@ def _molecule_count(release: Release) -> str:
     if shipped is None:
         n = len(training.trained_smiles)
         return f"{n} molecules, neutral and closed-shell, each with an aromatic ring."
-    cations = len(training.cation_parent_smiles or ())
     return (
-        f"{shipped.n_molecules} molecules with labels, each with an aromatic ring: "
-        f"{len(training.trained_smiles)} neutral closed-shell molecules by SMILES, and the "
-        f"radical cations of {cations} of them; the measurement networks, on which every "
-        f"error is read, trained on {len(release.measured_training.trained_smiles)} of the "
-        "neutral ones."
+        f"{shipped.n_entries} labelled entries of the training pool, each a closed-shell "
+        f"molecule or radical cation with an aromatic ring: {pool(training)}; the measurement "
+        f"networks, on which every error is read, trained on "
+        f"{len(release.measured_training.trained_smiles)} of those neutral molecules."
     )
 
 
 def _training(release: Release) -> list[str]:
     training = release.training
-    held_out = _held_out(release.measured_training)
+    held_out = f"- Held out and never trained on: {_held_out(training)}."
     if release.shipped is not None:
-        held_out += (
-            " — held out from the measurement networks only; the release networks trained on them"
+        held_out = (
+            "- Held out from the measurement networks, on which every error is read: "
+            f"{_held_out(release.measured_training)}; the release networks trained on these "
+            "molecules."
         )
     prepared = (
         "with their soft modes (below "
@@ -198,7 +198,7 @@ def _training(release: Release) -> list[str]:
         f"- {_molecule_count(release)}",
         f"- Elements: {', '.join(training.elements)}.",
         f"- Sizes: {training.min_atoms} to {training.max_atoms} atoms.",
-        f"- Held out and never trained on: {held_out}.",
+        held_out,
         (
             f"- The training Hessians were used {prepared}; aromir gives the network a "
             "molecule's Hessian prepared the same way. It measures the soft modes in either "

@@ -14,7 +14,7 @@ model_name: aromir ΔH network v1.4
 A correction to the Hessian of an aromatic molecule. The network reads a cheap B3LYP/6-31G* Hessian and returns ΔH, the difference to ωB97X/6-31G* (the DFT proxy: the network's ΔH is trained on ωB97X − B3LYP Hessians). The corrected Hessian gives harmonic infrared band positions closer to that level at the cost of the cheap one.
 
 - **Seeds:** 3 (0, 1, 2); the applied correction is their mean, and their spread is reported per band.
-- **Networks:** The spectrum is made by the release networks of version 1.4, trained on all 1132 molecules with labels: each of the 3 networks is fitted on a random 85 % of the molecules and stopped on the other 15 %, a different 15 % per seed, so not every molecule is fitted by every network (with 3 networks about 0.15³ ≈ 0.3 % by none). Its error bars were measured on the measurement networks of the same version — the same recipe trained without the hold-out molecules — on molecules those networks never saw; the release networks themselves have seen every molecule we hold labels for, so they have no held-out error of their own.
+- **Networks:** The spectrum is made by the release networks of version 1.4, trained on the 1132 labelled entries of their training pool, the hold-out molecules included (1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules): each of the 3 networks is fitted on a random 85 % of the entries and stopped on the other 15 %, a different 15 % per seed, so not every entry is fitted by every network (with 3 networks about 0.15³ ≈ 0.3 % by none). Its error bars were measured on the measurement networks of the same version — the same recipe trained without the hold-out molecules — on molecules those networks never saw; the release networks themselves have seen the hold-out molecules, so they have no held-out error of their own.
 - **Licensed families:** ring-ip, CH-stretch, CH-oop, other.
 - **Not licensed:** none.
 - **On thin ground:** 'CH-oop' is within the licence line on hold-out (a) at 1.88 cm⁻¹, on 8 molecules: resampling those molecules puts the error between 0.93 and 3.24 cm⁻¹, and 4% of the resamples lie above the line.
@@ -52,10 +52,10 @@ Sources: every error in this record: `aromir evaluate` with the measurement netw
 
 ## What it was trained on
 
-- 1132 molecules with labels, each with an aromatic ring: 1078 neutral closed-shell molecules by SMILES, and the radical cations of 50 of them; the measurement networks, on which every error is read, trained on 1028 of the neutral ones.
+- 1132 labelled entries of the training pool, each a closed-shell molecule or radical cation with an aromatic ring: 1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules; the measurement networks, on which every error is read, trained on 1028 of those neutral molecules.
 - Elements: C, Cl, F, H, N, O, S.
 - Sizes: 8 to 40 atoms.
-- Held out and never trained on: 8 in (a); 40 in (b) — held out from the measurement networks only; the release networks trained on them.
+- Held out from the measurement networks, on which every error is read: 8 in (a); 40 in (b); the release networks trained on these molecules.
 - The training Hessians were used as pyscf's analytic Hessians, without the soft-mode repair; aromir gives the network a molecule's Hessian prepared the same way. It measures the soft modes in either case, to decide whether the geometry is a minimum and for the positions it prints: the correction is added to the Hessian with its soft modes measured.
 
 ## Where it stops being known

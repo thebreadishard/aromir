@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -10,6 +11,7 @@ import pytest
 
 from aromir import admission, card, certificate, evaluation, geometry, lowlevel, release, response
 from aromir.errors import RefusedError
+from aromir.network import weights
 
 from support import TRAINING, random_hessian, write_release
 
@@ -35,7 +37,7 @@ RELEASE_TRAINING: dict[str, Any] = TRAINING | {
 molecules and on pyridine's radical cation, not on pyridine itself."""
 SHIPPED: dict[str, Any] = {
     "network_version": "1.3",
-    "n_molecules": 4,
+    "n_entries": 4,
     "fitted_share": 0.85,
     "checks": {"same_recipe": True, "early_stopping": True},
     "release_checkpoints": {"release_seed0.pt": "0" * 16, "release_seed1.pt": "1" * 16},
@@ -45,14 +47,21 @@ SHIPPED: dict[str, Any] = {
 
 
 def write_pair(
-    folder: Path, training: dict[str, Any] | None = None, shipped: dict[str, Any] | None = None
+    folder: Path,
+    training: dict[str, Any] | None = None,
+    shipped: dict[str, Any] | None = None,
+    measurement: dict[str, Any] | None = None,
 ) -> Path:
     """Write a folder of release networks for ``TRAINING``'s measurement networks."""
     write_release(folder)
-    (folder / release.MEASUREMENT_FILE).write_text(json.dumps(TRAINING), encoding="utf-8")
+    (folder / release.MEASUREMENT_FILE).write_text(
+        json.dumps(TRAINING if measurement is None else measurement), encoding="utf-8"
+    )
     record = RELEASE_TRAINING if training is None else training
     (folder / release.TRAINING_FILE).write_text(json.dumps(record), encoding="utf-8")
-    (folder / release.RELEASE_FILE).write_text(json.dumps(SHIPPED if shipped is None else shipped))
+    hashes = {path.stem: weights.recorded_sha256(path) for path in folder.glob("seed-*.json")}
+    written = {"seed_sha256": hashes} | SHIPPED | ({} if shipped is None else shipped)
+    (folder / release.RELEASE_FILE).write_text(json.dumps(written))
     return folder
 
 
@@ -82,14 +91,16 @@ def test_the_sentence_says_what_made_the_spectrum_and_what_the_errors_are_of(
 ) -> None:
     sentence = release.made_by(pair)
     assert sentence.startswith(
-        "The spectrum is made by the release networks of version 1.3, trained on all 4 "
-        "molecules with labels: each of the 2 networks is fitted on a random 85 % of the "
-        "molecules and stopped on the other 15 %, a different 15 % per seed,"
+        "The spectrum is made by the release networks of version 1.3, trained on the 4 "
+        "labelled entries of their training pool, the hold-out molecules included (3 distinct "
+        "neutral molecules by SMILES and the radical cations of 1 molecules): each of the 2 "
+        "networks is fitted on a random 85 % of the entries and stopped on the other 15 %, a "
+        "different 15 % per seed,"
     )
     assert f"(with 2 networks about 0.15² ≈ {100 * (1 - 0.85) ** 2:.1f} % by none)" in sentence
     assert sentence.endswith(
-        "the release networks themselves have seen every molecule we hold labels for, so "
-        "they have no held-out error of their own."
+        "the release networks themselves have seen the hold-out molecules, so they have no "
+        "held-out error of their own."
     )
 
 
@@ -126,7 +137,22 @@ def test_release_networks_that_failed_a_check_are_not_shipped(tmp_path: Path) ->
             SHIPPED | {"release_checkpoints": {"release_seed0.pt": "0" * 16}},
             "names 1 checkpoint\\(s\\), the folder holds 2 seed\\(s\\)",
         ),
-        (RELEASE_TRAINING, SHIPPED | {"network_version": "1.4"}, "are of other versions"),
+        (RELEASE_TRAINING, SHIPPED | {"network_version": "1.4"}, "is of version \\['1.4'\\]"),
+        (
+            RELEASE_TRAINING | {"network_version": "1.4"},
+            SHIPPED,
+            "is of version \\['1.4'\\], the evaluation of 1.3",
+        ),
+        (
+            RELEASE_TRAINING | {"trained_smiles": ["c1ccc2ccccc2c1", "c1ccccc1"]},
+            SHIPPED,
+            "the release networks lack 1 hold-out molecule\\(s\\)",
+        ),
+        (
+            RELEASE_TRAINING,
+            SHIPPED | {"seed_sha256": {"seed-0": "0" * 64, "seed-1": "1" * 64}},
+            "names other weights than the seeds beside it",
+        ),
     ],
 )
 def test_a_pair_that_does_not_fit_together_is_refused(
@@ -134,6 +160,34 @@ def test_a_pair_that_does_not_fit_together_is_refused(
 ) -> None:
     with pytest.raises(RefusedError, match=reason):
         release.load(write_pair(tmp_path, training=training, shipped=shipped))
+
+
+def test_a_measurement_record_of_another_version_is_refused(tmp_path: Path) -> None:
+    other = TRAINING | {"network_version": "1.4"}
+    with pytest.raises(RefusedError, match="its parts are of different network versions"):
+        release.load(write_pair(tmp_path, measurement=other))
+
+
+def test_release_networks_come_with_their_measurement_record(pair: release.Release) -> None:
+    with pytest.raises(ValueError, match="come with the measurement networks' record"):
+        dataclasses.replace(pair, measurement=None)
+
+
+def test_a_stereoisomer_in_the_release_networks_data_is_not_called_unseen() -> None:
+    trained = RELEASE_TRAINING | {
+        "trained_smiles": [*RELEASE_TRAINING["trained_smiles"], "C(=C/c1ccccc1)\\c1ccccc1"]
+    }
+    both = release.Training.model_validate(trained)
+    measured = release.Training.model_validate(TRAINING)
+    said = certificate.acquaintance("C(=Cc1ccccc1)c1ccccc1", both, measured)
+    assert said.endswith("is in the release networks' training data")
+
+
+def test_a_cation_test_on_several_networks_says_how_many() -> None:
+    test = release.CationTest.model_validate(CATION_TEST | {"n_networks": 3})
+    record = release.Training.model_validate(RELEASE_TRAINING | {"cation_test": test.model_dump()})
+    said = certificate.acquaintance("c1ccncc1", record, release.Training.model_validate(TRAINING))
+    assert "from 1.5 to 5.4 cm⁻¹ for 3 networks," in said
 
 
 @pytest.mark.parametrize(
@@ -192,13 +246,15 @@ def test_the_measurement_networks_hold_out_molecules_that_the_release_networks_t
     assert f"- **Networks:** {release.made_by(pair)}" in text
     assert "on molecules the measurement networks never trained on" in text
     assert (
-        "- Held out and never trained on: 1 in (a); 1 in (b) — held out from the measurement "
-        "networks only; the release networks trained on them." in text
+        "- Held out from the measurement networks, on which every error is read: 1 in (a); 1 "
+        "in (b); the release networks trained on these molecules." in text
     )
+    assert "Held out and never trained on" not in text
     assert (
-        "- 4 molecules with labels, each with an aromatic ring: 3 neutral closed-shell "
-        "molecules by SMILES, and the radical cations of 1 of them; the measurement networks, "
-        "on which every error is read, trained on 1 of the neutral ones." in text
+        "- 4 labelled entries of the training pool, each a closed-shell molecule or radical "
+        "cation with an aromatic ring: 3 distinct neutral molecules by SMILES and the radical "
+        "cations of 1 molecules; the measurement networks, on which every error is read, "
+        "trained on 1 of those neutral molecules." in text
     )
 
 
@@ -209,8 +265,8 @@ def test_the_certificate_of_release_networks_names_both(
     admitted = admission.admit(admission.parse_smiles("c1ccccc1"))
     corrections = pair.corrections(benzene_geometry, low.hessian)
     record = certificate.build(admitted, benzene_geometry, low, corrections, pair)
-    assert f", {release.made_by(pair)} " in record["statement"]
-    assert "never saw. " not in record["statement"].split(release.made_by(pair))[0]
+    level = pair.evaluation.higher_level
+    assert f"towards {level}. {release.made_by(pair)} " in record["statement"]
     assert record["network"]["kind"] == "release"
     assert record["network"]["errors_measured_on"] == SHIPPED["measurement_checkpoints"]
     assert record["molecule"]["seen"] == certificate.RELEASE_TRAINED
@@ -219,7 +275,7 @@ def test_the_certificate_of_release_networks_names_both(
 def test_the_error_of_release_networks_on_the_hold_outs_is_not_measured(
     pair: release.Release, tmp_path: Path
 ) -> None:
-    with pytest.raises(RefusedError, match="their error there is no measurement"):
+    with pytest.raises(RefusedError, match="which the package does not ship"):
         evaluation.evaluate(pair, tmp_path)
 
 

@@ -50,10 +50,10 @@ EVALUATION_FILE: Final = "evaluation.json"
 TRAINING_FILE: Final = "training.json"
 INVARIANCE_FILE: Final = "invariance.json"
 MEASURED_FILE: Final = "measured.json"
-RELEASE_FILE: Final = "release.json"
-MEASUREMENT_FILE: Final = "measurement.json"
 """What ``aromir evaluate`` wrote on the hold-outs: the source of the evaluation record's
 error tables, shipped beside it where a release has it."""
+RELEASE_FILE: Final = "release.json"
+MEASUREMENT_FILE: Final = "measurement.json"
 SEED_FILES: Final = "seed-*.json"
 MIN_SEEDS: Final = 2
 """A band's spread over the seeds needs at least two of them."""
@@ -326,23 +326,28 @@ class ReleaseNetworks(BaseModel):
 
     Attributes:
         network_version: The version the pair belongs to.
-        n_molecules: The molecules with labels, radical cations included, that a release
-            network fitted or stopped on.
+        n_entries: The labelled entries of the training pool a release network fitted or
+            stopped on: a molecule may be an entry under more than one identifier, and a
+            radical cation is an entry of its own.
         fitted_share: The share of them each network was fitted on; the others stopped its
             training, a different draw for each seed.
         checks: Each check the release networks had to pass before they ship, by name.
+        seed_sha256: The SHA-256 of each shipped seed's tensor file, by seed name
+            (``seed-0``): what binds this record to the weights beside it.
         release_checkpoints: The training checkpoints of the shipped seeds, by file name,
             with the first 16 hex digits of their SHA-256.
-        measurement_checkpoints: The same for the measurement networks.
+        measurement_checkpoints: The same for the measurement networks, which are not
+            shipped.
         source: The record of the checks.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     network_version: str
-    n_molecules: int = Field(ge=1)
+    n_entries: int = Field(ge=1)
     fitted_share: float = Field(gt=0, lt=1)
     checks: dict[str, bool] = Field(min_length=1)
+    seed_sha256: dict[str, str] = Field(min_length=1)
     release_checkpoints: dict[str, str] = Field(min_length=1)
     measurement_checkpoints: dict[str, str] = Field(min_length=1)
     source: str = Field(min_length=1)
@@ -367,8 +372,19 @@ class ReleaseNetworks(BaseModel):
 _SUPERSCRIPT: Final = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 
 
+def pool(training: Training) -> str:
+    """Count a training record's molecules: neutral ones and the parents of radical cations."""
+    cations = len(training.cation_parent_smiles or ())
+    neutral = f"{len(training.trained_smiles)} distinct neutral molecules by SMILES"
+    return neutral if not cations else f"{neutral} and the radical cations of {cations} molecules"
+
+
 def made_by(release: Release) -> str:
-    """Say which networks make a release's spectrum and which ones its errors belong to."""
+    """Say which networks make a release's spectrum and which ones its errors belong to.
+
+    For networks whose errors were measured on themselves this is a clause that ends a
+    sentence; for release networks it is sentences of their own.
+    """
     shipped = release.shipped
     if shipped is None:
         return "with the error measured on molecules the network never saw."
@@ -376,16 +392,16 @@ def made_by(release: Release) -> str:
     held = shipped.stopping_share
     return (
         f"The spectrum is made by the release networks of version {release.network_version}, "
-        f"trained on all {shipped.n_molecules} molecules with labels: each of the {n} networks "
-        f"is fitted on a random {100 * shipped.fitted_share:.0f} % of the molecules and stopped "
+        f"trained on the {shipped.n_entries} labelled entries of their training pool, the "
+        f"hold-out molecules included ({pool(release.training)}): each of the {n} networks "
+        f"is fitted on a random {100 * shipped.fitted_share:.0f} % of the entries and stopped "
         f"on the other {100 * held:.0f} %, a different {100 * held:.0f} % per seed, so not every "
-        "molecule is fitted by every network (with "
+        "entry is fitted by every network (with "
         f"{n} networks about {held:g}{str(n).translate(_SUPERSCRIPT)} ≈ "
         f"{100 * held**n:.1f} % by none). Its error bars were measured on the measurement "
         "networks of the same version — the same recipe trained without the hold-out "
         "molecules — on molecules those networks never saw; the release networks themselves "
-        "have seen every molecule we hold labels for, so they have no held-out error of "
-        "their own."
+        "have seen the hold-out molecules, so they have no held-out error of their own."
     )
 
 
@@ -507,6 +523,12 @@ class Release:
     shipped: ReleaseNetworks | None = None
     measurement: Training | None = None
 
+    def __post_init__(self) -> None:
+        """Refuse release networks without their measurement record, or the reverse."""
+        if (self.shipped is None) != (self.measurement is None):
+            msg = "release networks come with the measurement networks' record, and only they do"
+            raise ValueError(msg)
+
     @property
     def network_version(self) -> str:
         """The version every part of the release belongs to."""
@@ -550,32 +572,48 @@ def _reasons_to_refuse(
 
 
 def _pair_reasons(
-    n_seeds: int,
+    seeds: dict[str, str],
     evaluation: Evaluation,
     training: Training,
     pair: tuple[ReleaseNetworks, Training] | None,
 ) -> list[str]:
-    """Name where release networks and the measurement networks of their errors do not fit."""
+    """Name where release networks and the measurement networks of their errors do not fit.
+
+    ``seeds`` is each seed's tensor hash by seed name; the measurement record's version is
+    checked with the other parts' (``_reasons_to_refuse``).
+    """
     if pair is None:
         return []
     shipped, measurement = pair
     reasons = []
-    versions = {shipped.network_version, measurement.network_version, evaluation.network_version}
-    if len(versions) > 1:
-        named = f"{RELEASE_FILE} and {MEASUREMENT_FILE}"
-        reasons.append(f"{named} are of other versions: {sorted(versions)}")
+    others = {shipped.network_version, training.network_version} - {evaluation.network_version}
+    if others:
+        reasons.append(
+            f"{RELEASE_FILE} or {TRAINING_FILE} is of version {sorted(others)}, the evaluation "
+            f"of {evaluation.network_version}"
+        )
     if training.held_out_smiles:
         reasons.append(f"{TRAINING_FILE} lists hold-outs, and release networks hold nothing out")
     lacking = set(measurement.trained_smiles) - set(training.trained_smiles)
-    if lacking:
+    held_out = {s for smiles in measurement.held_out_smiles.values() for s in smiles}
+    for what, missing in (
+        ("molecule(s) the measurement networks trained on", lacking),
+        ("hold-out molecule(s)", held_out - set(training.trained_smiles)),
+    ):
+        if missing:
+            reasons.append(
+                f"the release networks lack {len(missing)} {what}: release networks train on "
+                "the measurement set and the hold-outs"
+            )
+    if shipped.seed_sha256 != seeds:
         reasons.append(
-            f"the release networks lack {len(lacking)} molecule(s) the measurement networks "
-            "trained on: a release set holds its measurement set"
+            f"{RELEASE_FILE} names other weights than the seeds beside it: it is the record of "
+            "other networks"
         )
-    if len(shipped.release_checkpoints) != n_seeds:
+    if len(shipped.release_checkpoints) != len(seeds):
         reasons.append(
             f"{RELEASE_FILE} names {len(shipped.release_checkpoints)} checkpoint(s), the "
-            f"folder holds {n_seeds} seed(s)"
+            f"folder holds {len(seeds)} seed(s)"
         )
     return reasons
 
@@ -686,10 +724,9 @@ def load(folder: Path) -> Release:
     measured = training if pair is None else pair[1]
     loaded = _load_seeds(folder)
     recipes = tuple(recipe for _, _, recipe in loaded)
+    seeds = {f"seed-{recipe.seed}": weights.recorded_sha256(path) for path, _, recipe in loaded}
     reasons = _reasons_to_refuse(recipes, evaluation, measured, invariance)
-    reasons += _pair_reasons(len(recipes), evaluation, training, pair)
-    if pair is not None and training.network_version != evaluation.network_version:
-        reasons.append(f"{TRAINING_FILE} is of version {training.network_version}")
+    reasons += _pair_reasons(seeds, evaluation, training, pair)
     if reasons:
         raise RefusedError([f"{folder}: {reason}" for reason in reasons])
     return Release(

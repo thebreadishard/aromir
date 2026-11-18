@@ -139,7 +139,7 @@ def test_the_record_and_its_text(
         "version": "1.3",
         "seeds": [0, 1],
         "higher_level": loaded.evaluation.higher_level,
-        "kind": "measured",
+        "kind": "measurement",
         "errors_measured_on": None,
     }
     assert record["accuracy"]["licensed_families"] == ["ring-ip", "CH-stretch", "CH-oop"]

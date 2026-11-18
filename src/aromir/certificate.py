@@ -3,7 +3,8 @@
 A corrected spectrum is only as good as the network behind it, and the network is known
 unevenly: well for some kinds of vibration, less well for others, not at all outside its
 training domain. The certificate states, band by band, the family the band belongs to,
-the error measured for that family on molecules the network never saw, whether the band is
+the error measured for that family on molecules the networks behind that error never saw
+(for release networks: the version's measurement networks), whether the band is
 licensed for this molecule, and how far the network's seeds disagree. It also states what
 that error does not cover: how far the positions move when the same molecule is turned,
 mirrored or listed in another atom order. Every number about the network comes from the
@@ -355,7 +356,7 @@ def _statement(
     return (
         f"{admitted.smiles}: the harmonic infrared spectrum of ΔH network "
         f"v{release.network_version} ({len(release.networks)} seeds), {LEVEL_NOTE} towards "
-        f"{evaluation.higher_level}, {made_by(release)} "
+        f"{evaluation.higher_level}{', ' if release.shipped is None else '. '}{made_by(release)} "
         f"{sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every hold-out "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
@@ -438,7 +439,7 @@ def build(
             "version": release.network_version,
             "seeds": [recipe.seed for recipe in release.recipes],
             "higher_level": evaluation.higher_level,
-            "kind": "measured" if release.shipped is None else "release",
+            "kind": "measurement" if release.shipped is None else "release",
             "errors_measured_on": (
                 None if release.shipped is None else release.shipped.measurement_checkpoints
             ),

@@ -246,10 +246,12 @@ def evaluate(release: Release, folder: Path) -> dict[str, Any]:
             release's seeds are release networks, which trained on the hold-outs.
     """
     if release.shipped is not None:
+        release_file = "release.json"
         reason = (
             f"the folder ships release networks of v{release.network_version}, which trained "
-            "on the hold-outs: their error there is no measurement. Evaluate the version's "
-            "measurement networks"
+            "on the hold-outs: their error there is no measurement. The folder's errors were "
+            "measured on the version's measurement networks, which the package does not ship "
+            f"({release_file} names their checkpoints)"
         )
         raise RefusedError([reason])
     holdouts = sorted(path for path in folder.iterdir() if path.is_dir()) if folder.is_dir() else []

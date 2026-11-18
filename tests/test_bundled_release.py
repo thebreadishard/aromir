@@ -81,7 +81,7 @@ def test_each_release_corrects_a_twisted_biphenyl_alike_on_every_platform(
     corrections = release.load(folder).corrections(geometry, hessian)
     assert len(corrections.per_seed) == len(pinned) == N_SEEDS
     for ours, theirs in zip(corrections.per_seed, pinned, strict=True):
-        assert 0.01 < float(np.abs(theirs).max()) < 0.1
+        assert 0.03 < float(np.abs(theirs).max()) < 0.05
         assert float(np.abs(ours - theirs).max()) <= DELTA_H_TOLERANCE
 
 
@@ -91,7 +91,12 @@ def test_the_bundled_release_ships_release_networks_and_names_both_kinds() -> No
     assert loaded.measurement is not None
     assert loaded.shipped.release_checkpoints == RELEASE_CHECKPOINTS
     assert loaded.shipped.measurement_checkpoints == MEASUREMENT_CHECKPOINTS
-    assert loaded.shipped.n_molecules == 1132
+    assert loaded.shipped.n_entries == 1132
+    seeds = {
+        f"seed-{recipe.seed}": sha
+        for recipe, sha in zip(loaded.recipes, loaded.tensor_sha256, strict=True)
+    }
+    assert loaded.shipped.seed_sha256 == seeds
     assert loaded.shipped.fitted_share == 0.85
     assert set(loaded.shipped.checks) == {
         "same_recipe",

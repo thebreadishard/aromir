@@ -8,18 +8,21 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Release networks beside measurement networks: a release folder may ship networks trained
-  on every molecule with labels, with `release.json` (the checkpoints of both kinds by
-  hash and the release checks, all passed) and `measurement.json` (the training record of
-  the measurement networks its errors belong to). Such a folder is refused when one record
-  comes without the other, a check failed, the release networks lack a molecule the
-  measurement networks trained on, or they list hold-outs. The certificate and the card
+  on their whole training pool, hold-outs included, with `release.json` (the shipped
+  seeds' tensor hashes, the checkpoints of both kinds by hash and the release checks, all
+  passed) and `measurement.json` (the training record of the measurement networks its
+  errors belong to). Such a folder is refused when one record comes without the other, a
+  check failed, the seeds are not the ones `release.json` names, the release networks lack
+  a molecule the measurement networks trained on or a hold-out molecule, or they list
+  hold-outs. The certificate and the card
   say which networks made the spectrum and which ones the error bars are of; a molecule in
   the release networks' training data is said to be there; a neutral molecule whose
   radical cation the networks trained on, but not the molecule itself, gets the measured
   cation test as a clause. `aromir evaluate` refuses release networks.
-- Network v1.4 ships inside the package as its release networks (1132 molecules with
-  labels), with the errors and licence of its measurement networks, measured with
-  `aromir evaluate`; v1.3's folder stays in the package for `--release`.
+- Network v1.4 ships inside the package as its release networks (1132 labelled entries:
+  1078 distinct neutral molecules and the radical cations of 50), with the errors and
+  licence of its measurement networks, measured with `aromir evaluate`; v1.3's folder stays
+  in the package for `--release`.
 
 - Admission: a molecule is parsed from a SMILES or an xyz file and refused, with every
   reason, unless it is one neutral, closed-shell aromatic molecule of H, C, N, O, F, S

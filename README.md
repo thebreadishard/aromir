@@ -73,8 +73,8 @@ another atom order).
 
 A version can be a pair of networks trained on one recipe. Its *measurement networks* are
 trained without the hold-out molecules, and every error and the licence are read on them;
-its *release networks* are trained on every molecule with labels, the hold-outs included,
-and are what the folder ships. v1.4 is such a pair. Its folder holds the release networks'
+its *release networks* are trained on the labelled entries of their training pool, the
+hold-out molecules included, and are what the folder ships. v1.4 is such a pair. Its folder holds the release networks'
 seeds and `training.json`, the measurement networks' training record as
 `measurement.json`, and `release.json`: the checkpoints of both kinds by hash and the
 checks the release networks passed before they were shipped (the same recipe, agreement
@@ -113,10 +113,13 @@ trained on. `aromir evaluate <folder>` measures it for a release on a folder of 
 molecules with stored Hessians (the format is in `aromir.evaluation`), together with the
 first-order error of each seed that a training run reports, which is a different and
 larger number. It refuses release networks, which trained on the hold-outs: v1.4's errors
-were measured with it on the version's measurement networks, and agree with the training
-project's own read to 0.01 cm⁻¹ in the same atom order. For v1.4 all four families are
-within the licence line; on the smaller hold-out the families CH-oop and 'other' rest on
-five and eight molecules, and the card and the certificate say what that is worth.
+were measured with it on the version's measurement networks (whose weights are not
+shipped), and agree to 0.005 cm⁻¹ with a second read by aromir's code on the training
+project's stored Hessians in the same atom order; the training project's own read, in its
+corpus atom order, differs by up to 0.05 cm⁻¹, because the network is not order-free. For
+v1.4 all four families are within the licence line; on the smaller hold-out, of eight
+molecules, the resampling intervals of CH-oop and 'other' cross it, and the card and the
+certificate say what that is worth.
 
 `aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it
@@ -228,6 +231,11 @@ $ ruff check . && ruff format --check . && mypy
 | 0.1 (this version) | the network's trained weights as a release, and its model card; positions are harmonic, and the certificate says so |
 | 0.2 | anharmonic band positions as an optional extra: a learned shift per band from a GFN2-xTB force field, with its measured error |
 | 1.0 | an answer that does not depend on the atom order, the training code, releases on PyPI and conda-forge |
+
+Open, not scheduled: the weights on the Hugging Face Hub as well, with a revision-pinned
+download for machines that install aromir without the weights (parked on 18 November
+2026). Until then the weights ship only inside the package, and nothing in it refers to
+the Hub.
 
 ## Licence
 
