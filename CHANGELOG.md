@@ -114,9 +114,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DetermineConnectivity`, are not those of the admitted SMILES ends the run before its
   Hessian (`AnotherMoleculeError`, exit 1), with the bonds that broke and formed named and
   the geometry kept: a gas-phase zwitterion whose proton moves back was computed and
-  named as the zwitterion. A contact between two atoms bonded to one same atom (a
-  four-membered ring's diagonal) is not called a bond. None of v1.4's 1078 training
-  molecules' start geometries is refused.
+  named as the zwitterion. The bonds are perceived as an xyz file's are, where a contact
+  between two atoms that share two bonded neighbours (a four-membered ring's diagonal,
+  1.97 Å in 1-methoxybiphenylene's start geometry) is not a bond. None of v1.4's 1078
+  training molecules' start geometries is refused.
 - A molecule outside the training chemistry is computed, printed and named as outside it,
   and none of its bands is licensed, as for one outside the training sizes: a charged atom
   whose element, charge, aromaticity, hydrogens and bonded neighbours no training
@@ -272,6 +273,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An xyz file is read the same whatever order it lists its atoms in. RDKit's
+  `DetermineBonds` keeps the first structure of a maximum matching that follows the atom
+  order, and refused a nitro compound in some listings (7 of 20 of one nitrobenzene
+  geometry; 469 of 21,700 listings over 84 of the shipped training molecules). The bonds
+  are now perceived from the distances alone, the atoms put in RDKit's canonical ranking
+  of that bond graph, and the bond orders sought in that order and, while none is found,
+  in its rotations by one atom (at most 16; the training molecules needed at most 8),
+  then mapped back onto the file's atoms; every listing of every training molecule gets
+  its SMILES's name. A contact between two atoms that share two bonded neighbours, a
+  four-membered ring's diagonal, is no bond: 1-methoxybiphenylene's force-field geometry
+  was read as `COC1=C2C34C=C[CH+]C=C3C24C=C[CH-]1`.
 - `aromir check` runs the gates `aromir spectrum` sets before its quantum chemistry, through
   one function both call: a molecule larger or smaller than the release's training
   molecules, with an element the release never trained on, or whose start geometry the

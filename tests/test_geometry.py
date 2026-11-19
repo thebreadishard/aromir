@@ -171,8 +171,9 @@ def test_a_ring_that_opened_is_named() -> None:
 
 
 def test_the_diagonal_of_a_four_membered_ring_is_no_bond_formed() -> None:
-    # Biphenylene's start geometry puts the ring's diagonal within bonding distance.
-    biphenylene = admission.admit(admission.read("c1ccc2c(c1)-c1ccccc1-2")).smiles
+    # 1-Methoxybiphenylene's start geometry puts the ring's diagonal within bonding
+    # distance (1.970 Å against 1.97 for two carbons).
+    biphenylene = admission.admit(admission.read("COc1cccc2c1-c1ccccc1-2")).smiles
     assert geometry.changed_bonds(biphenylene, geometry.start_from_smiles(biphenylene)) == []
 
 

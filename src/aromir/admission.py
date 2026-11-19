@@ -84,8 +84,93 @@ def parse_smiles(smiles: str) -> Mol:
     return Chem.AddHs(molecule)
 
 
+BOND_ORDER_ATTEMPTS: Final = 16
+"""The most atom orders bond orders are sought in (``_bond_orders``): a chosen bound, so a
+geometry no neutral pattern fits is refused after a fixed amount of work."""
+
+
+def perceive_connectivity(molecule: Mol) -> Mol:
+    """Return a molecule with its bonds perceived from its coordinates, all of them single.
+
+    RDKit's ``DetermineConnectivity`` bonds two atoms closer than the sum of their covalent
+    radii and 0.45 Å; called as in RDKit's
+    ``Code/GraphMol/DetermineBonds/Wrap/testDetermineBonds.py`` (``testCtDConnectivity``).
+    A contact between two atoms that share two bonded neighbours is dropped: it is the
+    diagonal of a four-membered ring, 1.970 Å in 1-methoxybiphenylene's force-field
+    geometry against a limit of 1.97 Å for two carbons, and a bond there would close two
+    three-membered rings, which no aromatic molecule of the domain has.
+    """
+    perceived = Chem.RWMol(molecule)
+    rdDetermineBonds.DetermineConnectivity(perceived)
+    neighbours = [
+        {neighbour.GetIdx() for neighbour in atom.GetNeighbors()} for atom in perceived.GetAtoms()
+    ]
+    diagonals = [
+        (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
+        for bond in perceived.GetBonds()
+        if len(neighbours[bond.GetBeginAtomIdx()] & neighbours[bond.GetEndAtomIdx()]) > 1
+    ]
+    for first, second in diagonals:
+        perceived.RemoveBond(first, second)
+    return perceived.GetMol()
+
+
+def _stereo_from_coordinates(molecule: Mol) -> None:
+    """Sanitise a molecule with bond orders and assign its stereo from its coordinates.
+
+    What ``DetermineBondOrders`` does when it embeds the chirality (RDKit's
+    ``Code/GraphMol/DetermineBonds/DetermineBonds.cpp``, ``setChirality``).
+    """
+    Chem.SanitizeMol(molecule)
+    Chem.SetDoubleBondNeighborDirections(molecule, molecule.GetConformer())
+    Chem.AssignStereochemistryFrom3D(molecule)
+
+
+def _bond_orders(molecule: Mol) -> Mol | None:
+    """Perceive a neutral molecule's bonds whatever order its atoms are listed in.
+
+    ``DetermineBondOrders`` keeps the first valid structure of a maximum matching whose
+    outcome follows the atom order, and does not try another matching: for one geometry
+    of nitrobenzene it fails in 7 of 20 listings. So the connectivity, which depends on
+    the distances alone, is perceived first (``perceive_connectivity``); the atoms are put
+    in RDKit's canonical ranking of that graph and its elements, with ties broken, which
+    gives every listing one graph in one order (atoms the graph cannot tell apart are
+    interchangeable in it); and the bond orders are sought in that order and, while none
+    is found, in its rotations by one atom, up to ``BOND_ORDER_ATTEMPTS``. The structure
+    found is mapped back onto the listing's atoms. Called as in RDKit's
+    ``Code/GraphMol/DetermineBonds/Wrap/testDetermineBonds.py`` (``DetermineConnectivity``,
+    ``DetermineBondOrders``) and ``Code/GraphMol/Wrap/rough_test.py``
+    (``CanonicalRankAtoms``, ``RenumberAtoms``).
+
+    Returns:
+        The molecule with its bonds, its atoms in the listing's order; None when no
+        neutral structure is found in any of the orders tried.
+    """
+    molecule = perceive_connectivity(molecule)
+    n_atoms = molecule.GetNumAtoms()
+    if n_atoms <= 1:
+        return molecule
+    molecule.UpdatePropertyCache(strict=False)
+    ranks = list(Chem.CanonicalRankAtoms(molecule, breakTies=True, includeChirality=False))
+    canonical = sorted(range(n_atoms), key=ranks.__getitem__)
+    for shift in range(min(n_atoms, BOND_ORDER_ATTEMPTS)):
+        order = canonical[shift:] + canonical[:shift]
+        trial = Chem.RenumberAtoms(molecule, order)
+        try:
+            rdDetermineBonds.DetermineBondOrders(trial, charge=0, embedChiral=False)
+            back = Chem.RenumberAtoms(trial, sorted(range(n_atoms), key=order.__getitem__))
+            _stereo_from_coordinates(back)
+        except ValueError:  # no neutral structure in this order, or one that does not sanitise
+            continue
+        return back
+    return None
+
+
 def parse_xyz(path: Path) -> Mol:
     """Read an xyz file (Å) and perceive its bonds from the geometry, as a neutral molecule.
+
+    The bonds found do not depend on the order the file lists the atoms in
+    (``_bond_orders``).
 
     Raises:
         RefusedError: The file does not parse, or no neutral bonding pattern fits it.
@@ -99,11 +184,10 @@ def parse_xyz(path: Path) -> Mol:
     molecule = Chem.MolFromXYZBlock(text)
     if molecule is None:
         raise RefusedError([f"{path} does not parse as an xyz file"])
-    try:
-        rdDetermineBonds.DetermineBonds(molecule, charge=0)
-    except ValueError as error:
-        raise RefusedError([f"{path}: no neutral bonding pattern fits the geometry"]) from error
-    return molecule
+    bonded = _bond_orders(molecule)
+    if bonded is None:
+        raise RefusedError([f"{path}: no neutral bonding pattern fits the geometry"])
+    return bonded
 
 
 def without_hydrogens(molecule: Mol) -> Mol:

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 from rdkit import Chem
+from rdkit.Chem import rdDetermineBonds
 
 from aromir import admission, pipeline
 from aromir.constants import ANGSTROM_PER_BOHR
@@ -443,3 +444,51 @@ def test_a_structure_already_preferred_keeps_its_charges_on_its_atoms(smiles: st
     assert [a.GetFormalCharge() for a in read.GetAtoms()] == [
         a.GetFormalCharge() for a in given.GetAtoms()
     ]
+
+
+LISTING_FREE = [
+    "O=[N+]([O-])c1ccccc1",
+    "O=[N+]([O-])c1cccc([N+](=O)[O-])c1",
+    "O=[N+]([O-])c1ccc2ccccc2c1",
+    "Nc1ccc([N+](=O)[O-])cc1",
+    "[N-]=[N+]=Nc1ccccc1",
+    "[O-][n+]1ccccc1",
+    "N#Cc1ccccc1",
+]
+"""Nitro compounds RDKit's DetermineBonds refused in some listings, and three that it did not."""
+
+
+@pytest.mark.parametrize("smiles", LISTING_FREE)
+def test_every_listing_of_an_xyz_file_is_admitted_under_one_name(
+    smiles: str, tmp_path: Path
+) -> None:
+    named, made = pipeline.admit(pipeline.MoleculeInput(smiles=smiles))
+    names = set()
+    for seed in range(20):
+        path = _listed(made, tmp_path / f"{seed}.xyz", seed)
+        names.add(admission.admit(admission.read(path)).smiles)
+    assert names == {named.smiles}
+
+
+def test_the_listings_of_nitrobenzene_include_some_the_plain_call_refuses(tmp_path: Path) -> None:
+    # What the test above holds: bond orders sought in the file's own order fail for
+    # some listings of nitrobenzene (7 of these 20 in RDKit 2026.09).
+    _, made = pipeline.admit(pipeline.MoleculeInput(smiles="O=[N+]([O-])c1ccccc1"))
+    refused = 0
+    for seed in range(20):
+        molecule = Chem.MolFromXYZBlock(
+            _listed(made, tmp_path / "n.xyz", seed).read_text(encoding="utf-8")
+        )
+        try:
+            rdDetermineBonds.DetermineBonds(molecule, charge=0)
+        except ValueError:
+            refused += 1
+    assert refused > 0
+
+
+def test_a_four_membered_rings_diagonal_is_no_bond_of_an_xyz_file(tmp_path: Path) -> None:
+    # The force-field geometry puts the diagonal at 1.970 Å, within the 1.97 Å of two
+    # carbons: read as a bond, it gave COC1=C2C34C=C[CH+]C=C3C24C=C[CH-]1.
+    named, made = pipeline.admit(pipeline.MoleculeInput(smiles="COc1cccc2c1-c1ccccc1-2"))
+    read = admission.admit(admission.read(_listed(made, tmp_path / "b.xyz", 0)))
+    assert read.smiles == named.smiles

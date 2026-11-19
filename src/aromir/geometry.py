@@ -11,9 +11,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from rdkit import Chem
-from rdkit.Chem import rdDetermineBonds, rdDistGeom, rdForceFieldHelpers
+from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
 
-from aromir.admission import without_hydrogens
+from aromir.admission import perceive_connectivity, without_hydrogens
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.errors import RefusedError
 from aromir.molecule import Geometry
@@ -98,16 +98,11 @@ def changed_bonds(admitted_smiles: str, geometry: Geometry) -> list[str]:
 
     The admitted molecule's bonds are read from its canonical SMILES, whose atoms with
     their hydrogens added are in the canonical order (``start_from_smiles``); the
-    geometry's are perceived from its interatomic distances with RDKit's
-    ``DetermineConnectivity``, called as in RDKit's
-    ``Code/GraphMol/DetermineBonds/Wrap/testDetermineBonds.py`` (``testCtDConnectivity``,
-    which compares the bonds perceived on a geometry with those of its SMILES). An
-    optimisation that moved a proton, opened a ring or joined two atoms has computed
-    another molecule than the one admitted.
-
-    A contact between two atoms bonded to one same atom is not called a bond formed: the
-    diagonal of a four-membered ring lies within bonding distance (biphenylene's start
-    geometry), and a proton that moves to such an atom breaks its old bond, which is named.
+    geometry's are perceived from its interatomic distances as an xyz file's are
+    (``admission.perceive_connectivity``; RDKit's ``testCtDConnectivity`` compares the
+    bonds so perceived on a geometry with those of its SMILES). An optimisation that moved
+    a proton, opened a ring or joined two atoms has computed another molecule than the one
+    admitted.
 
     Raises:
         ValueError: The geometry's atoms are not the SMILES's, in its order.
@@ -121,21 +116,16 @@ def changed_bonds(admitted_smiles: str, geometry: Geometry) -> list[str]:
         f"{s} {x:.10f} {y:.10f} {z:.10f}"
         for s, (x, y, z) in zip(geometry.symbols, angstrom, strict=True)
     ]
-    perceived = Chem.MolFromXYZBlock("\n".join([str(geometry.n_atoms), "", *rows]) + "\n")
-    rdDetermineBonds.DetermineConnectivity(perceived)
+    perceived = perceive_connectivity(
+        Chem.MolFromXYZBlock("\n".join([str(geometry.n_atoms), "", *rows]) + "\n")
+    )
     expected, found = _pairs(admitted), _pairs(perceived)
-    neighbours = [
-        {neighbour.GetIdx() for neighbour in atom.GetNeighbors()} for atom in admitted.GetAtoms()
-    ]
-    formed = [
-        pair for pair in sorted(found - expected) if not neighbours[pair[0]] & neighbours[pair[1]]
-    ]
 
     def named(pair: tuple[int, int]) -> str:
         return "–".join(f"{geometry.symbols[k]}{k + 1}" for k in pair)
 
     return [f"the bond {named(pair)} broke" for pair in sorted(expected - found)] + [
-        f"a bond {named(pair)} formed" for pair in formed
+        f"a bond {named(pair)} formed" for pair in sorted(found - expected)
     ]
 
 
