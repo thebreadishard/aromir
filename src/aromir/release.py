@@ -355,6 +355,19 @@ class CationTest(BaseModel):
     source: str = Field(min_length=1)
 
 
+def _refuse_nonstandard(smiles: list[str]) -> None:
+    """Raise for the first entry that is not in the standard form admission writes.
+
+    Raises:
+        ValueError: An entry does not parse, or admission would write it otherwise.
+    """
+    for entry in smiles:
+        standard = standard_smiles(entry)
+        if standard != entry:
+            msg = f"{entry!r} is not in the standard form admission writes ({standard!r})"
+            raise ValueError(msg)
+
+
 class Training(BaseModel):
     """What a network version was trained on.
 
@@ -387,17 +400,20 @@ class Training(BaseModel):
     cation_test: CationTest | None = None
 
     # The 'seen' look-up compares an admitted SMILES with these lists, and admission writes
-    # a molecule's standard form: the lists are read in that form too, whatever canonical
-    # writing the record holds. The record's file, and its hash, stay as they are.
+    # a molecule's standard form: an entry in another form could never be found, and
+    # rewriting it could merge two entries unseen, so it is refused.
     @field_validator("trained_smiles", "cation_parent_smiles", mode="after")
     @classmethod
     def _standard_list(cls, smiles: list[str] | None) -> list[str] | None:
-        return None if smiles is None else [standard_smiles(one) for one in smiles]
+        _refuse_nonstandard(smiles or [])
+        return smiles
 
     @field_validator("held_out_smiles", mode="after")
     @classmethod
     def _standard_lists(cls, held_out: dict[str, list[str]]) -> dict[str, list[str]]:
-        return {name: [standard_smiles(one) for one in smiles] for name, smiles in held_out.items()}
+        for smiles in held_out.values():
+            _refuse_nonstandard(smiles)
+        return held_out
 
     @model_validator(mode="after")
     def _a_set_that_can_exist(self) -> Self:

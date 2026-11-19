@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -219,3 +220,119 @@ def test_an_xyz_sulfoxide_keeps_the_configuration_of_its_geometry(tmp_path: Path
     from_xyz, _ = pipeline.admit(pipeline.MoleculeInput(xyz=_listed(made, tmp_path / "s.xyz", 0)))
     assert from_xyz.smiles in {"C[S@+]([O-])c1ccccc1", "C[S@@+]([O-])c1ccccc1"}
     assert from_xyz.unassigned_stereo == ()
+
+
+SYDNONE = "[O-]c1c[n+](-c2ccccc2)no1"
+
+
+def test_a_step_that_would_change_the_hydrogens_is_discarded(tmp_path: Path) -> None:
+    # On a sydnone RDKit's Normalizer and a resonance structure both rebuilt the molecule
+    # with two more hydrogens (O=C1CN(c2ccccc2)NO1) when hydrogens could still be implied.
+    admitted = admission.admit(admission.read(SYDNONE))
+    assert admitted.smiles == SYDNONE
+    assert admitted.formula == "C8H6N2O2"
+    _, made = pipeline.admit(pipeline.MoleculeInput(smiles=SYDNONE))
+    for seed in range(4):
+        path = _listed(made, tmp_path / f"{seed}.xyz", seed)
+        from_xyz = admission.admit(admission.read(path))
+        assert from_xyz.formula == "C8H6N2O2"
+        assert admission.fixed_h_key(from_xyz.smiles) == admission.fixed_h_key(SYDNONE)
+
+
+def test_a_betaine_keeps_its_aromatic_form() -> None:
+    admitted = admission.admit(admission.read("[O-]c1ccc(C=Cc2cc[n+](C)cc2)cc1"))
+    assert admitted.smiles == "C[n+]1ccc(C=Cc2ccc([O-])cc2)cc1"
+
+
+@pytest.mark.parametrize(
+    ("smiles", "named"),
+    [
+        ("[CH2-][n+]1ccccc1", "[CH2-][n+]1ccccc1"),
+        ("[N-]=[N+]=Cc1ccccc1", "[N-]=[N+]=Cc1ccccc1"),
+        ("[O-]c1ccc([N+]#N)cc1", "N#[N+]c1ccc([O-])cc1"),
+    ],
+)
+def test_an_ylide_or_a_diazo_compound_gets_one_name_in_every_listing(
+    smiles: str, named: str, tmp_path: Path
+) -> None:
+    # Bond perception puts the ylide's charge in the ring (C=[N+]1C=CC=C[CH-]1); only an
+    # enumeration that may move a charge onto carbon finds the usual structure from there.
+    _, made = pipeline.admit(pipeline.MoleculeInput(smiles=smiles))
+    assert admission.admit(admission.read(smiles)).smiles == named
+    for seed in range(8):
+        reading = admission.read(_listed(made, tmp_path / f"{seed}.xyz", seed))
+        assert admission.admit(reading).smiles == named
+
+
+class _NoStructures:
+    """A resonance supplier that finds nothing, as RDKit's does for some molecules."""
+
+    def __init__(self, *_arguments: object) -> None:
+        pass
+
+    def SetProgressCallback(self, _callback: object) -> None:  # noqa: N802  RDKit's name
+        pass
+
+    def Enumerate(self) -> None:  # noqa: N802  RDKit's name
+        pass
+
+    def WasCanceled(self) -> bool:  # noqa: N802  RDKit's name
+        return False
+
+    def __len__(self) -> int:
+        return 0
+
+
+def test_an_enumeration_that_finds_nothing_keeps_the_structure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(Chem, "ResonanceMolSupplier", _NoStructures)
+    assert admission.admit(admission.read("N#[N+][N-]c1ccccc1")).smiles == "N#[N+][N-]c1ccccc1"
+
+
+def test_an_enumeration_that_reaches_its_cap_keeps_the_structure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(admission, "RESONANCE_MAX_STRUCTURES", 2)
+    assert admission.admit(admission.read("N#[N+][N-]c1ccccc1")).smiles == "N#[N+][N-]c1ccccc1"
+
+
+def test_an_enumeration_past_its_time_keeps_the_structure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(admission, "RESONANCE_SECONDS", -1.0)
+    assert admission.admit(admission.read("N#[N+][N-]c1ccccc1")).smiles == "N#[N+][N-]c1ccccc1"
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        (
+            "O=[N+]([O-])c1c([N+](=O)[O-])c([N+](=O)[O-])c2c([N+](=O)[O-])c([N+](=O)[O-])"
+            "c([N+](=O)[O-])c([N+](=O)[O-])c2c1[N+](=O)[O-]"
+        ),
+        "[N-]=[N+]=Nc1c(N=[N+]=[N-])c(N=[N+]=[N-])c(N=[N+]=[N-])c(N=[N+]=[N-])c1N=[N+]=[N-]",
+    ],
+)
+def test_the_resonance_enumeration_is_bounded_in_time(smiles: str) -> None:
+    started = time.monotonic()
+    admission.read(smiles)
+    assert time.monotonic() - started < 10 * admission.RESONANCE_SECONDS
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "O=[N+]([O-])c1ccccc1",
+        "O=[N+]([O-])c1cccc([N+](=O)[O-])c1",
+        "[O-][n+]1ccccc1",
+        "C[S+]([O-])c1ccccc1",
+        "[N-]=[N+]=Nc1ccccc1",
+    ],
+)
+def test_a_structure_already_preferred_keeps_its_charges_on_its_atoms(smiles: str) -> None:
+    # A nitro group's two structures tie: the one given is kept, so the charge stays on
+    # the oxygen the canonical SMILES puts it on.
+    given = admission.parse_smiles(smiles)
+    read = admission.read(smiles).molecule
+    assert [a.GetFormalCharge() for a in read.GetAtoms()] == [
+        a.GetFormalCharge() for a in given.GetAtoms()
+    ]

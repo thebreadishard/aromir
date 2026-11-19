@@ -155,6 +155,11 @@ def test_every_smiles_a_shipped_release_lists_is_in_the_form_admission_writes(
     rewritten = [s for s in listed if admission.standard_smiles(s) != s]
     assert rewritten == []
     assert all(Chem.MolToSmiles(Chem.MolFromSmiles(s)) == s for s in listed)
+    # The 'seen' look-up's second key must name one entry: no two molecules share one.
+    distinct = set(listed)
+    keys = {admission.fixed_h_key(s) for s in distinct}
+    assert None not in keys
+    assert len(keys) == len(distinct)
 
 
 def test_a_mapped_writing_of_a_trained_molecule_is_said_to_be_trained() -> None:

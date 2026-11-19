@@ -14,15 +14,19 @@ release's records.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from functools import cache
 from typing import TYPE_CHECKING, Any, Final
 
 from rdkit import Chem
 
 from aromir import families, repair, spectrum, vibrations
+from aromir.admission import fixed_h_key
 from aromir.network import primitives
 from aromir.release import error_text, level_name, made_by
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from aromir.admission import Admission
     from aromir.lowlevel import LowLevel
     from aromir.molecule import Geometry
@@ -192,17 +196,36 @@ RELEASE_TRAINED: Final = (
 )
 
 
+@cache
+def _keys(listed: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(key for smiles in listed if (key := fixed_h_key(smiles)) is not None)
+
+
+def _among(smiles: str, listed: Iterable[str]) -> bool:
+    """Tell whether a molecule is in a list: by its standard SMILES, else by its FixedH key.
+
+    The key finds a molecule whose admitted structure depends on how it was given, such
+    as a pyridinium ylide read from an xyz file, where the resonance step keeps the
+    structure bond perception gave.
+    """
+    listed = tuple(listed)
+    if smiles in listed:
+        return True
+    key = fixed_h_key(smiles)
+    return key is not None and key in _keys(listed)
+
+
 def _a_stereoisomer_of(smiles: str, training: Training) -> bool:
     plain = _without_stereo(smiles)
-    return plain in {_without_stereo(trained) for trained in training.trained_smiles}
+    return _among(plain, (_without_stereo(trained) for trained in training.trained_smiles))
 
 
 def _met(smiles: str, training: Training) -> str:
     """Say whether the networks of a training record have met a molecule."""
-    if smiles in training.trained_smiles:
+    if _among(smiles, training.trained_smiles):
         return "in the network's training set: the hold-out error is not this molecule's measure"
     for holdout, held_out in training.held_out_smiles.items():
-        if smiles in held_out:
+        if _among(smiles, held_out):
             return f"in hold-out ({holdout}): never trained on; the measured error includes it"
     if _a_stereoisomer_of(smiles, training):
         return (
@@ -223,7 +246,7 @@ def _cation_clause(test: CationTest) -> str:
 
 
 def acquaintance(smiles: str, training: Training, measured: Training | None = None) -> str:
-    """Say whether the networks have met a molecule, by its canonical SMILES.
+    """Say whether the networks have met a molecule, by its standard SMILES or FixedH key.
 
     ``training`` is the record of the networks that make the spectrum. ``measured`` is
     given when they are release networks: the record of the measurement networks their
@@ -235,7 +258,7 @@ def acquaintance(smiles: str, training: Training, measured: Training | None = No
     trained on, while they did not train on the molecule itself, gets the clause of the
     cation test.
     """
-    if measured is not None and smiles in training.trained_smiles:
+    if measured is not None and _among(smiles, training.trained_smiles):
         return RELEASE_TRAINED
     if measured is not None and _a_stereoisomer_of(smiles, training):
         return (
@@ -244,8 +267,8 @@ def acquaintance(smiles: str, training: Training, measured: Training | None = No
         )
     said = _met(smiles, training if measured is None else measured)
     test = training.cation_test
-    trained = smiles in training.trained_smiles
-    if test is None or trained or smiles not in (training.cation_parent_smiles or ()):
+    trained = _among(smiles, training.trained_smiles)
+    if test is None or trained or not _among(smiles, training.cation_parent_smiles or ()):
         return said
     return f"{UNSEEN_NEUTRAL if said == UNSEEN else said}; {_cation_clause(test)}"
 

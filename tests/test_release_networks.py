@@ -285,7 +285,7 @@ def test_release_networks_come_with_their_measurement_record(pair: release.Relea
 
 def test_a_stereoisomer_in_the_release_networks_data_is_not_called_unseen() -> None:
     trained = RELEASE_TRAINING | {
-        "trained_smiles": [*RELEASE_TRAINING["trained_smiles"], "C(=C/c1ccccc1)\\c1ccccc1"]
+        "trained_smiles": [*RELEASE_TRAINING["trained_smiles"], "C(=C\\c1ccccc1)/c1ccccc1"]
     }
     both = release.Training.model_validate(trained)
     measured = release.Training.model_validate(TRAINING)

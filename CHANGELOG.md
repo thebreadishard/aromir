@@ -179,10 +179,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a sulfoxide otherwise than the SMILES did, with the same consequences. Both routes now
   read the input into one standard form (`admission.read`): map numbers are cleared and
   the certificate and `aromir check` say so; RDKit's Normalizer writes a hypervalent
-  sulfoxide or nitro group charge-separated; a molecule that still carries charges gets
-  one resonance structure, chosen by the molecule alone (`[N-]=[N+]=N` for an azide).
-  The training lists are read in the same form for the 'seen' look-up; every SMILES the
-  shipped releases list is already in it, so their records and hashes are unchanged.
+  sulfoxide or nitro group charge-separated; a molecule that still carries charges keeps
+  its structure when no resonance structure is preferred to it, and otherwise takes the
+  preferred one (`[N-]=[N+]=N` for an azide, `[CH2-][n+]1ccccc1` for a pyridinium
+  ylide). No step may change the formula, an atom's hydrogens or its aromatic count (a
+  sydnone keeps its hydrogens, a betaine its aromatic form); an enumeration that finds
+  nothing, passes 64 structures or 1 s keeps the given structure. The 'seen' look-up
+  matches the standard SMILES and then InChI's fixed-hydrogen key, which is the same for
+  every resonance structure. A release whose training lists hold an entry admission
+  would write otherwise is refused; every SMILES the shipped releases list is already in
+  that form and no two share a key, so their records and hashes are unchanged. A run
+  started by an earlier version from such a request is refused with that reason.
 - A molecule with a flat coordinate — a nearly free torsion — gets its spectrum. On
   3-vinylfuran the run found a saddle point at -12 cm⁻¹, stepped 0.1 bohr off it, and
   the second optimisation ended after 100 steps with the energy and the forces

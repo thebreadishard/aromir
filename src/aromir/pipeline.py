@@ -193,6 +193,21 @@ def _damaged(folder: Path, what: str, error: Exception) -> RefusedError:
     return RefusedError([reason])
 
 
+def _restandardised(held: dict[str, Any], asked: dict[str, Any]) -> bool:
+    """Tell whether a held run is this request written in an older standard form."""
+    old = held.get("smiles")
+    if (
+        not isinstance(old, str)
+        or old == asked["smiles"]
+        or held.get("command") != asked["command"]
+    ):
+        return False
+    try:
+        return bool(admission.standard_smiles(old) == asked["smiles"])
+    except ValueError:
+        return False
+
+
 def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, _Run]:
     """Return the result folder and the state of the run it holds, new or to be resumed.
 
@@ -215,6 +230,14 @@ def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, _Run]:
     except (OSError, ValueError, ValidationError) as error:
         raise _damaged(folder, RUN_FILE, error) from error
     if state.asked != asked:
+        if _restandardised(state.asked, asked):
+            reason = (
+                f"{folder} holds the unfinished run of {state.asked['smiles']}, which this "
+                f"version of aromir reads in another standard form ({asked['smiles']}): "
+                "delete the folder to start over, or finish the run with the version that "
+                "started it"
+            )
+            raise RefusedError([reason])
         differing = sorted(key for key in asked if state.asked.get(key) != asked[key])
         reason = (
             f"{folder} holds the unfinished run of another request "

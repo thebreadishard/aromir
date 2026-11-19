@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from aromir import admission, certificate, families, geometry, lowlevel, release, response, spectrum
 from aromir import vibrations as vib
@@ -127,16 +128,34 @@ def test_the_certificate_says_whether_the_network_met_the_molecule(
     assert expected in certificate.acquaintance(smiles, training)
 
 
-def test_a_training_record_is_read_in_the_form_admission_writes() -> None:
-    written = TRAINING | {
-        "trained_smiles": ["[cH:1]1ccc2ccccc2c1", "CS(=O)c1ccccc1"],
-        "held_out_smiles": {"a": ["N#[N+][N-]c1ccccc1"], "b": ["Cc1ccccc1"]},
-    }
-    training = release.Training.model_validate(written)
-    assert training.trained_smiles == ["c1ccc2ccccc2c1", "C[S+]([O-])c1ccccc1"]
-    assert training.held_out_smiles == {"a": ["[N-]=[N+]=Nc1ccccc1"], "b": ["Cc1ccccc1"]}
-    sulfoxide = admission.admit(admission.read("C[S+]([O-])c1ccccc1")).smiles
-    assert "in the network's training set" in certificate.acquaintance(sulfoxide, training)
+@pytest.mark.parametrize(
+    ("field", "entry"),
+    [
+        ("trained_smiles", ["[cH:1]1ccc2ccccc2c1"]),
+        ("trained_smiles", ["CS(=O)c1ccccc1"]),
+        ("held_out_smiles", {"a": ["N#[N+][N-]c1ccccc1"], "b": ["Cc1ccccc1"]}),
+    ],
+)
+def test_a_training_record_not_in_the_form_admission_writes_is_refused(
+    field: str, entry: object
+) -> None:
+    with pytest.raises(ValidationError, match="is not in the standard form admission writes"):
+        release.Training.model_validate(TRAINING | {field: entry})
+
+
+def test_a_molecule_is_found_by_its_fixed_h_key_where_its_name_differs() -> None:
+    # A sydnone read from an xyz file keeps the structure bond perception gave, which
+    # depends on the atom order: its name differs, its key does not.
+    training = release.Training.model_validate(
+        TRAINING | {"trained_smiles": ["[O-]c1c[n+](-c2ccccc2)no1"]}
+    )
+    other = "[O-]c1cn(-c2ccccc2)n[o+]1"
+    assert admission.standard_smiles(other) == other
+    assert "in the network's training set" in certificate.acquaintance(other, training)
+    # The fixed-hydrogen layer keeps tautomers apart: 2-pyridone does not stand for
+    # 2-hydroxypyridine.
+    pyridone = release.Training.model_validate(TRAINING | {"trained_smiles": ["O=c1cccc[nH]1"]})
+    assert certificate.acquaintance("Oc1ccccn1", pyridone) == certificate.UNSEEN
 
 
 def test_the_certificate_says_what_reading_the_input_changed(

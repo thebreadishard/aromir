@@ -6,12 +6,13 @@ request outside that domain is refused with every reason found, not answered bad
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 from typing import Any, Final
 
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Chem import rdDetermineBonds
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from rdkit.Chem.rdMolDescriptors import CalcMolFormula
@@ -120,42 +121,114 @@ def without_hydrogens(molecule: Mol) -> Mol:
 _NORMALIZER: Final = rdMolStandardize.Normalizer()
 """RDKit's Normalizer with its default (MolVS) transforms, built once."""
 
+RESONANCE_MAX_STRUCTURES: Final = 64
+"""The most resonance structures enumerated; a molecule with more keeps its own structure."""
 
-def _preference(form: Mol) -> tuple[int, int, int, str]:
-    """Rank a resonance structure: the smallest key is the one the package works on.
+RESONANCE_FLAGS: Final = Chem.UNCONSTRAINED_ANIONS | Chem.UNCONSTRAINED_CATIONS
+"""Let the enumeration move a charge onto any atom. By default RDKit keeps a negative charge
+on the most electronegative atoms, so from the structure bond perception gives a pyridinium
+methylide (``C=[N+]1C=CC=C[CH-]1``) or a diazo compound it finds no other, and from
+``[N-]=[N+]=Cc1ccccc1`` none at all; ``_preference`` still puts carbanions last."""
 
-    Fewest charged atoms first, then no negative charge on carbon, then negative charges
-    on terminal atoms (the usual writing of an azide, a nitro group, an N-oxide); the
-    canonical SMILES breaks a remaining tie, so the choice depends on the molecule alone,
-    not on the order or the structure it was given in.
-    """
-    anions = [atom for atom in form.GetAtoms() if atom.GetFormalCharge() < 0]
+RESONANCE_SECONDS: Final = 1.0
+"""Wall-clock limit of the enumeration; a molecule that needs longer keeps its own structure."""
+
+Composition = tuple[str, tuple[int, ...], tuple[int, ...]]
+"""The formula and each atom's hydrogens and unpaired electrons: what no step may change."""
+
+
+def _composition(molecule: Mol) -> Composition:
+    atoms = list(molecule.GetAtoms())
     return (
-        sum(atom.GetFormalCharge() != 0 for atom in form.GetAtoms()),
-        sum(atom.GetAtomicNum() == 6 for atom in anions),
-        sum(neighbour.GetAtomicNum() > 1 for atom in anions for neighbour in atom.GetNeighbors()),
-        Chem.MolToSmiles(without_hydrogens(form)),
+        CalcMolFormula(molecule),
+        tuple(atom.GetTotalNumHs(includeNeighbors=True) for atom in atoms),
+        tuple(atom.GetNumRadicalElectrons() for atom in atoms),
     )
 
 
-def _one_resonance_structure(molecule: Mol) -> None:
-    """Give a charge-separated molecule, in place, its preferred resonance structure.
+def _structure(molecule: Mol) -> tuple[tuple[int, ...], tuple[Any, ...]]:
+    """Return each atom's formal charge and each bond's type: the Lewis structure."""
+    return (
+        tuple(atom.GetFormalCharge() for atom in molecule.GetAtoms()),
+        tuple(bond.GetBondType() for bond in molecule.GetBonds()),
+    )
 
-    Bond perception from a geometry places the charges of an azide or a sulfoxide where it
-    happens to (``N#[N+][N-]R`` or ``N#[N+]N=c1cccc[cH-]1`` for ``[N-]=[N+]=NR``), and
-    RDKit's own ranking of resonance structures leaves such ties to the atom order. Every
-    structure ``Chem.ResonanceMolSupplier`` enumerates is ranked by ``_preference``, and the
-    first one's bonds and charges are set on the molecule's own atoms, so an xyz file's
-    coordinates still belong to them. The supplier is called as in RDKit's
-    ``Code/GraphMol/Wrap/rough_test.py``; the stereo is assigned again, from the
-    coordinates where there are any, as in the same file's ``AssignStereochemistryFrom3D``
-    tests.
+
+def _n_aromatic(molecule: Mol) -> int:
+    return sum(atom.GetIsAromatic() for atom in molecule.GetAtoms())
+
+
+def _preference(form: Mol) -> tuple[int, int, int, int]:
+    """Rank a resonance structure: the smallest key is preferred.
+
+    Fewest charged atoms first, then no negative and then no positive charge on carbon
+    (a pyridinium ylide is ``[CH2-][n+]1ccccc1``, not ``[CH2-]n1cccc[cH+]1``), then negative
+    charges on terminal atoms (the usual writing of an azide, a nitro group, an N-oxide).
     """
-    forms = []
-    for form in Chem.ResonanceMolSupplier(molecule):
-        Chem.SanitizeMol(form)
-        forms.append(form)
-    chosen = min(forms, key=_preference)
+    charged = [atom for atom in form.GetAtoms() if atom.GetFormalCharge()]
+    anions = [atom for atom in charged if atom.GetFormalCharge() < 0]
+    return (
+        len(charged),
+        sum(atom.GetAtomicNum() == 6 for atom in anions),
+        sum(atom.GetAtomicNum() == 6 and atom.GetFormalCharge() > 0 for atom in charged),
+        sum(neighbour.GetAtomicNum() > 1 for atom in anions for neighbour in atom.GetNeighbors()),
+    )
+
+
+def _charge_placement(form: Mol) -> tuple[tuple[int, int], ...]:
+    """Return (atom index, formal charge) of the charged atoms: the last tie-break."""
+    return tuple(
+        (atom.GetIdx(), atom.GetFormalCharge())
+        for atom in form.GetAtoms()
+        if atom.GetFormalCharge()
+    )
+
+
+class _Deadline(Chem.ResonanceMolSupplierCallback):
+    """Cancel a resonance enumeration that outlasts its time (returning False cancels it)."""
+
+    def __init__(self, seconds: float) -> None:
+        super().__init__()
+        self._end = time.monotonic() + seconds
+
+    def __call__(self) -> bool:  # type: ignore[override]  # RDKit's stubs add a None overload
+        return time.monotonic() < self._end
+
+
+def _resonance_candidates(molecule: Mol) -> list[Mol]:
+    """Return the resonance structures that may replace a molecule's own; none to keep it.
+
+    A structure qualifies when it sanitises, keeps the formula and every atom's hydrogens
+    and unpaired electrons, and keeps at least as many aromatic atoms as the molecule
+    (a betaine is not swapped for its quinoid form). An enumeration that finds nothing,
+    reaches ``RESONANCE_MAX_STRUCTURES`` (the choice would depend on which ones it found)
+    or outlasts ``RESONANCE_SECONDS`` keeps the molecule as it is. The supplier is built as
+    in RDKit's ``Code/GraphMol/Wrap/rough_test.py`` (its resonance supplier tests, which
+    also set a progress callback).
+    """
+    supplier = Chem.ResonanceMolSupplier(molecule, RESONANCE_FLAGS, RESONANCE_MAX_STRUCTURES)
+    supplier.SetProgressCallback(_Deadline(RESONANCE_SECONDS))
+    supplier.Enumerate()
+    if supplier.WasCanceled() or not 0 < len(supplier) < RESONANCE_MAX_STRUCTURES:
+        return []
+    composition, n_aromatic = _composition(molecule), _n_aromatic(molecule)
+    candidates = []
+    for form in supplier:
+        if form is None or Chem.SanitizeMol(form, catchErrors=True) != Chem.SANITIZE_NONE:
+            continue
+        if _composition(form) == composition and _n_aromatic(form) >= n_aromatic:
+            candidates.append(form)
+    return candidates
+
+
+def _set_structure(molecule: Mol, form: Mol) -> None:
+    """Give a molecule, in place, the bonds and charges of one of its resonance structures.
+
+    The molecule's own atoms are kept, so an xyz file's coordinates still belong to them;
+    the stereo is assigned again, from the coordinates where there are any, as in RDKit's
+    ``Code/GraphMol/Wrap/rough_test.py`` (``AssignStereochemistryFrom3D``).
+    """
+    chosen = Chem.Mol(form)
     Chem.Kekulize(chosen, clearAromaticFlags=True)
     Chem.Kekulize(molecule, clearAromaticFlags=True)
     for atom in molecule.GetAtoms():
@@ -169,30 +242,72 @@ def _one_resonance_structure(molecule: Mol) -> None:
         Chem.AssignStereochemistry(molecule, cleanIt=True, force=True)
 
 
+def _one_resonance_structure(molecule: Mol) -> None:
+    """Give a charge-separated molecule, in place, its preferred resonance structure.
+
+    Bond perception from a geometry places the charges of an azide where it happens to
+    (``N#[N+][N-]R`` or ``N#[N+]N=c1cccc[cH-]1`` for ``[N-]=[N+]=NR``). Among the
+    candidates (``_resonance_candidates``) the molecule keeps its own bonds and charges
+    when its ``_preference`` is the smallest; otherwise it takes the candidate with the
+    smallest, a tie broken by ``_charge_placement``.
+    """
+    candidates = _resonance_candidates(molecule)
+    if not candidates:
+        return
+    own = _preference(molecule)
+    best = min(*map(_preference, candidates), own)
+    if own == best:
+        return
+    tied = (form for form in candidates if _preference(form) == best)
+    _set_structure(molecule, min(tied, key=_charge_placement))
+
+
 def standardised(molecule: Mol) -> Mol:
     """Return a molecule in the package's standard form: one Lewis structure, no atom maps.
 
     The network reads the atoms in the order of the canonical SMILES, and the 'seen'
-    look-up compares canonical SMILES, so one molecule must have one canonical SMILES
-    however it was written. Three steps get there; atom indices and coordinates are kept.
+    look-up compares canonical SMILES, so one molecule should have one canonical SMILES
+    however it was written. Atom indices and coordinates are kept throughout.
 
     1. Atom-map numbers are cleared: RDKit's canonical ranking reads them, so a mapped
        SMILES would be numbered and named as another molecule.
-    2. RDKit's Normalizer (the MolVS transforms) writes a hypervalent group the way bond
+    2. Every atom's hydrogen count is fixed (``SetNoImplicit``) while the bonds change, so
+       a step that lowers a bond order cannot add a hydrogen.
+    3. RDKit's Normalizer (the MolVS transforms) writes a hypervalent group the way bond
        perception from a geometry does: a sulfoxide ``S=O`` as ``[S+][O-]``, a nitro group
        ``N(=O)=O`` as ``[N+](=O)[O-]``. Called as in RDKit's
        ``Code/GraphMol/MolStandardize/Wrap/testMolStandardize.py``.
-    3. A molecule that still carries formal charges gets its preferred resonance structure
+    4. A molecule that still carries formal charges gets its preferred resonance structure
        (``_one_resonance_structure``). A molecule without charges is left as it is: its
        Kekulé structures are one aromatic structure to RDKit already.
+
+    A step whose result has another formula, or another hydrogen count or unpaired
+    electron on any atom, is discarded: the molecule keeps its given structure.
     """
-    standard = Chem.Mol(molecule)
-    for atom in standard.GetAtoms():
+    given = Chem.Mol(molecule)
+    for atom in given.GetAtoms():
         atom.SetAtomMapNum(0)
+    composition = _composition(given)
+    standard = Chem.Mol(given)
+    for atom in standard.GetAtoms():
+        atom.SetNoImplicit(True)  # noqa: FBT003  RDKit's positional flag
+    fixed = Chem.Mol(standard)
     _NORMALIZER.normalizeInPlace(standard)
+    # normalizeInPlace may leave a molecule that does not sanitise (RDKit's own
+    # MolStandardize/Pipeline.cpp checks for it), as on a sydnone read from an xyz file.
+    if (
+        Chem.SanitizeMol(standard, catchErrors=True) != Chem.SANITIZE_NONE
+        or _composition(standard) != composition
+    ):
+        standard = fixed
     if any(atom.GetFormalCharge() for atom in standard.GetAtoms()):
         _one_resonance_structure(standard)
-    return standard
+    if _structure(standard) == _structure(given):
+        return given  # untouched: the Normalizer may still have rewritten its stereo marks
+    for atom in standard.GetAtoms():
+        atom.SetNoImplicit(given.GetAtomWithIdx(atom.GetIdx()).GetNoImplicit())
+    standard.UpdatePropertyCache(strict=False)
+    return standard if _composition(standard) == composition else given
 
 
 def read(source: str | Path) -> Reading:
@@ -223,6 +338,28 @@ def standard_smiles(smiles: str) -> str:
         msg = f"{smiles!r} does not parse as a SMILES"
         raise ValueError(msg)
     return str(Chem.MolToSmiles(without_hydrogens(standardised(Chem.AddHs(molecule)))))
+
+
+FIXED_H_OPTIONS: Final = "/FixedH"
+"""InChI's fixed-hydrogen layer: the key keeps tautomers apart (2-pyridone is not
+2-hydroxypyridine) while staying the same for every resonance structure."""
+
+
+@cache
+def fixed_h_key(smiles: str) -> str | None:
+    """Return a SMILES's InChIKey with the fixed-hydrogen layer; None where InChI makes none.
+
+    The second key of the 'seen' look-up: a molecule whose standard form still depends on
+    how it was given (a structure the resonance step keeps as it is) is found by it. RDKit
+    hands ``options`` to InChI as its command-line options; ``/FixedH`` is used so in RDKit's
+    ``rdkit/Chem/UnitTestInchi.py`` and, for the key, ``Code/PgSQL/rdkit/sql/inchi.sql``.
+    """
+    molecule: Mol | None = Chem.MolFromSmiles(smiles)  # RDKit's stubs omit the None
+    if molecule is None:
+        return None
+    with rdBase.BlockLogs():  # InChI's warnings (undefined stereo) are no message to the user
+        key = str(Chem.MolToInchiKey(molecule, options=FIXED_H_OPTIONS))  # type: ignore[no-untyped-call]
+    return key or None
 
 
 def _unassigned_stereo(molecule: Mol) -> tuple[str, ...]:

@@ -274,6 +274,28 @@ def test_an_unfinished_run_is_not_taken_up_by_another_request(
     assert synthetic_chemistry["optimise"] == 1
 
 
+def test_a_run_of_an_older_standard_form_says_so(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    monkeypatch.setattr(repair, "repair", stop)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    # An earlier aromir kept atom-map numbers: it named mapped benzene c1cc[cH:1]cc1.
+    run = json.loads((folder / pipeline.RUN_FILE).read_text(encoding="utf-8"))
+    run["asked"]["smiles"] = "c1cc[cH:1]cc1"
+    (folder / pipeline.RUN_FILE).write_text(json.dumps(run), encoding="utf-8")
+    with pytest.raises(RefusedError, match="reads in another standard form") as refusal:
+        pipeline.run_baseline(_benzene(folder))
+    assert "delete the folder to start over, or finish the run with the version" in str(
+        refusal.value.reasons
+    )
+    assert synthetic_chemistry["optimise"] == 1
+
+
 def test_a_folder_with_other_files_is_not_a_result_folder(tmp_path: Path) -> None:
     folder = tmp_path / "notes"
     folder.mkdir()
