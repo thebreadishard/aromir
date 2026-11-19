@@ -27,7 +27,7 @@ from aromir.release import error_text, level_name, made_by, named_test_set
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from aromir.admission import Admission
+    from aromir.admission import Admission, Mol
     from aromir.lowlevel import LowLevel
     from aromir.molecule import Geometry
     from aromir.release import CationTest, Corrections, Evaluation, Release, Training
@@ -217,23 +217,71 @@ def _among(smiles: str, listed: Iterable[str]) -> bool:
     return key is not None and key in _keys(listed)
 
 
-def _a_stereoisomer_of(smiles: str, training: Training) -> bool:
+def only_mirror_images(smiles: str) -> bool:
+    """Tell whether a molecule's one stereo element is one tetrahedral centre.
+
+    Its configurations are then a molecule and its mirror image, whose infrared spectra
+    are the same. Every potential stereo element counts, specified or not
+    (``Chem.FindPotentialStereo``, as in RDKit's ``Code/GraphMol/Wrap/rough_test.py``,
+    ``testFindPotentialStereo``).
+    """
+    molecule: Mol | None = Chem.MolFromSmiles(smiles)  # RDKit's stubs omit the None
+    if molecule is None:
+        return False
+    elements = list(Chem.FindPotentialStereo(molecule))
+    return len(elements) == 1 and elements[0].type == Chem.StereoType.Atom_Tetrahedral
+
+
+def _covered(smiles: str, listed: Iterable[str]) -> bool:
+    """Tell whether a list holds a molecule, or a row without stereo labels that stands for it.
+
+    A row without labels stands for both mirror images: an xyz sulfoxide names its
+    configuration where the training SMILES leave it open. It does not stand for a
+    configuration of a molecule with an E/Z bond or two or more centres, which is another
+    molecule with another spectrum (``_a_stereoisomer_in`` names it).
+    """
+    listed = tuple(listed)
+    if _among(smiles, listed):
+        return True
     plain = _without_stereo(smiles)
-    return _among(plain, (_without_stereo(trained) for trained in training.trained_smiles))
+    return plain != smiles and only_mirror_images(smiles) and _among(plain, listed)
+
+
+def _a_stereoisomer_in(smiles: str, listed: Iterable[str]) -> bool:
+    """Tell whether a list holds the molecule with other, no or more stereo labels."""
+    plain = _without_stereo(smiles)
+    return _among(plain, (_without_stereo(entry) for entry in listed))
+
+
+STEREOISOMER: Final = (
+    "the molecule with other or no stereo labels (a stereoisomer, or a configuration this "
+    "request leaves open) is in the network's training set"
+)
+STEREOISOMER_RELEASE: Final = (
+    "the molecule with other or no stereo labels (a stereoisomer, or a configuration this "
+    "request leaves open) is in the release networks' training data"
+)
 
 
 def _met(smiles: str, training: Training) -> str:
-    """Say whether the networks of a training record have met a molecule."""
-    if _among(smiles, training.trained_smiles):
+    """Say whether the networks of a training record have met a molecule.
+
+    A molecule held out, or trained on, with other or no stereo labels says so: never
+    unseen.
+    """
+    if _covered(smiles, training.trained_smiles):
         return "in the network's training set: the test sets' error is not this molecule's measure"
     for holdout, held_out in training.held_out_smiles.items():
-        if _among(smiles, held_out):
+        if _covered(smiles, held_out):
             return f"in {named_test_set(holdout)}: never trained on; the measured error includes it"
-    if _a_stereoisomer_of(smiles, training):
-        return (
-            "a stereoisomer of it, or the molecule itself written with other stereo labels, "
-            "is in the network's training set"
-        )
+    if _a_stereoisomer_in(smiles, training.trained_smiles):
+        return STEREOISOMER
+    for holdout, held_out in training.held_out_smiles.items():
+        if _a_stereoisomer_in(smiles, held_out):
+            return (
+                "the molecule with other or no stereo labels (a stereoisomer, or a configuration "
+                f"this request leaves open) is in {named_test_set(holdout)}: never trained on"
+            )
     return UNSEEN
 
 
@@ -254,23 +302,21 @@ def acquaintance(smiles: str, training: Training, measured: Training | None = No
     given when they are release networks: the record of the measurement networks their
     error bars belong to. A molecule in the release networks' training data is said to be
     there, for those error bars were measured on networks that did not train on it; any
-    other molecule is read against the record the errors belong to. A molecule written
-    without its stereo labels is compared without them too, so that a trained stereoisomer
-    is not reported as never seen. A neutral molecule whose radical cation the networks
-    trained on, while they did not train on the molecule itself, gets the clause of the
-    cation test.
+    other molecule is read against the record the errors belong to. A row without stereo
+    labels stands for both mirror images of a molecule whose one stereo element is one
+    tetrahedral centre (``only_mirror_images``); any other stereoisomer of a trained or
+    held-out molecule, and a request that leaves open what a row names, is said to be one,
+    never unseen. A neutral molecule whose radical cation the networks trained on, while
+    they did not train on the molecule itself, gets the clause of the cation test.
     """
-    if measured is not None and _among(smiles, training.trained_smiles):
+    trained = _covered(smiles, training.trained_smiles)
+    if measured is not None and trained:
         return RELEASE_TRAINED
-    if measured is not None and _a_stereoisomer_of(smiles, training):
-        return (
-            "a stereoisomer of it, or the molecule itself written with other stereo labels, "
-            "is in the release networks' training data"
-        )
+    if measured is not None and _a_stereoisomer_in(smiles, training.trained_smiles):
+        return STEREOISOMER_RELEASE
     said = _met(smiles, training if measured is None else measured)
     test = training.cation_test
-    trained = _among(smiles, training.trained_smiles)
-    if test is None or trained or not _among(smiles, training.cation_parent_smiles or ()):
+    if test is None or trained or not _covered(smiles, training.cation_parent_smiles or ()):
         return said
     return f"{UNSEEN_NEUTRAL if said == UNSEEN else said}; {_cation_clause(test)}"
 

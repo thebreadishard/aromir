@@ -64,6 +64,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- 'Seen' follows one stereo rule, the training project's: a row without stereo labels
+  stands for both mirror images of a molecule whose one stereo element is one tetrahedral
+  centre (an xyz sulfoxide that names its configuration is in the training set when the
+  row leaves it open), and for nothing else; any other stereoisomer of a trained or a
+  test-set molecule, and a request that leaves open what a row names, is said to be one,
+  in a sentence of its own for a test set, never unseen. Before, a labelled request
+  against a stereo-free row was called a stereoisomer, and a stereoisomer of a test-set
+  molecule was called unseen.
+- A molecule charged only in nitro groups is not enumerated for resonance structures: its
+  own structure is the preferred one, and the enumeration found writing-dependent counts
+  on both sides of the 256 cap (1,5-dinitronaphthalene 208 to 295 over ten writings;
+  1,3,6-trinitropyrene up to 9897). The 719 di- and tri-nitro isomers of twelve PAH
+  parents up to 40 atoms now get one name from ten writings each, in milliseconds.
 - Readers are told of test sets: the README, the model cards, the certificate and
   `aromir evaluate --help` say "test set (a): unseen molecules" and "test set (b): unseen
   scaffolds" at first use and "test set (a)" / "(b)" after, where they said "hold-out".

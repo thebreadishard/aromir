@@ -162,6 +162,75 @@ def test_a_molecule_is_found_by_its_fixed_h_key_where_its_name_differs() -> None
     assert certificate.acquaintance("Oc1ccccn1", pyridone) == certificate.UNSEEN
 
 
+def _record(trained: list[str], held_out: list[str] | None = None) -> release.Training:
+    """Return a training record with these trained and test-set (a) molecules, in standard form."""
+    standard = admission.standard_smiles
+    return release.Training.model_validate(
+        TRAINING
+        | {
+            "trained_smiles": [standard(s) for s in trained] or ["c1ccc2ccccc2c1"],
+            "held_out_smiles": {"a": [standard(s) for s in held_out or []], "b": ["Cc1ccccc1"]},
+        }
+    )
+
+
+HELD_OUT_STEREOISOMER = (
+    "the molecule with other or no stereo labels (a stereoisomer, or a configuration this "
+    "request leaves open) is in test set (a): never trained on"
+)
+
+
+def test_a_stereo_free_row_stands_for_both_mirror_images() -> None:
+    # An xyz sulfoxide names its sulfur's configuration; the training SMILES leaves it
+    # open, and the two configurations are mirror images with one infrared spectrum.
+    labelled = admission.standard_smiles("C[S@+]([O-])c1ccccc1")
+    assert "@" in labelled
+    trained = _record(["CS(=O)c1ccccc1"])
+    assert "in the network's training set" in certificate.acquaintance(labelled, trained)
+    measured = _record([])
+    assert certificate.acquaintance(labelled, trained, measured) == certificate.RELEASE_TRAINED
+    held = _record([], ["CS(=O)c1ccccc1"])
+    assert certificate.acquaintance(labelled, held).startswith("in test set (a): never trained on")
+    assert certificate.acquaintance("CC(O)c1ccccc1", trained) == certificate.UNSEEN
+
+
+def test_a_diastereomer_of_a_trained_or_held_out_molecule_is_a_stereoisomer() -> None:
+    one, other = "C[C@H](O)[C@H](C)c1ccccc1", "C[C@H](O)[C@@H](C)c1ccccc1"
+    other = admission.standard_smiles(other)
+    assert certificate.acquaintance(other, _record([one])) == certificate.STEREOISOMER
+    assert "in the network's training set" in certificate.acquaintance(
+        admission.standard_smiles(one), _record([one])
+    )
+    assert certificate.acquaintance(other, _record([], [one])) == HELD_OUT_STEREOISOMER
+
+
+@pytest.mark.parametrize(
+    ("request_smiles", "row"),
+    [
+        ("C(=Cc1ccccc1)c1ccccc1", "C(=C\\c1ccccc1)/c1ccccc1"),
+        ("CC(N)C(C)c1ccccc1", "C[C@H](N)[C@H](C)c1ccccc1"),
+        ("C[C@H](O)[C@@H](C)c1ccccc1", "CC(O)C(C)c1ccccc1"),
+    ],
+    ids=["stilbene", "unlabelled request", "two centres"],
+)
+def test_a_configuration_that_is_not_a_mirror_image_is_a_stereoisomer_never_unseen(
+    request_smiles: str, row: str
+) -> None:
+    asked = admission.standard_smiles(request_smiles)
+    assert certificate.acquaintance(asked, _record([row])) == certificate.STEREOISOMER
+    release_said = certificate.acquaintance(asked, _record([row]), _record([]))
+    assert release_said == certificate.STEREOISOMER_RELEASE
+    assert certificate.acquaintance(asked, _record([], [row])) == HELD_OUT_STEREOISOMER
+
+
+def test_only_one_tetrahedral_centre_counts_as_mirror_images() -> None:
+    assert certificate.only_mirror_images("C[S@+]([O-])c1ccccc1")
+    assert certificate.only_mirror_images("C[C@H](O)c1ccccc1")
+    assert not certificate.only_mirror_images("C[C@H](O)[C@@H](C)c1ccccc1")
+    assert not certificate.only_mirror_images("C(=C\\c1ccccc1)/c1ccccc1")
+    assert not certificate.only_mirror_images("c1ccccc1")
+
+
 def test_the_certificate_says_what_reading_the_input_changed(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:

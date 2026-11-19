@@ -301,7 +301,8 @@ def test_a_stereoisomer_of_a_training_molecule_is_not_called_unseen() -> None:
     # Written as admission writes trans-stilbene (its explicit hydrogens turn the marks).
     trained = TRAINING | {"trained_smiles": ["C(=C\\c1ccccc1)/c1ccccc1"]}
     training = release.Training.model_validate(trained)
-    assert "a stereoisomer of it" in certificate.acquaintance("C(=Cc1ccccc1)c1ccccc1", training)
+    said = certificate.acquaintance("C(=Cc1ccccc1)c1ccccc1", training)
+    assert said == certificate.STEREOISOMER
     assert "has not seen it" in certificate.acquaintance("c1ccncc1", training)
 
 

@@ -336,6 +336,49 @@ def test_a_heavily_charged_molecule_gets_one_name_and_finishes(smiles: str) -> N
     assert time.monotonic() - started < HANG_GUARD_S
 
 
+def _refuse_to_enumerate(*_arguments: object) -> None:
+    msg = "a molecule charged only in nitro groups was enumerated"
+    raise AssertionError(msg)
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "O=[N+]([O-])c1cccc2c([N+](=O)[O-])cccc12",
+        "O=[N+]([O-])c1cc([N+](=O)[O-])c2ccc3c([N+](=O)[O-])cc([N+](=O)[O-])c4ccc1c2c34",
+    ],
+    ids=["1,5-dinitronaphthalene", "1,3,6,8-tetranitropyrene"],
+)
+def test_a_molecule_charged_only_in_nitro_groups_is_not_enumerated(
+    smiles: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Enumerated, 1,5-dinitronaphthalene gave 208 to 295 structures over ten writings,
+    # either side of the cap: the writing decided whether it was named by the enumeration.
+    monkeypatch.setattr(Chem, "ResonanceMolSupplier", _refuse_to_enumerate)
+    writings = Chem.MolToRandomSmilesVect(Chem.MolFromSmiles(smiles), 10, randomSeed=7)
+    names = {admission.admit(admission.read(writing)).smiles for writing in writings}
+    assert names == {admission.standard_smiles(smiles)}
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    [
+        "O=[N+]([O-])c1ccc(O)cc1",
+        "Nc1ccc([N+](=O)[O-])cc1[N+](=O)[O-]",
+        "O=Cc1ccc([N+](=O)[O-])cc1",
+        "O=[N+]([O-])c1ccncc1",
+        "O=[N+]([O-])c1ccc(C=O)o1",
+    ],
+)
+def test_a_nitro_compound_is_named_as_the_full_enumeration_names_it(
+    smiles: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_rule = admission.admit(admission.read(smiles)).smiles
+    monkeypatch.setattr(admission, "NITRO_GROUP", Chem.MolFromSmarts("[#0]"))
+    monkeypatch.setattr(admission, "RESONANCE_MAX_STRUCTURES", 20000)
+    assert admission.admit(admission.read(smiles)).smiles == with_rule
+
+
 SYDNONE_WRITINGS = (SYDNONE, "[O-]c1cn(-c2ccccc2)n[o+]1")
 
 
