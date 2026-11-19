@@ -42,7 +42,7 @@ RING_FLIP: tuple[int, ...] = (0, 1, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 
 RING_FLIP += (26, 25, 24, 23, 22, 21, 20, 19, 18)
 """9-methylanthracene's two outer rings exchanged and two methyl hydrogens with them."""
 LARGEST_CM: dict[str, tuple[float, tuple[int, ...] | int]] = {
-    "benzene": (0.78, (2, 1, 0, 5, 4, 3, 8, 7, 6, 11, 10, 9)),
+    "benzene": (0.88, (2, 3, 4, 5, 0, 1, 8, 9, 10, 11, 6, 7)),
     "benzonitrile": (2.78, 7),
     "biphenyl": (
         2.85,
@@ -479,15 +479,46 @@ def _modes(wavenumbers: list[float], vectors: list[list[float]]) -> vib.Modes:
     return vib.Modes(np.array(wavenumbers), np.array(vectors, dtype=float).T)
 
 
-def test_two_bands_that_mix_get_the_larger_shift_of_the_pair() -> None:
-    # Printed 1000 and 1002; a presentation shares their motion out half and half and puts
-    # them at 1000 and 1006. Whichever partner the pairing gives, the pair moved by 4.
+def test_two_bands_that_mix_get_the_larger_of_the_pairs_shift_and_their_own() -> None:
+    # Printed 1000 and 1002; a presentation shares their motion out 60 to 40 and puts them
+    # at 1000 and 1006. As a pair, sorted against sorted, they moved by 0 and 4: 4.
     printed = _modes([1000.0, 1002.0], [[1.0, 0.0], [0.0, 1.0]])
+    more, less = 0.6**0.5, 0.4**0.5
+    # The mode at 1000 is mostly the band printed there: paired by motion the bands moved
+    # by 0 and 4, and the band that stayed takes the pair's 4.
+    kept = _modes([1000.0, 1006.0], [[more, less], [less, -more]])
+    assert own_spread.band_shifts(kept, printed).tolist() == [4.0, 4.0]
+    # The mode at 1006 is mostly the band printed at 1000: paired by motion the bands moved
+    # by 6 and 2. The first keeps its own 6, larger than the pair's 4; the second takes 4.
+    crossed = _modes([1000.0, 1006.0], [[less, more], [more, -less]])
+    assert own_spread.band_shifts(crossed, printed).tolist() == [6.0, 4.0]
+    # Half and half, the pairing may fall either way: no band gets less than the pair's 4.
     half = float(np.sqrt(0.5))
-    mixed = _modes([1000.0, 1006.0], [[half, half], [half, -half]])
-    assert own_spread.band_shifts(mixed, printed).tolist() == [4.0, 4.0]
-    slightly = _modes([1000.0, 1006.0], [[0.6**0.5, 0.4**0.5], [0.4**0.5, -(0.6**0.5)]])
-    assert own_spread.band_shifts(slightly, printed).tolist() == [4.0, 4.0]
+    even = _modes([1000.0, 1006.0], [[half, half], [half, -half]])
+    assert own_spread.band_shifts(even, printed).tolist() in ([4.0, 4.0], [6.0, 4.0])
+
+
+def _thinly_mixed(partner_cm: float, other_cm: float) -> vib.Modes:
+    """Return six modes, one holding 0.6 of the first printed band and 0.08 of each other.
+
+    The mode set is a reflection of the printed one, so it is orthonormal; the thin mode
+    is the second by position and the first printed band's partner by motion.
+    """
+    thin = np.array([0.6**0.5, *[0.08**0.5] * 5])
+    normal = np.eye(6)[0] - thin
+    vectors = np.eye(6) - 2.0 * np.outer(normal, normal) / (normal @ normal)
+    positions = np.array([other_cm, partner_cm, 1020.0, 1030.0, 1040.0, 1050.0])
+    return vib.Modes(positions, vectors[:, [1, 0, 2, 3, 4, 5]])
+
+
+def test_a_mixed_band_with_no_cluster_gets_the_larger_of_its_paired_and_its_rank_shift() -> None:
+    printed = vib.Modes(np.array([1000.0, 1010.0, 1020.0, 1030.0, 1040.0, 1050.0]), np.eye(6))
+    # Its partner by motion lies 0.5 away, the mode of its own rank 4 away.
+    by_rank = own_spread.band_shifts(_thinly_mixed(1000.5, 996.0), printed)
+    assert by_rank[0] == pytest.approx(4.0)
+    # Its partner by motion lies 5 away, the mode of its own rank 1 away.
+    by_motion = own_spread.band_shifts(_thinly_mixed(1005.0, 1001.0), printed)
+    assert by_motion[0] == pytest.approx(5.0)
 
 
 def test_two_bands_that_keep_their_motion_are_paired_by_it_not_by_rank() -> None:

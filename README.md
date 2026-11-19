@@ -168,7 +168,8 @@ image and a rotated mirror image, swaps of atoms its bond graph cannot tell apar
 one where there are at most 12; of more, 12 symmetries of the heavy-atom skeleton and 6
 exchanges of hydrogens on their own atoms) and 4 random listings of its atoms put into
 aromir's canonical order — and every band is paired with itself by its motion; two bands
-whose motion a presentation shares out anew are compared as a pair. A band's spread is the
+whose motion a presentation shares out anew are also compared as a pair, and each takes
+the larger of the two distances. A band's spread is the
 furthest its position lay from the printed one in any presentation: its distance from the
 printed presentation, not the range between presentations, and a sample, not a bound. A
 band whose spread, unrounded, is more than the licence line is not licensed; its corrected

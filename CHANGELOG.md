@@ -142,7 +142,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   symmetries of the heavy-atom skeleton, enumerated whole, and 6 exchanges of hydrogens)
   and listed anew (4 random listings put into the canonical order), with a generator seeded
   7. Each band is paired with itself by its motion, and two bands whose motion a
-  presentation shares out anew are compared as a pair. The spread is the distance from the
+  presentation shares out anew are also compared as a pair, each taking the larger of the
+  pair's distance and its own partner's. The spread is the distance from the
   printed presentation, not the range between presentations; the line is held against it
   unrounded, and a spread of 3.004 is printed as 3.004. Each band states its spread and the
   presentation that gave it, a band beyond the line says so in its licence column, the
@@ -154,7 +155,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without a linear group, from four molecules), under which 9-methylanthracene's methyl
   torsion, at a real 40 cm⁻¹, was licensed while it moves by 5.16 cm⁻¹ under a swap of
   equivalent atoms; the record's numbers stay on the card and in the certificate as context.
-  On v1.4's stored molecules: benzene 0.78, biphenyl 2.85, diphenyl ether 1.40 cm⁻¹ at
+  On v1.4's stored molecules: benzene 0.88, biphenyl 2.85, diphenyl ether 1.40 cm⁻¹ at
   most, every band licensed; 9-methylanthracene's largest, 9.95 cm⁻¹, is its stored
   torsion, imaginary and never licensed. The card states the rule.
   `scripts/measure_invariance.py` and the stored-Hessian tests take their rotation, mirror

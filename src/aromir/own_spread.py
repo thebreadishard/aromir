@@ -39,11 +39,15 @@ molecule, mapped back (Kᵀ ΔH K for an orthogonal map K applied atom by atom; 
 blocks put back for an order) and added to the low-level Hessian. Its modes are paired
 with the printed modes by largest squared overlap (``spectrum.partners``), not by rank, and
 a band's shift is the distance of its partner from the printed position. Where a band's
-partner holds less than ``PAIRED_OVERLAP`` of its motion, the pairing is not trusted: the
-band and every band its partner shares ``MIXING_SHARE`` of motion with form a cluster,
+partner holds less than ``PAIRED_OVERLAP`` of its motion, the pairing is not trusted alone:
+the band and every band its partner shares ``MIXING_SHARE`` of motion with form a cluster,
 whose printed positions and partners are compared in ascending order, and each band of the
-cluster gets the cluster's largest shift. A band's spread is its largest shift over the
-presentations: its distance from the printed presentation, not the range between
+cluster gets the larger of the cluster's largest shift and its own paired shift. Which of
+the two pairings is right cannot be told, and the number licenses a band, so it takes the
+larger. A band whose partner spreads the rest of its motion too thinly to share
+``MIXING_SHARE`` with any one band has no cluster: it gets the larger of its paired shift
+and its distance from the mode of its own rank. A band's spread is its largest shift over
+the presentations: its distance from the printed presentation, not the range between
 presentations.
 """
 
@@ -480,8 +484,12 @@ def band_shifts(modes: vibrations.Modes, printed: vibrations.Modes) -> FloatArra
     A band whose partner holds at least ``PAIRED_OVERLAP`` of its motion is at the distance
     of that partner. Bands that mix — two near-degenerate bands whose motion a presentation
     shares out anew — have no partner of their own, and the pairing may give the band that
-    moved the partner that stayed: they are compared as a cluster, the printed positions
-    and the partners' in ascending order, and each gets the cluster's largest distance.
+    moved the partner that stayed: they are also compared as a cluster, the printed
+    positions and the partners' in ascending order, and each gets the larger of the
+    cluster's largest distance and its own partner's. Neither pairing can be told to be the
+    right one, so neither may license a band the other withholds. A mixed band alone in its
+    cluster — its partner's other motion spread under ``MIXING_SHARE`` a band — is compared
+    with the mode of its own rank in the whole spectrum instead.
     """
     overlap = (modes.vectors.T @ printed.vectors) ** 2
     partner = spectrum.partners(modes, printed)
@@ -496,9 +504,10 @@ def band_shifts(modes: vibrations.Modes, printed: vibrations.Modes) -> FloatArra
     _, cluster_of = connected_components(linked | linked.T, directed=False)
     for cluster in np.unique(cluster_of[mixed]):
         bands = np.flatnonzero(cluster_of == cluster)
+        ranked = bands if bands.size == 1 else of_band[bands]
         here = np.sort(printed.wavenumbers[bands])
-        there = np.sort(modes.wavenumbers[of_band[bands]])
-        shifts[bands] = np.abs(there - here).max()
+        there = np.sort(modes.wavenumbers[ranked])
+        shifts[bands] = np.maximum(shifts[bands], np.abs(there - here).max())
     return shifts
 
 
