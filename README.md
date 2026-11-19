@@ -163,14 +163,14 @@ certificate say what that is worth.
 
 The licence also reads how far the same molecule's positions move when it is turned,
 mirrored or listed in another order, measured on the molecule itself (`aromir.own_spread`):
-the networks correct it again after 3 random rotations, the mirror image and a rotated
+the networks correct it again after 8 random rotations, the mirror image and a rotated
 mirror image, 4 random listings of its atoms put into aromir's canonical order and up to
 12 swaps of atoms its bond graph cannot tell apart, every band is paired with itself by
 its motion, and a band whose position moved by more than the licence line under any of
 them is not licensed. Its corrected position is printed all the same, with the spread and
 the change that gave it. Where the check cannot run, no band is licensed. It runs no
 quantum chemistry: about half a second per change on a laptop for a molecule of 27 atoms,
-some 15 seconds for 16 changes. A release's `invariance.json` records the same kind of
+some 13 seconds for 21 changes. A release's `invariance.json` records the same kind of
 spread on a few fixed molecules (v1.4: up to 11.20 cm⁻¹ with a linear group, a nitrile or
 an alkyne, whose angle is measured against a fixed axis in space, and 2.85 without); the
 card and the certificate state it as context, and it decides no licence: a molecule

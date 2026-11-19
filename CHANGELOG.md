@@ -136,7 +136,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   states the condition.
 - A band is licensed only while its own spread is within the licence line: the
   certificate measures, for the molecule itself, how far each band's position moves when
-  the networks correct the same molecule turned (3 random rotations), mirrored (the mirror
+  the networks correct the same molecule turned (8 random rotations), mirrored (the mirror
   image and a rotated one) and listed in other atom orders (4 random listings put into the
   canonical order, up to 12 swaps of atoms the bond graph cannot tell apart), with a
   generator seeded 7 and each band paired with itself by its motion. Each band states its
@@ -148,7 +148,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   without a linear group, from four molecules), under which 9-methylanthracene's methyl
   torsion, at a real 40 cm⁻¹, was licensed while it moves by 5.16 cm⁻¹ under a swap of
   equivalent atoms; the record's numbers stay on the card and in the certificate as context.
-  On v1.4's stored molecules: benzene 0.88, benzonitrile 1.75 (no longer withheld for its
+  On v1.4's stored molecules: benzene 0.88, benzonitrile 2.78 (no longer withheld for its
   nitrile's group), biphenyl 2.85, diphenyl ether 1.40 cm⁻¹ at most, every band licensed;
   9-methylanthracene's largest, 9.95 cm⁻¹, is its stored torsion, imaginary and never
   licensed. The card states the rule. `scripts/measure_invariance.py` and the stored-Hessian

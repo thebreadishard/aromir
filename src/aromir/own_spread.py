@@ -51,7 +51,10 @@ if TYPE_CHECKING:
     from aromir.release import Release
 
 SEED: Final = 7
-N_ROTATIONS: Final = 3
+N_ROTATIONS: Final = 8
+"""A linear angle is measured against a fixed axis of space, so how far a molecule with a
+linear group moves depends on where that axis falls: three rotations gave benzonitrile
+1.75 cm⁻¹ on v1.4, eight and twenty-four both 2.78."""
 N_LISTINGS: Final = 4
 N_SWAPS: Final = 12
 MAX_SYMMETRIES: Final = 1000
@@ -203,7 +206,7 @@ KINDS: Final = {
 
 
 def describe(tried: tuple[str, ...]) -> str:
-    """Say how many changes of each kind were tried, as "3 rotations, 2 mirror images"."""
+    """Say how many changes of each kind were tried, as "8 rotations, 2 mirror images"."""
     parts = []
     for start, (one, many) in KINDS.items():
         n = sum(name.startswith(start) for name in tried)

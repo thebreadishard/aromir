@@ -34,11 +34,11 @@ PIN_CM = 0.02
 """How far a pinned spread may lie from the one measured: the networks run in single
 precision, and other hardware moves a band by far less."""
 LARGEST_CM = {
-    "benzene": (0.88, "another listing 1"),
-    "benzonitrile": (1.75, "rotation 2"),
+    "benzene": (0.88, "a swap of equivalent atoms 4"),
+    "benzonitrile": (2.78, "rotation 7"),
     "biphenyl": (2.85, "a swap of equivalent atoms 1"),
-    "diphenyl_ether": (1.40, "a swap of equivalent atoms 5"),
-    "9_methylanthracene": (9.95, "a swap of equivalent atoms 6"),
+    "diphenyl_ether": (1.40, "a swap of equivalent atoms 4"),
+    "9_methylanthracene": (9.95, "a swap of equivalent atoms 4"),
 }
 """Each stored molecule's largest band spread on v1.4 and the change that gave it."""
 BEYOND_THE_LINE = {
@@ -127,7 +127,7 @@ def test_9_methylanthracenes_band_that_moves_10_cm_is_its_flat_torsion() -> None
     (moved,) = [band for band in record["bands"] if band["own_spread_cm"] > LINE_CM]
     assert moved["b3lyp_cm"] < 0
     assert moved["licence_note"] == certificate.FLAT_COORDINATE
-    assert f"| {moved['own_spread_cm']:.2f}, a swap of equivalent atoms 6 |" in (
+    assert f"| {moved['own_spread_cm']:.2f}, a swap of equivalent atoms 4 |" in (
         certificate.to_markdown(record)
     )
 
@@ -140,19 +140,19 @@ def test_9_methylanthracenes_real_torsion_loses_its_licence_by_its_own_spread() 
     assert moved["own_spread_cm"] == pytest.approx(5.16, abs=PIN_CM)
     note = (
         f"its position moved by {moved['own_spread_cm']:.2f} cm⁻¹ under a swap of equivalent "
-        "atoms 6 of this molecule, more than the licence line"
+        "atoms 4 of this molecule, more than the licence line"
     )
     assert moved["licence_note"] == note
     unruled = {band.wavenumber_cm: band for band in _bands(TORSION)}
     assert unruled[moved["wavenumber_cm"]].licensed
     text = certificate.to_markdown(record)
     assert f"| no: {note} |" in text
-    assert f"| {moved['own_spread_cm']:.2f}, a swap of equivalent atoms 6 |" in text
+    assert f"| {moved['own_spread_cm']:.2f}, a swap of equivalent atoms 4 |" in text
     assert (
         "Each band's own spread was measured for this molecule: the networks corrected it again "
-        "given in 16 other ways (3 rotations, 2 mirror images, 3 other listings of the atoms, 8 "
+        "given in 21 other ways (8 rotations, 2 mirror images, 3 other listings of the atoms, 8 "
         "swaps of equivalent atoms), and a band's spread is the furthest its position moved; the "
-        f"largest is {moved['own_spread_cm']:.2f} cm⁻¹, under a swap of equivalent atoms 6, and 1 "
+        f"largest is {moved['own_spread_cm']:.2f} cm⁻¹, under a swap of equivalent atoms 4, and 1 "
         "band(s) moved by more than the licence line, so none of them is licensed; the "
         "corrected positions are still printed."
     ) in record["statement"]
@@ -243,9 +243,7 @@ def test_the_check_is_the_same_every_time() -> None:
     assert first == again
     tried = own_spread.changes(own_spread.bond_graph(smiles, molecule))
     assert [change.name for change in tried] == [
-        "rotation 1",
-        "rotation 2",
-        "rotation 3",
+        *(f"rotation {k}" for k in range(1, own_spread.N_ROTATIONS + 1)),
         "the mirror image",
         "the mirror image, rotated",
         "another listing 1",
@@ -306,9 +304,7 @@ def test_networks_tied_to_the_laboratory_axes_move_bands_under_a_rotation_only()
     assert {
         change for change, spread in zip(found.change, found.spread_cm, strict=True) if spread > 0
     } <= {
-        "rotation 1",
-        "rotation 2",
-        "rotation 3",
+        *(f"rotation {k}" for k in range(1, own_spread.N_ROTATIONS + 1)),
         "the mirror image, rotated",
     }
 
@@ -317,7 +313,7 @@ def test_the_card_states_the_rule_and_keeps_the_record_as_context() -> None:
     text = card.to_markdown(_v14())
     assert (
         "- **A band's licence follows its own measured spread.** For every molecule, aromir's "
-        "certificate has the networks correct the same molecule given in other ways: 3 random "
+        "certificate has the networks correct the same molecule given in other ways: 8 random "
         "rotations, the mirror image and a rotated mirror image, 4 random listings of the atoms "
         "put into aromir's canonical order and up to 12 swaps of atoms the bond graph cannot "
         "tell apart, drawn with the seed 7. Each band is paired with itself by its motion, and "
