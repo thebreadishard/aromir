@@ -11,9 +11,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from rdkit import Chem
-from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
+from rdkit.Chem import rdDetermineBonds, rdDistGeom, rdForceFieldHelpers
 
 from aromir.admission import without_hydrogens
+from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.errors import RefusedError
 from aromir.molecule import Geometry
 
@@ -82,6 +83,60 @@ def start_from_smiles(canonical_smiles: str) -> Geometry:
             raise RefusedError([reason])
     rdForceFieldHelpers.MMFFOptimizeMolecule(molecule, maxIters=FORCE_FIELD_ITERATIONS)
     return Geometry.from_angstrom(_symbols(molecule), molecule.GetConformer().GetPositions())
+
+
+def _pairs(molecule: Mol) -> set[tuple[int, int]]:
+    pairs = set()
+    for bond in molecule.GetBonds():
+        first, second = sorted((bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()))
+        pairs.add((first, second))
+    return pairs
+
+
+def changed_bonds(admitted_smiles: str, geometry: Geometry) -> list[str]:
+    """Name the bonds a geometry in the canonical order has formed or broken.
+
+    The admitted molecule's bonds are read from its canonical SMILES, whose atoms with
+    their hydrogens added are in the canonical order (``start_from_smiles``); the
+    geometry's are perceived from its interatomic distances with RDKit's
+    ``DetermineConnectivity``, called as in RDKit's
+    ``Code/GraphMol/DetermineBonds/Wrap/testDetermineBonds.py`` (``testCtDConnectivity``,
+    which compares the bonds perceived on a geometry with those of its SMILES). An
+    optimisation that moved a proton, opened a ring or joined two atoms has computed
+    another molecule than the one admitted.
+
+    A contact between two atoms bonded to one same atom is not called a bond formed: the
+    diagonal of a four-membered ring lies within bonding distance (biphenylene's start
+    geometry), and a proton that moves to such an atom breaks its old bond, which is named.
+
+    Raises:
+        ValueError: The geometry's atoms are not the SMILES's, in its order.
+    """
+    admitted = Chem.AddHs(Chem.MolFromSmiles(admitted_smiles))
+    if _symbols(admitted) != geometry.symbols:
+        msg = f"the geometry's atoms {geometry.symbols} are not those of {admitted_smiles}"
+        raise ValueError(msg)
+    angstrom = geometry.coords_bohr * ANGSTROM_PER_BOHR
+    rows = [
+        f"{s} {x:.10f} {y:.10f} {z:.10f}"
+        for s, (x, y, z) in zip(geometry.symbols, angstrom, strict=True)
+    ]
+    perceived = Chem.MolFromXYZBlock("\n".join([str(geometry.n_atoms), "", *rows]) + "\n")
+    rdDetermineBonds.DetermineConnectivity(perceived)
+    expected, found = _pairs(admitted), _pairs(perceived)
+    neighbours = [
+        {neighbour.GetIdx() for neighbour in atom.GetNeighbors()} for atom in admitted.GetAtoms()
+    ]
+    formed = [
+        pair for pair in sorted(found - expected) if not neighbours[pair[0]] & neighbours[pair[1]]
+    ]
+
+    def named(pair: tuple[int, int]) -> str:
+        return "–".join(f"{geometry.symbols[k]}{k + 1}" for k in pair)
+
+    return [f"the bond {named(pair)} broke" for pair in sorted(expected - found)] + [
+        f"a bond {named(pair)} formed" for pair in formed
+    ]
 
 
 def start_from_xyz(molecule: Mol) -> Geometry:

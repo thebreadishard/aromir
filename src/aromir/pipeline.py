@@ -42,7 +42,7 @@ from aromir import (
 )
 from aromir.constants import WAVENUMBERS_PER_HARTREE
 from aromir.dft import BASIS, FUNCTIONAL, GRID, Resources
-from aromir.errors import AromirError, NotAMinimumError, RefusedError
+from aromir.errors import AnotherMoleculeError, AromirError, NotAMinimumError, RefusedError
 from aromir.molecule import Geometry
 
 if TYPE_CHECKING:
@@ -476,12 +476,35 @@ def _low_level(
     return low
 
 
+def _same_molecule(smiles: str, optimised: Geometry, folder: Path) -> None:
+    """Refuse an optimised geometry whose bonds are not the admitted molecule's.
+
+    Raises:
+        AnotherMoleculeError: A bond formed or broke in the optimisation.
+    """
+    changes = geometry.changed_bonds(smiles, optimised)
+    if changes:
+        msg = (
+            f"the optimised geometry is another molecule than {smiles}: {'; '.join(changes)} "
+            "(atoms numbered in the canonical order). Its spectrum would be named after a "
+            f"molecule it is not; the geometry is kept in {folder / GEOMETRY_FILE}"
+        )
+        raise AnotherMoleculeError(msg)
+
+
 def _attempt(
-    start: Geometry, folder: Path, state: _Run, resources: Resources, log: TextIO
+    smiles: str,
+    start: Geometry,
+    folder: Path,
+    state: _Run,
+    resources: Resources,
+    log: TextIO,
 ) -> tuple[optimisation.Optimisation, lowlevel.LowLevel, vibrations.Modes]:
+    """Optimise from the start or off the saddle point, check the bonds, compute the low level."""
     left = state.left_saddle_point
     begin = start if left is None else Geometry(start.symbols, np.array(left.restart))
     optimised = _optimised(begin, folder, state, resources, log)
+    _same_molecule(smiles, optimised.geometry, folder)
     low = _low_level(optimised.geometry, folder, state, resources, log)
     return optimised, low, vibrations.vibrational_modes(low.hessian, optimised.geometry)
 
@@ -519,18 +542,21 @@ def _step_off(folder: Path, state: _Run, saddle: Geometry, modes: vibrations.Mod
 
 
 def _compute(
-    start: Geometry, folder: Path, state: _Run, resources: Resources
+    smiles: str, start: Geometry, folder: Path, state: _Run, resources: Resources
 ) -> tuple[optimisation.Optimisation, lowlevel.LowLevel]:
     """Optimise and compute the low level, each step saved; step off a saddle point once.
 
-    Whether the geometry is a minimum is read from the Hessian with its soft modes
-    measured: the analytic one can make a soft mode imaginary that is not. From a saddle
+    Each optimised geometry must keep the bonds of the admitted molecule ``smiles``
+    before its Hessian is computed (``_same_molecule``). Whether the geometry is a minimum
+    is read from the Hessian with its soft modes measured: the analytic one can make a
+    soft mode imaginary that is not. From a saddle
     point the optimisation, the Hessian and the repair are run a second time, which
     doubles the cost and can still end without a minimum. A geometry whose only
     imaginary modes are then softer than the soft-mode line is returned as it is: the
     molecule is flat along them, and the spectrum is printed with those bands named.
 
     Raises:
+        AnotherMoleculeError: An optimisation formed or broke a bond.
         NotAMinimumError: After one step along an imaginary mode and a second optimisation
             the geometry still has an imaginary mode at or beyond the soft-mode line.
     """
@@ -541,10 +567,10 @@ def _compute(
         # optimisation and Hessian are paid for and end at a file that cannot be read.
         _steps_of(folder, SADDLE_POINT_PREFIX)
     with (folder / QUANTUM_LOG_FILE).open("a", encoding="utf-8") as log:
-        optimised, low, modes = _attempt(start, folder, state, resources, log)
+        optimised, low, modes = _attempt(smiles, start, folder, state, resources, log)
         if modes.n_imaginary and state.left_saddle_point is None:
             _step_off(folder, state, optimised.geometry, modes)
-            optimised, low, modes = _attempt(start, folder, state, resources, log)
+            optimised, low, modes = _attempt(smiles, start, folder, state, resources, log)
     if modes.wavenumbers[0] <= -repair.SOFT_BELOW_CM:
         msg = (
             f"{modes.n_imaginary} imaginary mode(s), the lowest at {modes.wavenumbers[0]:.0f} "
@@ -627,13 +653,14 @@ def run_baseline(request: Request) -> dict[str, Any]:
         RefusedError: The molecule is outside the domain, or the folder holds a result or
             another request's unfinished run.
         ConvergenceError: The SCF or the optimisation did not converge.
+        AnotherMoleculeError: The optimisation formed or broke a bond.
         NotAMinimumError: No minimum was found.
         ResponseError: The dipole derivatives failed their checks.
     """
     admitted, start = admit(request.molecule)
     folder, state = _open_folder(request.out, _asked("baseline", admitted, start))
     launched = records.provenance()
-    optimised, low = _compute(start, folder, state, request.resources)
+    optimised, low = _compute(admitted.smiles, start, folder, state, request.resources)
     bands = spectrum.harmonic_bands(low.hessian, optimised.geometry, low.polar_tensor)
     record = {
         "molecule": {
@@ -802,6 +829,7 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
             or sizes, the network cannot read it, or the folder holds a result or another
             request's unfinished run.
         ConvergenceError: The SCF or the optimisation did not converge.
+        AnotherMoleculeError: The optimisation formed or broke a bond.
         NotAMinimumError: No minimum was found.
         ResponseError: The dipole derivatives failed their checks.
     """
@@ -813,7 +841,7 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     )
     folder, state = _open_folder(request.out, _asked("spectrum", admitted, start))
     launched = records.provenance()
-    optimised, low = _compute(start, folder, state, request.resources)
+    optimised, low = _compute(admitted.smiles, start, folder, state, request.resources)
     as_trained = low.as_trained(soft_modes_measured=release.training.soft_mode_repair)
     corrections = release.corrections(optimised.geometry, as_trained)
     records.write_arrays(

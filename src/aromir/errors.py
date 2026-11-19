@@ -29,6 +29,10 @@ class NotAMinimumError(AromirError):
     """The optimised geometry has an imaginary mode, so it has no harmonic spectrum."""
 
 
+class AnotherMoleculeError(AromirError):
+    """The optimisation formed or broke a bond: its minimum is not the molecule admitted."""
+
+
 class ResponseError(AromirError):
     """The dipole derivatives failed one of their own checks, so no intensity is trusted."""
 

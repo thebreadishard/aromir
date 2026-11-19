@@ -35,7 +35,7 @@ def _out_of_plane(geometry: Geometry) -> float:
 
 def test_the_run_steps_off_a_real_saddle_point_and_finds_the_minimum(tmp_path: Path) -> None:
     state = pipeline._Run(asked={"command": "a test"})  # noqa: SLF001  the pipeline's own state
-    optimised, low = pipeline._compute(PLANAR_TRANS, tmp_path, state, RESOURCES)  # noqa: SLF001
+    optimised, low = pipeline._compute("OO", PLANAR_TRANS, tmp_path, state, RESOURCES)  # noqa: SLF001
     left = state.left_saddle_point
     assert left is not None
     assert left.imaginary_cm < -50.0

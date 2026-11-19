@@ -16,6 +16,7 @@ from pydantic import ValidationError
 
 import aromir
 from aromir import (
+    admission,
     certificate,
     lowlevel,
     optimisation,
@@ -29,10 +30,15 @@ from aromir import (
 )
 from aromir.constants import WAVENUMBERS_PER_HARTREE
 from aromir.dft import Resources
-from aromir.errors import InternalCoordinatesError, NotAMinimumError, RefusedError
+from aromir.errors import (
+    AnotherMoleculeError,
+    InternalCoordinatesError,
+    NotAMinimumError,
+    RefusedError,
+)
 from aromir.molecule import Geometry
 
-from support import BENZENE_XYZ, bond_force_field, write_release
+from support import BENZENE_XYZ, ZWITTERION, bond_force_field, proton_moved, write_release
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1224,3 +1230,27 @@ def test_a_geometry_converged_on_energy_and_forces_says_so_with_its_numbers(
     assert "- The geometry is converged on energy and forces;" in (
         tmp_path / "again" / "certificate.md"
     ).read_text(encoding="utf-8")
+
+
+def test_an_optimisation_that_moved_a_proton_is_refused_before_the_hessian(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    smiles = admission.admit(admission.read(ZWITTERION)).smiles
+    moved = proton_moved(smiles)
+
+    def transferred(
+        _start: Geometry, _resources: Resources, _log: TextIO, **_progress: object
+    ) -> optimisation.Optimisation:
+        return optimisation.Optimisation(moved, energy=-1.0, max_force=1e-6, n_steps=3)
+
+    monkeypatch.setattr(optimisation, "optimise", transferred)
+    folder = tmp_path / "zwitterion"
+    request = pipeline.Request(molecule=pipeline.MoleculeInput(smiles=ZWITTERION), out=folder)
+    with pytest.raises(AnotherMoleculeError, match=r"another molecule than .*: the bond N\d+–H"):
+        pipeline.run_baseline(request)
+    assert synthetic_chemistry["low level"] == 0
+    assert (folder / pipeline.GEOMETRY_FILE).is_file()
+    # Taken up again, the saved geometry is refused as before.
+    with pytest.raises(AnotherMoleculeError):
+        pipeline.run_baseline(request)
+    assert synthetic_chemistry["low level"] == 0

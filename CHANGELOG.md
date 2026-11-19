@@ -110,6 +110,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the run up: another one, or a `run.json` without a version, is refused with both
   versions named and what to do (finish with the version that started it, or delete the
   folder).
+- An optimised geometry whose bonds, perceived from its interatomic distances with RDKit's
+  `DetermineConnectivity`, are not those of the admitted SMILES ends the run before its
+  Hessian (`AnotherMoleculeError`, exit 1), with the bonds that broke and formed named and
+  the geometry kept: a gas-phase zwitterion whose proton moves back was computed and
+  named as the zwitterion. A contact between two atoms bonded to one same atom (a
+  four-membered ring's diagonal) is not called a bond. None of v1.4's 1078 training
+  molecules' start geometries is refused.
 - A molecule outside the training chemistry is computed, printed and named as outside it,
   and none of its bands is licensed, as for one outside the training sizes: a charged atom
   whose element, charge, aromaticity, hydrogens and bonded neighbours no training

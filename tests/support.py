@@ -8,7 +8,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
+from rdkit import Chem
 
+from aromir import geometry
+from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.families import FAMILIES
 from aromir.molecule import Geometry
 from aromir.network import weights
@@ -39,6 +42,30 @@ H  -1.2405  -2.1486  0.0
 H   1.2405  -2.1486  0.0
 """
 """Benzene as an xyz file, in Å."""
+
+
+ZWITTERION = "[NH3+]c1ccccc1C(=O)[O-]"
+"""Anthranilic acid's zwitterion: in the gas phase B3LYP moves a proton back to the acid."""
+
+
+def proton_moved(smiles: str) -> Geometry:
+    """Return a molecule's start geometry with an N–H proton moved to 1.0 Å from an O⁻.
+
+    The proton transfer B3LYP makes of a gas-phase zwitterion, given as a geometry: no
+    quantum chemistry is needed to test what follows from it.
+    """
+    start = geometry.start_from_smiles(smiles)
+    molecule = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    proton = next(
+        atom.GetIdx()
+        for atom in molecule.GetAtoms()
+        if atom.GetSymbol() == "H" and atom.GetNeighbors()[0].GetSymbol() == "N"
+    )
+    oxygen = next(atom.GetIdx() for atom in molecule.GetAtoms() if atom.GetFormalCharge() < 0)
+    coords = start.coords_bohr.copy()
+    away = coords[proton] - coords[oxygen]
+    coords[proton] = coords[oxygen] + away / np.linalg.norm(away) / ANGSTROM_PER_BOHR
+    return Geometry(start.symbols, coords)
 
 
 def bond_force_field(geometry: Geometry, bonds: Bonds) -> FloatArray:

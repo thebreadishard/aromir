@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -12,7 +14,7 @@ from aromir import admission, geometry
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.errors import RefusedError
 
-from support import BENZENE_XYZ
+from support import BENZENE_XYZ, ZWITTERION, proton_moved
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -145,3 +147,35 @@ def test_no_embedding_at_all_is_an_error(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(rdDistGeom, "EmbedMolecule", lambda _molecule, **_options: -1)
     with pytest.raises(RefusedError, match="no 3D start geometry"):
         geometry.start_from_smiles("c1ccccc1")
+
+
+def test_a_start_geometry_keeps_the_bonds_of_its_smiles() -> None:
+    smiles = admission.admit(admission.read(ZWITTERION)).smiles
+    assert geometry.changed_bonds(smiles, geometry.start_from_smiles(smiles)) == []
+
+
+def test_a_proton_that_moved_is_named_by_the_bond_it_broke_and_the_one_it_formed() -> None:
+    smiles = admission.admit(admission.read(ZWITTERION)).smiles
+    changes = geometry.changed_bonds(smiles, proton_moved(smiles))
+    assert len(changes) == 2
+    assert re.fullmatch(r"the bond N\d+–H\d+ broke", changes[0])
+    assert re.fullmatch(r"a bond O\d+–H\d+ formed", changes[1])
+
+
+def test_a_ring_that_opened_is_named() -> None:
+    start = geometry.start_from_smiles("c1ccccc1")
+    coords = start.coords_bohr.copy()
+    coords[0] += 1.5 * (coords[0] - coords[1]) / np.linalg.norm(coords[0] - coords[1])
+    changes = geometry.changed_bonds("c1ccccc1", replace(start, coords_bohr=coords))
+    assert "the bond C1–C2 broke" in changes
+
+
+def test_the_diagonal_of_a_four_membered_ring_is_no_bond_formed() -> None:
+    # Biphenylene's start geometry puts the ring's diagonal within bonding distance.
+    biphenylene = admission.admit(admission.read("c1ccc2c(c1)-c1ccccc1-2")).smiles
+    assert geometry.changed_bonds(biphenylene, geometry.start_from_smiles(biphenylene)) == []
+
+
+def test_a_geometry_of_other_atoms_is_an_error() -> None:
+    with pytest.raises(ValueError, match="are not those of"):
+        geometry.changed_bonds("c1ccncc1", geometry.start_from_smiles("c1ccccc1"))

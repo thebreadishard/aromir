@@ -176,8 +176,12 @@ spread at or below the line gets the licence back with no change to the code.
 the network is, what it was trained on, its measured error per family, and where it
 stops being known.
 
-Two checks and a repair guard every result:
+Three checks and a repair guard every result:
 
+- **The optimised geometry is the molecule admitted.** Its bonds, perceived from the
+  interatomic distances, must be those of the admitted SMILES; a proton that moved (a
+  gas-phase zwitterion becomes its neutral acid), a ring that opened or two atoms that
+  joined end the run before the Hessian, with the bonds named and the geometry kept.
 - **The geometry is a minimum.** A geometry with an imaginary mode has no harmonic
   spectrum. aromir steps along the mode once and optimises again, which costs the
   optimisation and the Hessian a second time; if an imaginary mode remains, no spectrum
