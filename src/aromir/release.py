@@ -42,10 +42,12 @@ from pydantic import (
     Field,
     StringConstraints,
     ValidationError,
+    field_validator,
     model_validator,
 )
 from safetensors import SafetensorError
 
+from aromir.admission import standard_smiles
 from aromir.constants import ELEMENTS
 from aromir.errors import RefusedError
 from aromir.families import FAMILIES, Family
@@ -383,6 +385,19 @@ class Training(BaseModel):
     soft_mode_repair: bool
     cation_parent_smiles: list[str] | None = None
     cation_test: CationTest | None = None
+
+    # The 'seen' look-up compares an admitted SMILES with these lists, and admission writes
+    # a molecule's standard form: the lists are read in that form too, whatever canonical
+    # writing the record holds. The record's file, and its hash, stay as they are.
+    @field_validator("trained_smiles", "cation_parent_smiles", mode="after")
+    @classmethod
+    def _standard_list(cls, smiles: list[str] | None) -> list[str] | None:
+        return None if smiles is None else [standard_smiles(one) for one in smiles]
+
+    @field_validator("held_out_smiles", mode="after")
+    @classmethod
+    def _standard_lists(cls, held_out: dict[str, list[str]]) -> dict[str, list[str]]:
+        return {name: [standard_smiles(one) for one in smiles] for name, smiles in held_out.items()}
 
     @model_validator(mode="after")
     def _a_set_that_can_exist(self) -> Self:

@@ -87,7 +87,7 @@ def _springs(start: Geometry) -> FloatArray:
 def _record(smiles: str, hessian_of: str, loaded: release.Release) -> dict[str, Any]:
     start = geometry.start_from_smiles(smiles)
     hessian = _springs(start) if hessian_of == "springs" else random_hessian(start.n_atoms, 0)
-    admitted = admission.admit(admission.parse_smiles(smiles))
+    admitted = admission.admit(admission.read(smiles))
     zero = np.zeros_like(hessian)
     corrections = release.Corrections(zero, tuple(zero for _ in loaded.networks))
     return certificate.build(admitted, start, _low(hessian), corrections, loaded)
@@ -293,7 +293,7 @@ def test_stereo_the_smiles_leaves_open_is_on_the_certificate(loaded: release.Rel
     assigned = _record("C(=C/c1ccccc1)\\c1ccccc1", "random", loaded)
     assert assigned["molecule"]["unassigned_stereo"] == []
     assert not any("unassigned" in line for line in assigned["not_in_the_error"])
-    centre = admission.admit(admission.parse_smiles("CC(N)c1ccccc1"))
+    centre = admission.admit(admission.read("CC(N)c1ccccc1"))
     assert centre.unassigned_stereo == ("1 stereocentre",)
 
 

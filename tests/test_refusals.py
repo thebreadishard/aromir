@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 )
 def test_an_isotope_label_is_refused(smiles: str, label: str) -> None:
     with pytest.raises(RefusedError, match=rf"isotope label\(s\) {label}: every atom is computed"):
-        admission.admit(admission.parse_smiles(smiles))
+        admission.admit(admission.read(smiles))
 
 
 @pytest.mark.parametrize("smiles", ["c1ccccc1 benzene", "c1ccccc1\n", " c1ccccc1", "c1ccccc1é", ""])
@@ -44,7 +44,7 @@ def test_an_xyz_file_without_atoms_is_told_so(tmp_path: Path) -> None:
     path = tmp_path / "empty.xyz"
     path.write_text("0\nnothing\n", encoding="utf-8")
     with pytest.raises(RefusedError) as refusal:
-        admission.admit(admission.parse_xyz(path))
+        admission.admit(admission.read(path))
     assert refusal.value.reasons in (
         ("the input holds no atom",),
         (f"{path} does not parse as an xyz file",),
@@ -54,7 +54,7 @@ def test_an_xyz_file_without_atoms_is_told_so(tmp_path: Path) -> None:
 def test_an_xyz_file_whose_comment_is_not_utf8_is_read(tmp_path: Path) -> None:
     path = tmp_path / "latin1.xyz"
     path.write_bytes(BENZENE_XYZ.replace("benzene", "benzène, Å").encode("latin-1"))
-    assert admission.admit(admission.parse_xyz(path)).formula == "C6H6"
+    assert admission.admit(admission.read(path)).formula == "C6H6"
 
 
 def test_an_xyz_geometry_names_its_double_bonds_isomer(tmp_path: Path) -> None:
@@ -67,7 +67,7 @@ def test_an_xyz_geometry_names_its_double_bonds_isomer(tmp_path: Path) -> None:
         lines.append(f"{symbol} {position[0]:.8f} {position[1]:.8f} {position[2]:.8f}")
     path = tmp_path / "stilbene.xyz"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    admitted = admission.admit(admission.parse_xyz(path))
+    admitted = admission.admit(admission.read(path))
     assert admitted.unassigned_stereo == ()
     # RDKit writes the E isomer's two bond marks either way round; the isomer is what counts.
     double_bonds = [
@@ -345,6 +345,6 @@ def test_an_imine_isomer_named_through_its_hydrogen_is_said_to_be_left_open() ->
     # and the start geometry is embedded from that SMILES: the isomer is not what the
     # user wrote, and the certificate must not pass over it.
     for written in ("[H]/N=C(/C)c1ccccc1", "[H]/N=C(\\C)c1ccccc1"):
-        admitted = admission.admit(admission.parse_smiles(written))
+        admitted = admission.admit(admission.read(written))
         assert admitted.smiles == "CC(=N)c1ccccc1"
         assert admitted.unassigned_stereo == ("1 double bond",)

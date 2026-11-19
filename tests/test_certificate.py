@@ -127,10 +127,35 @@ def test_the_certificate_says_whether_the_network_met_the_molecule(
     assert expected in certificate.acquaintance(smiles, training)
 
 
+def test_a_training_record_is_read_in_the_form_admission_writes() -> None:
+    written = TRAINING | {
+        "trained_smiles": ["[cH:1]1ccc2ccccc2c1", "CS(=O)c1ccccc1"],
+        "held_out_smiles": {"a": ["N#[N+][N-]c1ccccc1"], "b": ["Cc1ccccc1"]},
+    }
+    training = release.Training.model_validate(written)
+    assert training.trained_smiles == ["c1ccc2ccccc2c1", "C[S+]([O-])c1ccccc1"]
+    assert training.held_out_smiles == {"a": ["[N-]=[N+]=Nc1ccccc1"], "b": ["Cc1ccccc1"]}
+    sulfoxide = admission.admit(admission.read("C[S+]([O-])c1ccccc1")).smiles
+    assert "in the network's training set" in certificate.acquaintance(sulfoxide, training)
+
+
+def test_the_certificate_says_what_reading_the_input_changed(
+    benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
+) -> None:
+    admitted = admission.admit(admission.read("[cH:1]1ccccc1"))
+    corrections = loaded.corrections(benzene, low.hessian)
+    record = certificate.build(admitted, benzene, low, corrections, loaded)
+    assert record["molecule"]["input_changes"] == [admission.ATOM_MAPS_CLEARED]
+    text = certificate.to_markdown(record)
+    assert text.startswith("# Certificate: c1ccccc1\n")
+    note = admission.ATOM_MAPS_CLEARED
+    assert f"\n- {note[0].upper()}{note[1:]}.\n" in text
+
+
 def test_the_record_and_its_text(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
-    admitted = admission.admit(admission.parse_smiles("c1ccccc1"))
+    admitted = admission.admit(admission.read("c1ccccc1"))
     corrections = loaded.corrections(benzene, low.hessian)
     record = certificate.build(admitted, benzene, low, corrections, loaded)
     assert record["molecule"]["inside_training_sizes"] is True
@@ -179,7 +204,7 @@ def test_a_molecule_outside_the_training_sizes_is_marked(
 ) -> None:
     small_training = loaded.training.model_copy(update={"min_atoms": 20})
     narrow = replace(loaded, training=small_training)
-    admitted = admission.admit(admission.parse_smiles("c1ccccc1"))
+    admitted = admission.admit(admission.read("c1ccccc1"))
     corrections = narrow.corrections(benzene, low.hessian)
     record = certificate.build(admitted, benzene, low, corrections, narrow)
     assert record["molecule"]["inside_training_sizes"] is False
@@ -194,7 +219,7 @@ def test_a_molecule_outside_the_training_sizes_is_marked(
 def test_an_imaginary_corrected_band_is_a_warning(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
-    admitted = admission.admit(admission.parse_smiles("c1ccccc1"))
+    admitted = admission.admit(admission.read("c1ccccc1"))
     softest = vib.vibrational_modes(low.hessian, benzene).vectors[:, 0]
     weights_ = vib.mass_weights(benzene.masses_amu)
     direction = softest * weights_

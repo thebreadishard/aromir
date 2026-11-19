@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import aromir
-from aromir import certificate, cli, pipeline, release
+from aromir import admission, certificate, cli, pipeline, release
 from aromir.errors import ConvergenceError
 
 if TYPE_CHECKING:
@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 def test_check_admits_a_supported_molecule(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["check", "c1ccc2ccccc2c1"]) == cli.EXIT_DONE
     assert capsys.readouterr().out == "admitted: c1ccc2ccccc2c1 (C10H8, 18 atoms)\n"
+
+
+def test_check_says_that_it_cleared_atom_map_numbers(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli.main(["check", "[cH:1]1ccccc1"]) == cli.EXIT_DONE
+    assert capsys.readouterr().out == (
+        f"admitted: c1ccccc1 (C6H6, 12 atoms)\nnote: {admission.ATOM_MAPS_CLEARED}\n"
+    )
 
 
 def test_check_refuses_with_every_reason(capsys: pytest.CaptureFixture[str]) -> None:

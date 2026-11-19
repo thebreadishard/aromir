@@ -380,7 +380,7 @@ def test_the_certificate_of_release_networks_names_both(
     pair: release.Release, benzene_geometry: Geometry
 ) -> None:
     low = _low(benzene_geometry)
-    admitted = admission.admit(admission.parse_smiles("c1ccccc1"))
+    admitted = admission.admit(admission.read("c1ccccc1"))
     corrections = pair.corrections(benzene_geometry, low.hessian)
     record = certificate.build(admitted, benzene_geometry, low, corrections, pair)
     level = pair.evaluation.higher_level

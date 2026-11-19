@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from aromir import card, cli, release
+from aromir import admission, card, certificate, cli, release
 from aromir.molecule import Geometry
 
 N_SEEDS = 3
@@ -137,17 +137,28 @@ def test_the_evaluation_record_is_the_measurement_that_ships_beside_it() -> None
         assert recorded["holdouts"][name]["n_molecules"] == holdout["n_molecules"]
 
 
-def test_every_smiles_of_the_release_is_in_rdkits_present_canonical_form() -> None:
-    loaded = release.load(release.bundled())
-    listed = [
-        *(
-            s
-            for training in (loaded.training, loaded.measured_training)
-            for s in training.trained_smiles
-        ),
-        *(s for held in loaded.measured_training.held_out_smiles.values() for s in held),
-        *(loaded.training.cation_parent_smiles or ()),
-    ]
+@pytest.mark.parametrize("version", ["1.3", "1.4"])
+def test_every_smiles_a_shipped_release_lists_is_in_the_form_admission_writes(
+    version: str,
+) -> None:
+    # The loader reads the lists in admission's standard form; a shipped record already in
+    # that form is read as it is written, and its hash and counts mean what they say.
+    folder = release.bundled().parent / f"v{version}"
+    listed = []
+    for name in (release.TRAINING_FILE, release.MEASUREMENT_FILE):
+        if not (folder / name).is_file():
+            continue
+        record = json.loads((folder / name).read_text(encoding="utf-8"))
+        listed += record["trained_smiles"] + (record.get("cation_parent_smiles") or [])
+        listed += [s for held in record["held_out_smiles"].values() for s in held]
     assert len(listed) > 700
-    rewritten = [s for s in listed if Chem.MolToSmiles(Chem.MolFromSmiles(s)) != s]
+    rewritten = [s for s in listed if admission.standard_smiles(s) != s]
     assert rewritten == []
+    assert all(Chem.MolToSmiles(Chem.MolFromSmiles(s)) == s for s in listed)
+
+
+def test_a_mapped_writing_of_a_trained_molecule_is_said_to_be_trained() -> None:
+    loaded = release.load(release.bundled())
+    admitted = admission.admit(admission.read("[cH:1]1ccccc1"))
+    seen = certificate.acquaintance(admitted.smiles, loaded.training, loaded.measurement)
+    assert seen == certificate.RELEASE_TRAINED

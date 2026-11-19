@@ -100,7 +100,7 @@ def test_a_smiles_gets_the_atom_order_and_primitives_the_weights_were_made_with(
     smiles: str, symbols: str, kinds: dict[str, int], digest: str
 ) -> None:
     settings = release.load(release.bundled()).recipes[0].inputs.primitives
-    start = geometry.start_from_smiles(admission.admit(admission.parse_smiles(smiles)).smiles)
+    start = geometry.start_from_smiles(admission.admit(admission.read(smiles)).smiles)
     assert "".join(start.symbols) == symbols
     built = primitives.build(start, settings)
     counted = Counter(primitives.PRIMITIVE_KINDS[primitives.kind(p)] for p in built.internals)
@@ -122,5 +122,5 @@ def test_the_digest_sees_two_atoms_of_one_element_change_places() -> None:
 def test_an_xyz_listing_is_put_in_the_pinned_order(tmp_path: Path) -> None:
     path = tmp_path / "benzene.xyz"
     path.write_text(BENZENE_HYDROGENS_FIRST, encoding="utf-8")
-    order = geometry.canonical_order(admission.parse_xyz(path))
+    order = geometry.canonical_order(admission.read(path).molecule)
     assert order == [8, 7, 6, 11, 10, 9, 2, 1, 0, 5, 4, 3]

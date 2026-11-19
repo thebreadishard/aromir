@@ -261,6 +261,7 @@ def _molecule(admitted: Admission, geometry: Geometry, release: Release) -> dict
     inside = training.min_atoms <= admitted.n_atoms <= training.max_atoms
     return asdict(admitted) | {
         "unassigned_stereo": list(admitted.unassigned_stereo),
+        "input_changes": list(admitted.input_changes),
         "training_atoms": [training.min_atoms, training.max_atoms],
         "inside_training_sizes": inside,
         "seen": acquaintance(admitted.smiles, training, release.measurement),
@@ -551,6 +552,7 @@ def to_markdown(record: dict[str, Any]) -> str:
             f"{low}–{high} atoms: {size}"
         ),
         f"- {molecule['seen']}",
+        *(f"- {change[0].upper()}{change[1:]}." for change in molecule["input_changes"]),
         "",
         (
             f"## Spectrum, band by band (network v{network['version']}, "

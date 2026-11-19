@@ -187,7 +187,7 @@ def test_release_v13_is_licensed_on_what_it_delivers() -> None:
     assert recorded.band_error_seed_mean_cm["other"]["a"].interval_cm == (1.68, 3.76)
     assert recorded.first_order_error_per_seed_mean_cm["other"] == {"a": 3.62, "b": 3.89}
     start = geometry.start_from_smiles("c1ccccc1")
-    admitted = admission.admit(admission.parse_smiles("c1ccccc1"))
+    admitted = admission.admit(admission.read("c1ccccc1"))
     hessian = _stable_hessian(start, seed=3)
     low = certificate_low_level(hessian)
     record = certificate.build(admitted, start, low, bundled.corrections(start, hessian), bundled)

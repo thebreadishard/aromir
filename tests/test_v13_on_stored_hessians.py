@@ -113,7 +113,7 @@ def _as_listed(molecule: Geometry, listing: list[int], path: Path) -> list[int]:
         x, y, z = molecule.coords_bohr[atom] * ANGSTROM_PER_BOHR
         lines.append(f"{molecule.symbols[atom]} {x:.10f} {y:.10f} {z:.10f}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    order = geometry.canonical_order(admission.parse_xyz(path))
+    order = geometry.canonical_order(admission.read(path).molecule)
     return [listing[position] for position in order]
 
 

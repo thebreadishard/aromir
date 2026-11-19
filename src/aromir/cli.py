@@ -177,6 +177,8 @@ def _run(arguments: argparse.Namespace) -> int:
     if arguments.command == "check":
         admitted, _start = pipeline.admit(molecule)
         print(f"admitted: {admitted.smiles} ({admitted.formula}, {admitted.n_atoms} atoms)")  # noqa: T201  the command's answer
+        for change in admitted.input_changes:
+            print(f"note: {change}")  # noqa: T201  the command's answer
         return EXIT_DONE
     if arguments.command == "spectrum":
         return _spectrum(arguments, molecule)

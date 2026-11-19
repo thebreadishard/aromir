@@ -26,7 +26,7 @@ PHENANTHRENE_WRITINGS = ("c1ccc2c(c1)ccc1ccccc12", "C1=CC=C2C(=C1)C=CC3=CC=CC=C3
 
 def test_two_writings_start_from_the_same_geometry_in_the_same_order() -> None:
     starts = [
-        geometry.start_from_smiles(admission.admit(admission.parse_smiles(writing)).smiles)
+        geometry.start_from_smiles(admission.admit(admission.read(writing)).smiles)
         for writing in PHENANTHRENE_WRITINGS
     ]
     assert starts[0].symbols == starts[1].symbols
@@ -61,7 +61,7 @@ def _shuffled_xyz(tmp_path: Path, seed: int) -> Path:
 
 
 def test_an_xyz_keeps_its_coordinates_and_gets_the_canonical_order(tmp_path: Path) -> None:
-    start = geometry.start_from_xyz(admission.parse_xyz(_shuffled_xyz(tmp_path, seed=1)))
+    start = geometry.start_from_xyz(admission.read(_shuffled_xyz(tmp_path, seed=1)).molecule)
     assert start.symbols == ("C",) * 6 + ("H",) * 6
     carbon_hydrogen = np.linalg.norm(start.coords_bohr[:6] - start.coords_bohr[6:], axis=1)
     np.testing.assert_allclose(carbon_hydrogen, 1.084 / 0.529177, atol=1e-3)
@@ -70,7 +70,7 @@ def test_an_xyz_keeps_its_coordinates_and_gets_the_canonical_order(tmp_path: Pat
 def test_the_canonical_order_follows_the_bond_graph_not_the_file(tmp_path: Path) -> None:
     ring_walks = []
     for seed in (1, 2):
-        start = geometry.start_from_xyz(admission.parse_xyz(_shuffled_xyz(tmp_path, seed)))
+        start = geometry.start_from_xyz(admission.read(_shuffled_xyz(tmp_path, seed)).molecule)
         carbons = start.coords_bohr[:6]
         ring_walks.append(np.linalg.norm(carbons[1:] - carbons[:-1], axis=1))
     # Consecutive carbons are bonded in both: the order walks the ring, whatever the file's.
@@ -88,7 +88,7 @@ def test_every_listing_of_benzene_gets_one_bond_graph_in_one_order(tmp_path: Pat
     # The order promises the bond graph, position by position; a walk of any ring would
     # keep consecutive carbons bonded, but not each hydrogen beside its own carbon.
     graphs = [
-        _bonded(geometry.start_from_xyz(admission.parse_xyz(_shuffled_xyz(tmp_path, seed))))
+        _bonded(geometry.start_from_xyz(admission.read(_shuffled_xyz(tmp_path, seed)).molecule))
         for seed in range(1, 6)
     ]
     for graph in graphs[1:]:
@@ -99,9 +99,7 @@ def test_every_listing_of_benzene_gets_one_bond_graph_in_one_order(tmp_path: Pat
 def test_a_molecule_without_symmetry_gets_one_geometry_whatever_its_listing(tmp_path: Path) -> None:
     # 2-fluoro-4-hydroxypyridine: no two atoms alike in the graph but the hydrogens on
     # one atom, of which it has none twice, so every listing is put in one order exactly.
-    made = geometry.start_from_smiles(
-        admission.admit(admission.parse_smiles("Oc1ccnc(F)c1")).smiles
-    )
+    made = geometry.start_from_smiles(admission.admit(admission.read("Oc1ccnc(F)c1")).smiles)
     angstrom = made.coords_bohr * ANGSTROM_PER_BOHR
     rows = [
         f"{s} {x:.8f} {y:.8f} {z:.8f}" for s, (x, y, z) in zip(made.symbols, angstrom, strict=True)
@@ -112,7 +110,7 @@ def test_a_molecule_without_symmetry_gets_one_geometry_whatever_its_listing(tmp_
         path = tmp_path / f"listing_{seed}.xyz"
         text = "\n".join([str(len(rows)), "listed", *(rows[k] for k in order)]) + "\n"
         path.write_text(text, encoding="utf-8")
-        starts.append(geometry.start_from_xyz(admission.parse_xyz(path)))
+        starts.append(geometry.start_from_xyz(admission.read(path).molecule))
     for start in starts:
         assert start.symbols == made.symbols
         np.testing.assert_allclose(start.coords_bohr, made.coords_bohr, atol=1e-7)

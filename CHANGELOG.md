@@ -171,6 +171,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- One molecule, one name and one atom order, however it is given. Atom-map numbers in a
+  SMILES entered the canonical SMILES, so `[CH3:5]c1ccc(O)cc1Cl` was numbered as another
+  molecule than `Cc1ccc(O)cc1Cl` (the network is not order-free: bands moved by up to
+  2.85 cm⁻¹ between orders) and `[cH:1]1ccccc1` was called unseen although benzene is in
+  the training data. Bond perception from an xyz file placed the charges of an azide or
+  a sulfoxide otherwise than the SMILES did, with the same consequences. Both routes now
+  read the input into one standard form (`admission.read`): map numbers are cleared and
+  the certificate and `aromir check` say so; RDKit's Normalizer writes a hypervalent
+  sulfoxide or nitro group charge-separated; a molecule that still carries charges gets
+  one resonance structure, chosen by the molecule alone (`[N-]=[N+]=N` for an azide).
+  The training lists are read in the same form for the 'seen' look-up; every SMILES the
+  shipped releases list is already in it, so their records and hashes are unchanged.
 - A molecule with a flat coordinate — a nearly free torsion — gets its spectrum. On
   3-vinylfuran the run found a saddle point at -12 cm⁻¹, stepped 0.1 bohr off it, and
   the second optimisation ended after 100 steps with the energy and the forces

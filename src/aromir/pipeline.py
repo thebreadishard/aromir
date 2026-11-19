@@ -156,12 +156,12 @@ def admit(molecule: MoleculeInput) -> tuple[admission.Admission, Geometry]:
         RefusedError: The molecule is outside the supported domain, or does not parse.
     """
     if molecule.smiles is not None:
-        admitted = admission.admit(admission.parse_smiles(molecule.smiles))
+        admitted = admission.admit(admission.read(molecule.smiles))
         return admitted, geometry.start_from_smiles(admitted.smiles)
     if molecule.xyz is None or not molecule.xyz.is_file():
         raise RefusedError([f"{molecule.xyz}: no such xyz file"])
-    parsed = admission.parse_xyz(molecule.xyz)
-    return admission.admit(parsed), geometry.start_from_xyz(parsed)
+    reading = admission.read(molecule.xyz)
+    return admission.admit(reading), geometry.start_from_xyz(reading.molecule)
 
 
 def _asked(command: str, admitted: admission.Admission, start: Geometry) -> dict[str, Any]:
