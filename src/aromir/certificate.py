@@ -7,9 +7,10 @@ the error measured for that family on molecules the networks behind that error n
 (for release networks: the version's measurement networks), whether the band is
 licensed for this molecule, and how far the network's seeds disagree. It also states what
 that error does not cover: how far the positions move when the same molecule is turned,
-mirrored or listed in another atom order; where that is more than the licence line for
-molecules with a linear group, no band of such a molecule is licensed. Every number about
-the network comes from the release's records.
+mirrored or listed in another atom order. That is measured for the molecule itself
+(``own_spread``), and a band whose own position moves by more than the licence line is not
+licensed. Every number about the network comes from the release's records or from that
+measurement.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from rdkit import Chem
 
-from aromir import domain, families, repair, spectrum, vibrations
+from aromir import domain, families, own_spread, repair, spectrum, vibrations
 from aromir.admission import fixed_h_key
 from aromir.network import primitives
 from aromir.release import error_text, level_name, made_by, named_test_set
@@ -82,12 +83,14 @@ class Band:
             error is within the licence line on every hold-out, the molecule lies inside
             the training sizes and the training chemistry (``aromir.domain``), its
             low-level mode is real, the band is real for the
-            seed mean and for every seed, the molecule's group (with or without a
-            linear group) has its recorded spread within the licence line
-            (``withheld_by_spread``),
-            and a band of a C–H family moves carbon-bound hydrogens.
+            seed mean and for every seed, its own spread is within the licence line, and
+            a band of a C–H family moves carbon-bound hydrogens.
         licence_note: The first condition the band fails; empty when it is licensed.
         measured_error_cm: The family's band error of the seeds' mean, per hold-out.
+        own_spread_cm: How far the band's position moved, at most, when this molecule was
+            turned, mirrored or listed in another order (``own_spread``); None when that
+            could not be measured.
+        own_spread_change: The change that moved it most; empty when not measured.
     """
 
     wavenumber_cm: float
@@ -99,6 +102,8 @@ class Band:
     licensed: bool
     licence_note: str
     measured_error_cm: dict[str, float]
+    own_spread_cm: float | None
+    own_spread_change: str
 
 
 @dataclass(frozen=True)
@@ -111,6 +116,8 @@ class Mode:
         position_cm: The corrected position of the seeds' mean.
         lowest_seed_cm: The lowest position of the band over the seeds.
         off_carbon: The share of its hydrogen motion on hydrogens not bound to carbon.
+        spread_cm: Its own spread, to two decimals; None when it was not measured.
+        spread_change: The change that gave the spread.
     """
 
     family: families.Family
@@ -118,162 +125,28 @@ class Mode:
     position_cm: float
     lowest_seed_cm: float
     off_carbon: float
-
-
-@dataclass(frozen=True)
-class Withheld:
-    """Why no band of a molecule is licensed: its group's recorded spread.
-
-    Attributes:
-        spread_cm: The recorded spread above the licence line; None when it was not
-            measured.
-        note: What each band's licence column says.
-        reason: The sentence the certificate's statement gives.
-    """
-
     spread_cm: float | None
-    note: str
-    reason: str
+    spread_change: str
 
 
-CHANGE_PHRASES: Final = {
-    "a rigid rotation of the molecule": "a rotation",
-    "the molecule's mirror image": "a mirror image",
-    "another listing of the same atoms in an xyz file": "another xyz listing",
-}
-"""The changes of the invariance record (``Invariance.spreads``) the licence reads, each
-with the phrase its sentences use. A user's input can make all three: an xyz file in any
-orientation, the other configuration of a molecule whose one stereo element is one centre
-(``only_mirror_images``) and any listing of an xyz file's atoms. The evaluation's arbitrary
-SMILES orders are not among them: aromir writes every SMILES of a molecule in one order."""
-CHANGES: Final = ", ".join(list(CHANGE_PHRASES.values())[:-1]) + (
-    f" or {list(CHANGE_PHRASES.values())[-1]}"
+UNCHECKED: Final = (
+    "how far this band moves when the molecule is turned, mirrored or listed in another "
+    "order could not be measured"
 )
-SPREAD_CHANGES: Final = f"{CHANGES} of the atoms"
-STILL_PRINTED: Final = (
-    "so the network's correction for this molecule is not licensed; the corrected positions "
-    "are still printed"
-)
+STILL_PRINTED: Final = "the corrected positions are still printed"
 
 
-@dataclass(frozen=True)
-class GroupSpread:
-    """What a release's invariance record says of the molecules of one group.
-
-    Attributes:
-        spread_cm: The largest spread, cm⁻¹, over the changes of ``CHANGE_PHRASES``
-            measured on molecules of the group; None when none was.
-        change: The phrase of the change that gave it; empty when none was measured.
-        complete: Whether every one of those changes was measured on the group.
-    """
-
-    spread_cm: float | None
-    change: str
-    complete: bool
-
-
-def group_spread(release: Release, *, linear_group: bool) -> GroupSpread:
-    """Return the largest spread recorded for molecules with or without a linear group.
-
-    Raises:
-        ValueError: The record names other changes than ``CHANGE_PHRASES``: a change
-            the licence does not read would otherwise stay out of the largest.
-    """
-    if release.invariance is None:
-        return GroupSpread(spread_cm=None, change="", complete=False)
-    spreads = release.invariance.spreads()
-    if list(spreads) != list(CHANGE_PHRASES):
-        msg = (
-            f"the invariance record names the changes {list(spreads)}, the licence reads "
-            f"{list(CHANGE_PHRASES)}"
-        )
-        raise ValueError(msg)
-    measured = {
-        CHANGE_PHRASES[name]: value
-        for name, spread in spreads.items()
-        if (value := spread.of(linear_group=linear_group)[0]) is not None
-    }
-    if not measured:
-        return GroupSpread(spread_cm=None, change="", complete=False)
-    change = max(measured, key=measured.__getitem__)
-    return GroupSpread(
-        spread_cm=measured[change], change=change, complete=len(measured) == len(spreads)
+def _moved_note(mode: Mode, line: float) -> str:
+    """Say that a band's own spread, as stated, is beyond the licence line; "" when it is not."""
+    if mode.spread_cm is None or mode.spread_cm <= line:
+        return ""
+    return (
+        f"its position moved by {mode.spread_cm:.2f} cm⁻¹ under {mode.spread_change} of "
+        "this molecule, more than the licence line"
     )
 
 
-def _too_far(spread: GroupSpread, line: float, *, linear_group: bool) -> Withheld:
-    """Say that a molecule's group moved by more than the licence line."""
-    value = spread.spread_cm
-    if linear_group:
-        return Withheld(
-            spread_cm=value,
-            note=(
-                "the molecule has a linear group, and molecules with one moved by up to "
-                f"{value:.2f} cm⁻¹ under {CHANGES}, more than the licence line"
-            ),
-            reason=(
-                "the molecule has a linear group (an angle near 180°, as in a nitrile or an "
-                f"alkyne), and the measured spread under {SPREAD_CHANGES} for molecules with "
-                f"one ({value:.2f} cm⁻¹, from the release's invariance record) exceeds the "
-                f"licence line of {line:g} cm⁻¹, {STILL_PRINTED}"
-            ),
-        )
-    return Withheld(
-        spread_cm=value,
-        note=(
-            f"molecules without a linear group moved by up to {value:.2f} cm⁻¹ under "
-            f"{spread.change}, more than the licence line"
-        ),
-        reason=(
-            "the molecule has no linear group, and the measured spread under "
-            f"{spread.change} for molecules without one ({value:.2f} cm⁻¹, from the "
-            f"release's invariance record) exceeds the licence line of {line:g} cm⁻¹, "
-            f"{STILL_PRINTED}"
-        ),
-    )
-
-
-UNMEASURED: Final = Withheld(
-    spread_cm=None,
-    note=(
-        "the molecule has a linear group, and the spread of molecules with one under "
-        f"{CHANGES} was not measured for this release"
-    ),
-    reason=(
-        "the molecule has a linear group (an angle near 180°, as in a nitrile or an "
-        f"alkyne), and the spread under {SPREAD_CHANGES} was not measured for this "
-        f"release on a molecule with one, {STILL_PRINTED}"
-    ),
-)
-
-
-def withheld_by_spread(release: Release, *, linear_group: bool) -> Withheld | None:
-    """Say why a molecule's bands are not licensed for its group's spread; None when they may be.
-
-    A molecule is licensed only while the release's invariance record shows the largest
-    spread of its group (with or without a linear group) under ``CHANGE_PHRASES`` within
-    the licence line. A release whose record does not measure every change on molecules
-    with a linear group licenses no such molecule: a licence is a claim that needs its
-    measurement, and v1.3 and v1.4, the releases measured, were both above the line. A
-    molecule without one keeps its licence where its group was not measured, as before
-    releases had the record: for it the licence is withheld only on a measured spread.
-    """
-    line = release.evaluation.licence_line_cm
-    spread = group_spread(release, linear_group=linear_group)
-    if spread.spread_cm is not None and spread.spread_cm > line:
-        return _too_far(spread, line, linear_group=linear_group)
-    if linear_group and not spread.complete:
-        return UNMEASURED
-    return None
-
-
-def licence_note(
-    mode: Mode,
-    evaluation: Evaluation,
-    *,
-    outside_domain: str,
-    withheld: Withheld | None,
-) -> str:
+def licence_note(mode: Mode, evaluation: Evaluation, *, outside_domain: str) -> str:
     """Return the first condition of the licence a band fails, or "" when it passes all.
 
     ``outside_domain`` says why the molecule lies outside the training domain
@@ -283,11 +156,13 @@ def licence_note(
         f"{mode.off_carbon:.0%} of its hydrogen motion is on N–H, O–H or S–H, which "
         f"the rule counts as {mode.family}"
     )
+    moved = _moved_note(mode, evaluation.licence_line_cm)
     conditions = (
         (mode.low_level_cm < 0, FLAT_COORDINATE),
         (mode.position_cm < 0, IMAGINARY),
         (mode.lowest_seed_cm < 0, IMAGINARY_FOR_A_SEED),
-        (withheld is not None, "" if withheld is None else withheld.note),
+        (mode.spread_cm is None, UNCHECKED),
+        (bool(moved), moved),
         (not evaluation.licensed(mode.family), "the family's error is above the licence line"),
         (bool(outside_domain), outside_domain),
         (mode.family in C_H_FAMILIES and mode.off_carbon > OFF_CARBON_SHARE, off_carbon),
@@ -302,9 +177,13 @@ def bands(
     evaluation: Evaluation,
     *,
     outside_domain: str,
-    withheld: Withheld | None,
+    spread: own_spread.OwnSpread,
 ) -> list[Band]:
-    """Return the corrected spectrum's bands in ascending order, each with its record."""
+    """Return the corrected spectrum's bands in ascending order, each with its record.
+
+    ``spread`` is the molecule's own spread, per band of the spectrum with the seeds' mean
+    correction.
+    """
     low_modes = vibrations.vibrational_modes(low.hessian, geometry)
     low_families = families.classify(geometry, low_modes)
     off_carbon = families.hydrogen_motion_off_carbon(geometry, low_modes)
@@ -315,6 +194,7 @@ def bands(
         vibrations.vibrational_modes(corrected_hessian, geometry), low_modes
     )
     ranges = spectrum.seed_ranges(low.hessian, geometry, corrections.per_seed)
+    measured = bool(spread.spread_cm)
     rows = []
     for index, low_index in enumerate(partner):
         mode = Mode(
@@ -323,8 +203,10 @@ def bands(
             position_cm=float(corrected.wavenumbers[index]),
             lowest_seed_cm=float(ranges[index, 0]),
             off_carbon=float(off_carbon[low_index]),
+            spread_cm=spread.spread_cm[index] if measured else None,
+            spread_change=spread.change[index] if measured else "",
         )
-        note = licence_note(mode, evaluation, outside_domain=outside_domain, withheld=withheld)
+        note = licence_note(mode, evaluation, outside_domain=outside_domain)
         rows.append(
             Band(
                 wavenumber_cm=round(mode.position_cm, 1),
@@ -342,6 +224,8 @@ def bands(
                     holdout: error.rms_cm
                     for holdout, error in evaluation.band_error_seed_mean_cm[mode.family].items()
                 },
+                own_spread_cm=mode.spread_cm,
+                own_spread_change=mode.spread_change,
             )
         )
     return rows
@@ -590,12 +474,36 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _own_spread_text(spread: own_spread.OwnSpread, rows: list[Band], line: float) -> str:
+    """Say how the licence read the molecule's own spread, and what it found."""
+    if not spread.spread_cm:
+        return (
+            "How far this molecule's bands move when it is turned, mirrored or listed in "
+            f"another order could not be measured ({spread.refusal}), so no band is "
+            f"licensed; {STILL_PRINTED}. "
+        )
+    largest, change = spread.largest
+    n_beyond = sum(row.own_spread_cm is not None and row.own_spread_cm > line for row in rows)
+    verdict = (
+        f"{n_beyond} band(s) moved by more than the licence line, so none of them is "
+        f"licensed; {STILL_PRINTED}"
+        if n_beyond
+        else "no band moved by more than the licence line"
+    )
+    return (
+        "Each band's own spread was measured for this molecule: the networks corrected it "
+        f"again given in {len(spread.tried)} other ways ({own_spread.describe(spread.tried)}), "
+        "and a band's spread is the furthest its position moved; the largest is "
+        f"{largest:.2f} cm⁻¹, under {change}, and {verdict}. "
+    )
+
+
 def _statement(
     admitted: Admission,
     release: Release,
     rows: list[Band],
     molecule: dict[str, Any],
-    withheld: Withheld | None,
+    spread: own_spread.OwnSpread,
 ) -> str:
     evaluation = release.evaluation
     line = evaluation.licence_line_cm
@@ -620,8 +528,6 @@ def _statement(
             "nothing is claimed for it. "
         )
     test_sets = " and ".join(named_test_set(name, first=True) for name in evaluation.holdouts)
-    spread = "" if withheld is None else f"{withheld.reason[0].upper()}{withheld.reason[1:]}. "
-    group = "with" if molecule["linear_group"] else "without"
     return (
         f"{admitted.smiles}: the harmonic infrared spectrum of ΔH network "
         f"v{release.network_version} ({len(release.networks)} seeds), {LEVEL_NOTE} towards "
@@ -632,10 +538,10 @@ def _statement(
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes "
         "and holds no charge separation or aromatic ring size the training molecules lack, "
         "its low-level mode is real, the band is real for the seeds' mean and for every "
-        f"seed, molecules {group} a linear group moved by no more than the licence line "
-        f"under {SPREAD_CHANGES} in the release's invariance record, and a band of a C–H "
-        "family moves carbon-bound "
-        f"hydrogens. {spread}{flat}{thin}{beyond}"
+        "seed, its own position moved by no more than the licence line when this molecule "
+        "was turned, mirrored or listed in another atom order, and a band of a C–H family "
+        "moves carbon-bound "
+        f"hydrogens. {_own_spread_text(spread, rows, line)}{flat}{thin}{beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. {_not_experiment(evaluation)}"
     )
 
@@ -706,18 +612,23 @@ def build(
     evaluation = release.evaluation
     within = [family for family in families.FAMILIES if evaluation.licensed(family)]
     molecule = _molecule(admitted, geometry, release)
-    withheld = withheld_by_spread(release, linear_group=molecule["linear_group"])
+    spread = own_spread.measure(release, admitted.smiles, geometry, low, corrections.mean)
     rows = bands(
         geometry,
         low,
         corrections,
         evaluation,
         outside_domain=domain_note(molecule),
-        withheld=withheld,
+        spread=spread,
     )
     return {
-        "statement": _statement(admitted, release, rows, molecule, withheld),
+        "statement": _statement(admitted, release, rows, molecule, spread),
         "molecule": molecule,
+        "own_spread": {
+            "changes_tried": list(spread.tried),
+            "seed": own_spread.SEED,
+            "not_measured_because": spread.refusal,
+        },
         "network": {
             "version": release.network_version,
             "seeds": [recipe.seed for recipe in release.recipes],
@@ -751,9 +662,10 @@ def _band_lines(record: dict[str, Any]) -> list[str]:
         (
             "| position (cm⁻¹) | height (km/mol) | range over seeds and mean | B3LYP "
             "| scaled B3LYP | family "
-            f"| licensed | family's measured error {error_header}, cm⁻¹ |"
+            f"| licensed | family's measured error {error_header}, cm⁻¹ "
+            "| own spread (cm⁻¹), under |"
         ),
-        "|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for band in record["bands"]:
         low, high = band["seed_range_cm"]
@@ -761,10 +673,15 @@ def _band_lines(record: dict[str, Any]) -> list[str]:
         licensed = "yes" if band["licensed"] else f"no: {band['licence_note']}"
         if band["licensed"] and band["family"] in record["accuracy"]["on_thin_ground"]:
             licensed = "yes, on thin ground (see above)"
+        spread = (
+            "not measured"
+            if band["own_spread_cm"] is None
+            else f"{band['own_spread_cm']:.2f}, {band['own_spread_change']}"
+        )
         lines.append(
             f"| {band['wavenumber_cm']} | {band['intensity_km_mol']} | {low}–{high} "
             f"| {band['b3lyp_cm']} | {band['scaled_b3lyp_cm']} | {band['family']} "
-            f"| {licensed} | {errors} |"
+            f"| {licensed} | {errors} | {spread} |"
         )
     return lines
 

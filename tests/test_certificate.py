@@ -15,7 +15,7 @@ from rdkit import rdBase
 from aromir import admission, certificate, families, geometry, lowlevel, release, response, spectrum
 from aromir import vibrations as vib
 
-from support import TRAINING, random_hessian, write_release
+from support import TRAINING, random_hessian, unmoved, write_release
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,6 +23,10 @@ if TYPE_CHECKING:
     from aromir.molecule import Geometry
 
 N_BANDS = 30
+
+pytestmark = pytest.mark.usefixtures("networks_that_move_no_band")
+"""The made-up release's random networks move every band; the own spread is measured in
+``test_own_spread.py``."""
 
 
 @pytest.fixture(scope="module")
@@ -56,7 +60,12 @@ def test_without_a_correction_every_band_is_its_own_b3lyp_band(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
     rows = certificate.bands(
-        benzene, low, _no_correction(), loaded.evaluation, outside_domain="", withheld=None
+        benzene,
+        low,
+        _no_correction(),
+        loaded.evaluation,
+        outside_domain="",
+        spread=unmoved(N_BANDS),
     )
     plain = spectrum.harmonic_bands(low.hessian, benzene, low.polar_tensor)
     scaled = spectrum.scaled(plain)
@@ -75,7 +84,12 @@ def test_each_band_carries_its_familys_record(
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, outside_domain="", withheld=None
+        benzene,
+        low,
+        corrections,
+        loaded.evaluation,
+        outside_domain="",
+        spread=unmoved(N_BANDS),
     )
     positions = [row.wavenumber_cm for row in rows]
     assert positions == sorted(positions)
@@ -93,7 +107,12 @@ def test_the_seeds_range_is_their_lowest_and_highest_position(
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, outside_domain="", withheld=None
+        benzene,
+        low,
+        corrections,
+        loaded.evaluation,
+        outside_domain="",
+        spread=unmoved(N_BANDS),
     )
     per_seed = [
         vib.vibrational_modes(low.hessian + delta, benzene).wavenumbers
@@ -350,9 +369,9 @@ def test_the_record_and_its_text(
     assert f") | {wag_on_b:.2f} (" in text
     assert "(the DFT proxy" in record["statement"]
     assert text.count("(the DFT proxy") == 1
-    band_rows = [line for line in text.split("\n") if line.count("|") == 9 and "–" in line]
+    band_rows = [line for line in text.split("\n") if line.count("|") == 10 and "–" in line]
     assert len(band_rows) == N_BANDS
-    error_cells = [line.split("|")[-2].strip() for line in band_rows]
+    error_cells = [line.split("|")[-3].strip() for line in band_rows]
     assert all(re.fullmatch(r"\d+\.\d\d / \d+\.\d\d", cell) for cell in error_cells)
 
 
@@ -445,7 +464,12 @@ def test_the_printed_position_lies_inside_its_range(
     np.testing.assert_allclose(per_seed[0], per_seed[1], atol=1e-6)
     assert float(np.abs(plain - per_seed[0]).max()) > 1.0
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, outside_domain="", withheld=None
+        benzene,
+        low,
+        corrections,
+        loaded.evaluation,
+        outside_domain="",
+        spread=unmoved(N_BANDS),
     )
     for row in rows:
         assert row.seed_range_cm[0] <= row.wavenumber_cm <= row.seed_range_cm[1]

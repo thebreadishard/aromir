@@ -13,6 +13,14 @@
   twisted one at their stored B3LYP/6-31G* geometries (`symbols`, `coords_bohr`) with their
   analytic B3LYP Hessians, rigid motions projected out (`hessian`): what the invariance
   tests turn, mirror and list in another order.
+- `stored_9_methylanthracene.npz`, `stored_diphenyl_ether.npz`: the same for
+  9-methylanthracene and diphenyl ether, whose bands a frame audit of the training project
+  (19 November 2026) found to move by up to 10 and 1.4 cm⁻¹ on v1.4 under a mirror image or
+  another listing: the molecules `tests/test_own_spread.py` measures beside benzene,
+  benzonitrile and biphenyl. Copied, `H_projected` as `hessian`, from the training corpus
+  `modules/05_support_predictor/corpus/molecules/A_78896cfe24` and `A_5a75c6c39e`
+  (`geometry.json`, `hessian_b3lyp_analytic.npz`), public in thebreadishard/capstone-data;
+  the corpus's atom order is kept, and the tests put them into aromir's canonical order.
 - `holdout_a_benzene.npz`: benzene as hold-out (a) holds it, in the format of
   `aromir.evaluation` (with the ωB97X `reference_hessian`). Written by
   `probes/results_m1/aromir_e2e_2026-11-16/make_test_fixtures.py` of the capstone

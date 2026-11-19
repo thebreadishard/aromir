@@ -22,7 +22,7 @@ import pytest
 from aromir import admission, evaluation, families, geometry, release
 from aromir import vibrations as vib
 from aromir.constants import ANGSTROM_PER_BOHR
-from aromir.molecule import Geometry
+from aromir.own_spread import moved
 
 from support import RELEASE_DATA, rotation_matrix, stored_molecule
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
     from _pytest.mark import ParameterSet
 
-    from aromir.molecule import FloatArray
+    from aromir.molecule import FloatArray, Geometry
 
 VERSIONS = ("v1.3", "v1.4")
 SAME_CM = 1e-3
@@ -66,19 +66,11 @@ def _corrected(loaded: release.Release, molecule: Geometry, hessian: FloatArray)
     return np.asarray(vib.vibrational_modes(hessian + answer, molecule).wavenumbers)
 
 
-def _moved(
-    molecule: Geometry, hessian: FloatArray, matrix: FloatArray
-) -> tuple[Geometry, FloatArray]:
-    """Return the molecule and its Hessian under an orthogonal map of space."""
-    blocks = np.kron(np.eye(molecule.n_atoms), matrix)
-    return Geometry(molecule.symbols, molecule.coords_bohr @ matrix.T), blocks @ hessian @ blocks.T
-
-
 def _largest_change(loaded: release.Release, name: str, matrices: list[FloatArray]) -> float:
     molecule, hessian = stored_molecule(name)
     as_stored = _corrected(loaded, molecule, hessian)
     return max(
-        float(np.abs(_corrected(loaded, *_moved(molecule, hessian, matrix)) - as_stored).max())
+        float(np.abs(_corrected(loaded, *moved(molecule, hessian, matrix)) - as_stored).max())
         for matrix in matrices
     )
 

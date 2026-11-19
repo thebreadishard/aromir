@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -204,16 +203,9 @@ def test_release_v13_is_licensed_on_what_it_delivers() -> None:
     assert "| other | 2.78 [1.68–3.76], 156 bands | 2.77 [2.56–2.97], 1225 bands | yes |" in text
     assert "| other | 3.62 (4.09, 3.27, 3.51) | 3.89 (3.65, 4.51, 3.51) |" in text
     assert record["accuracy"]["on_thin_ground"] == ["other"]
-    # v1.3's record moves molecules without a linear group by up to 3.07 cm⁻¹, above the
-    # line, so no band of benzene is licensed; without the record the bands show the
-    # families' licence, thin ground included.
-    assert not any(band["licensed"] for band in record["bands"])
-    unrecorded = replace(bundled, invariance=None)
-    record = certificate.build(
-        admitted, start, low, bundled.corrections(start, hessian), unrecorded
-    )
-    text = certificate.to_markdown(record)
-    others = [band for band in record["bands"] if band["family"] == "other"]
+    # The record's 3.07 cm⁻¹ without a linear group decides no licence: each band's own
+    # spread does, and every 'other' band that keeps its licence is marked thin ground.
+    others = [band for band in record["bands"] if band["family"] == "other" and band["licensed"]]
     assert others
     assert text.count("| other | yes, on thin ground (see above) |") == len(others)
     assert "in cm⁻¹: what this certificate's positions are. In square brackets" in text

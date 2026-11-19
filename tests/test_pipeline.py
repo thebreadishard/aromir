@@ -407,6 +407,18 @@ def test_the_baseline_asks_for_the_repair(
     assert record["soft_mode_repair"] is None  # the synthetic low level repaired nothing
 
 
+def _assert_the_network_read(read: list[FloatArray], hessian: FloatArray) -> None:
+    """Check that the network read this Hessian, and only it, after the start geometry's check.
+
+    The first read is the check of the start geometry's inputs; the certificate's own spread
+    then reads the Hessian turned, mirrored and listed anew, which keeps its eigenvalues.
+    """
+    assert any(np.array_equal(seen, hessian) for seen in read[1:])
+    eigenvalues = np.linalg.eigvalsh(hessian)
+    for seen in read[1:]:
+        np.testing.assert_allclose(np.linalg.eigvalsh(seen), eigenvalues, atol=1e-10)
+
+
 @pytest.mark.parametrize("trained_on_repaired", [False, True])
 @pytest.mark.usefixtures("synthetic_chemistry")
 def test_the_network_reads_the_kind_of_hessian_it_was_trained_on(
@@ -434,7 +446,7 @@ def test_the_network_reads_the_kind_of_hessian_it_was_trained_on(
     with np.load(folder / "lowlevel.npz") as arrays:
         measured, analytic = arrays["hessian"], arrays["analytic_hessian"]
     assert float(np.abs(measured - analytic).max()) > 1e-3
-    np.testing.assert_array_equal(read[-1], measured if trained_on_repaired else analytic)
+    _assert_the_network_read(read, measured if trained_on_repaired else analytic)
     assert record["computation"]["soft_mode_repair"]["n_directions"] == 2
     assert record["soft_modes"].startswith("2 mode(s) below 20 cm⁻¹ were measured")
     assert ("The network read the Hessian without that repair" in record["soft_modes"]) is (
@@ -498,7 +510,7 @@ def test_a_kill_between_two_writes_does_not_feed_the_network_a_measured_hessian(
     record = pipeline.run_spectrum(_benzene(folder), loaded)
     assert synthetic_chemistry == {"optimise": 1, "low level": 1, "repair": 1}
     analytic = _synthetic_low_level(Geometry(*_saved_geometry(folder))).hessian
-    np.testing.assert_array_equal(read[-1], analytic)
+    _assert_the_network_read(read, analytic)
     assert record["computation"]["soft_mode_repair"]["n_directions"] == 2
 
 

@@ -48,6 +48,9 @@ INVARIANCE = {
     "tensor_sha256": OTHER_WEIGHTS,
     "source": "a test",
 }
+pytestmark = pytest.mark.usefixtures("networks_that_move_no_band")
+"""The made-up release's random networks move every band; the own spread is measured in
+``test_own_spread.py``."""
 X_H_SPRING = {"C": 0.37, "O": 0.50, "N": 0.45}
 """Force constants, hartree/bohr², that put a C–H stretch near 3100 cm⁻¹ and an O–H or N–H
 stretch well above it."""
@@ -154,26 +157,30 @@ def test_a_stretch_on_oxygen_or_nitrogen_is_not_licensed_as_a_ch_stretch(
 
 
 def _note(mode: certificate.Mode, loaded: release.Release) -> str:
-    return certificate.licence_note(mode, loaded.evaluation, outside_domain="", withheld=None)
+    return certificate.licence_note(mode, loaded.evaluation, outside_domain="")
+
+
+def _mode(
+    family: families.Family, low_cm: float, position_cm: float, seed_cm: float, off: float
+) -> certificate.Mode:
+    """Return a band that moved by nothing when its molecule was given another way."""
+    return certificate.Mode(family, low_cm, position_cm, seed_cm, off, 0.0, "rotation 1")
 
 
 def test_a_mixed_stretch_and_a_wag_off_carbon_fail_the_licence(loaded: release.Release) -> None:
-    assert _note(certificate.Mode("CH-stretch", 100.0, 3100.0, 3099.0, 0.05), loaded) == ""
-    mixed = _note(certificate.Mode("CH-stretch", 100.0, 3100.0, 3099.0, 0.45), loaded)
+    assert _note(_mode("CH-stretch", 100.0, 3100.0, 3099.0, 0.05), loaded) == ""
+    mixed = _note(_mode("CH-stretch", 100.0, 3100.0, 3099.0, 0.45), loaded)
     assert mixed.startswith("45% of its hydrogen motion")
-    wag = _note(certificate.Mode("CH-oop", 100.0, 800.0, 799.0, 0.9), loaded)
+    wag = _note(_mode("CH-oop", 100.0, 800.0, 799.0, 0.9), loaded)
     assert wag.endswith("which the rule counts as CH-oop")
-    assert _note(certificate.Mode("ring-ip", 100.0, 1200.0, 1199.0, 0.9), loaded) == ""
+    assert _note(_mode("ring-ip", 100.0, 1200.0, 1199.0, 0.9), loaded) == ""
 
 
 def test_a_position_just_below_zero_is_imaginary_though_it_rounds_to_zero(
     loaded: release.Release,
 ) -> None:
-    assert (
-        _note(certificate.Mode("ring-ip", 100.0, -0.04, -0.04, 0.0), loaded)
-        == certificate.IMAGINARY
-    )
-    for_a_seed = _note(certificate.Mode("ring-ip", 100.0, 12.0, -3.0, 0.0), loaded)
+    assert _note(_mode("ring-ip", 100.0, -0.04, -0.04, 0.0), loaded) == certificate.IMAGINARY
+    for_a_seed = _note(_mode("ring-ip", 100.0, 12.0, -3.0, 0.0), loaded)
     assert for_a_seed == certificate.IMAGINARY_FOR_A_SEED
 
 
@@ -183,7 +190,7 @@ def test_a_band_of_an_imaginary_low_level_mode_is_a_flat_coordinate_whatever_its
     # The command ends with 'unphysical' for an imaginary corrected band; a flat coordinate
     # is named before that, so a spectrum printed at one does not end that way for it.
     for position in (-8.0, 15.0):
-        flat = _note(certificate.Mode("other", -12.0, position, position, 0.0), loaded)
+        flat = _note(_mode("other", -12.0, position, position, 0.0), loaded)
         assert flat == certificate.FLAT_COORDINATE
 
 

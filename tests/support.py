@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
 from rdkit import Chem
 
-from aromir import geometry, release
+from aromir import admission, geometry, own_spread, release
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.families import FAMILIES
 from aromir.molecule import Geometry
@@ -129,9 +130,46 @@ RELEASE_DATA = Path(__file__).parent / "data" / "release"
 
 def stored_molecule(name: str) -> tuple[Geometry, FloatArray]:
     """Return a stored molecule of the test data and its B3LYP Hessian (see its README)."""
-    with np.load(RELEASE_DATA / f"stored_{name}.npz") as arrays:
+    return _stored(RELEASE_DATA / f"stored_{name}.npz")
+
+
+def _stored(path: Path) -> tuple[Geometry, FloatArray]:
+    with np.load(path) as arrays:
         symbols = tuple(str(symbol) for symbol in arrays["symbols"])
         return Geometry(symbols, np.array(arrays["coords_bohr"])), np.array(arrays["hessian"])
+
+
+def as_computed(name: str) -> tuple[str, Geometry, FloatArray]:
+    """Return a stored molecule as the pipeline would have it: SMILES, geometry, Hessian.
+
+    The geometry is read the way an xyz request is, so its atoms are in aromir's canonical
+    order and the SMILES is the one admission writes. "benzene" is hold-out (a)'s benzene
+    with its B3LYP Hessian.
+    """
+    path = RELEASE_DATA / ("holdout_a_benzene.npz" if name == "benzene" else f"stored_{name}.npz")
+    molecule, hessian = _stored(path)
+    with TemporaryDirectory() as folder:
+        xyz = Path(folder) / "molecule.xyz"
+        lines = [str(molecule.n_atoms), name]
+        for symbol, (x, y, z) in zip(
+            molecule.symbols, molecule.coords_bohr * ANGSTROM_PER_BOHR, strict=True
+        ):
+            lines.append(f"{symbol} {x:.10f} {y:.10f} {z:.10f}")
+        xyz.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        reading = admission.read(xyz)
+    order = tuple(geometry.canonical_order(reading.molecule))
+    ordered, ordered_hessian = own_spread.reordered(molecule, hessian, order)
+    return admission.admit(reading).smiles, ordered, ordered_hessian
+
+
+def unmoved(n_bands: int) -> own_spread.OwnSpread:
+    """Return a molecule's own spread as it would be for a network that moves no band."""
+    return own_spread.OwnSpread(
+        spread_cm=(0.0,) * n_bands,
+        change=("rotation 1",) * n_bands,
+        tried=("rotation 1",),
+        refusal="",
+    )
 
 
 SMALL_ARCHITECTURE = Architecture(n_features=16, n_blocks=2, hidden=24)

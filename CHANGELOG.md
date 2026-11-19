@@ -134,18 +134,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   licensed, and tropone keeps its licence; no molecule of the shipped lists is outside
   them. The certificate names each kind, `aromir check` says it, and the card
   states the condition.
-- No band of a molecule is licensed while the release's `invariance.json` gives the
-  molecules of its group — with a linear group (the certificate's linear angle: a nitrile,
-  an alkyne) or without — a largest spread above the licence line under a rotation, a
-  mirror image or another xyz listing; nor of a molecule with a linear group while that
-  spread is not measured (a molecule without one keeps its licence there). The reason is
-  stated in the certificate's statement and in every band's licence column, and the
-  corrected positions are printed unchanged. v1.4's record gives 11.20 cm⁻¹ with a linear
-  group and 2.85 without, so diphenylacetylene and benzonitrile are no longer licensed
-  (benzonitrile by its group: its own turns move it less) and the others keep the licence;
-  v1.3's gives 5.34 and 3.07, so with `--release` v1.3 licenses no band. A release whose
-  record puts a group's spread at or below the line licenses it again. The card states the
-  rule with its release's numbers.
+- A band is licensed only while its own spread is within the licence line: the
+  certificate measures, for the molecule itself, how far each band's position moves when
+  the networks correct the same molecule turned (3 random rotations), mirrored (the mirror
+  image and a rotated one) and listed in other atom orders (4 random listings put into the
+  canonical order, up to 12 swaps of atoms the bond graph cannot tell apart), with a
+  generator seeded 7 and each band paired with itself by its motion. Each band states its
+  spread and the change that gave it, a band beyond the line says so in its licence column,
+  the statement says how the licence was decided, and where the check cannot run (a
+  geometry not in the canonical order of its SMILES, inputs the networks cannot build) no
+  band is licensed and the statement says why. The corrected positions are printed
+  unchanged. This replaces the rule by the group's spread in `invariance.json` (2.85 cm⁻¹
+  without a linear group, from four molecules), under which 9-methylanthracene's methyl
+  torsion, at a real 40 cm⁻¹, was licensed while it moves by 5.16 cm⁻¹ under a swap of
+  equivalent atoms; the record's numbers stay on the card and in the certificate as context.
+  On v1.4's stored molecules: benzene 0.88, benzonitrile 1.75 (no longer withheld for its
+  nitrile's group), biphenyl 2.85, diphenyl ether 1.40 cm⁻¹ at most, every band licensed;
+  9-methylanthracene's largest, 9.95 cm⁻¹, is its stored torsion, imaginary and never
+  licensed. The card states the rule. `scripts/measure_invariance.py` and the stored-Hessian
+  tests take their rotation, mirror image and reordering from `aromir.own_spread`.
 - 'Seen' follows one stereo rule, the training project's: a row without stereo labels
   stands for both mirror images of a molecule whose one stereo element is one tetrahedral
   centre (an xyz sulfoxide that names its configuration is in the training set when the

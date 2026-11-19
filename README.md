@@ -132,12 +132,13 @@ The result folder then also holds
   molecules lack: with v1.4, whose charged training molecules are nitro compounds and one
   N-oxide and whose rings of aromatic atoms have 4 to 7 atoms, a zwitterion, an azide or
   a sulfoxide is printed, named as outside it, and not licensed), its low-level mode is real, the band is real for the seeds'
-  mean and for every seed, molecules of the molecule's group (with or without a linear
-  group: a nitrile, an alkyne) moved by no more than the licence line under a rotation, a
-  mirror image or another xyz listing in the release's `invariance.json`, and a CH-stretch
+  mean and for every seed, the band's own position moved by no more than the licence line
+  when this molecule was turned, mirrored or listed in another atom order, and a CH-stretch
   or CH-oop band moves carbon-bound
   hydrogens (an O–H stretch
   falls under the CH-stretch rule and is not licensed), with the reason where it is not;
+- its own spread: how far its position moved under those changes, and which one moved it
+  most;
 
 and says whether the molecule lies inside the sizes the network was trained on, whether
 the network has seen it, and what the measured error does not cover: how far the
@@ -161,16 +162,21 @@ molecules, the resampling intervals of CH-oop and 'other' cross it, and the card
 certificate say what that is worth.
 
 The licence also reads how far the same molecule's positions move when it is turned,
-mirrored or listed in another order, which a release's `invariance.json` records for
-molecules with a linear group (a nitrile, an alkyne) and without one. While the largest of
-those spreads for a molecule's group is above the licence line, no band of the molecule
-is licensed; its corrected positions are printed all the same, with the reason. A
-molecule with a linear group is not licensed either where its group's spread was not
-measured; one without keeps its licence there. A linear angle is measured against a fixed
-axis in space, which is why such molecules move most: v1.4's record gives up to 11.20
-cm⁻¹ with a linear group and 2.85 without, so molecules with one are not licensed and
-the others are; v1.3's gives 5.34 and 3.07, so none is. A release whose record puts the
-spread at or below the line gets the licence back with no change to the code.
+mirrored or listed in another order, measured on the molecule itself (`aromir.own_spread`):
+the networks correct it again after 3 random rotations, the mirror image and a rotated
+mirror image, 4 random listings of its atoms put into aromir's canonical order and up to
+12 swaps of atoms its bond graph cannot tell apart, every band is paired with itself by
+its motion, and a band whose position moved by more than the licence line under any of
+them is not licensed. Its corrected position is printed all the same, with the spread and
+the change that gave it. Where the check cannot run, no band is licensed. It runs no
+quantum chemistry: about half a second per change on a laptop for a molecule of 27 atoms,
+some 15 seconds for 16 changes. A release's `invariance.json` records the same kind of
+spread on a few fixed molecules (v1.4: up to 11.20 cm⁻¹ with a linear group, a nitrile or
+an alkyne, whose angle is measured against a fixed axis in space, and 2.85 without); the
+card and the certificate state it as context, and it decides no licence: a molecule
+outside those few can move further. 9-methylanthracene, which has no linear group, moves
+its methyl torsion by 9.95 cm⁻¹ under a swap of its equivalent atoms (5.16 with the torsion
+real at 40 cm⁻¹), more than the record's 2.85.
 
 `aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it

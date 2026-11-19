@@ -47,6 +47,7 @@ from aromir import admission, records, release, vibrations
 from aromir import geometry as geo
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.molecule import Geometry
+from aromir.own_spread import MIRROR, moved, random_rotation, reordered
 
 if TYPE_CHECKING:
     from aromir.molecule import FloatArray
@@ -69,7 +70,6 @@ LINEAR_BOND = "#"
 """A triple bond in the SMILES: the nitriles and alkynes whose angle the network reads
 against a fixed axis."""
 HESSIAN_FILE = "hessian_b3lyp_analytic.npz"
-MIRROR = np.diag([1.0, 1.0, -1.0])
 REPOSITORY = Path(__file__).resolve().parent.parent
 
 
@@ -110,28 +110,6 @@ def corrected(loaded: release.Release, molecule: Geometry, hessian: FloatArray) 
     """Return the band positions, cm⁻¹, of a Hessian with the release's correction added."""
     answer = loaded.corrections(molecule, hessian).mean
     return np.asarray(vibrations.vibrational_modes(hessian + answer, molecule).wavenumbers)
-
-
-def reordered(
-    molecule: Geometry, hessian: FloatArray, order: tuple[int, ...]
-) -> tuple[Geometry, FloatArray]:
-    """Return the molecule with stored atom ``order[k]`` in position k."""
-    index = (3 * np.array(order)[:, None] + np.arange(3)).ravel()
-    return molecule.reordered(list(order)), hessian[np.ix_(index, index)]
-
-
-def moved(
-    molecule: Geometry, hessian: FloatArray, matrix: FloatArray
-) -> tuple[Geometry, FloatArray]:
-    """Return the molecule and its Hessian under an orthogonal map of space."""
-    blocks = np.kron(np.eye(molecule.n_atoms), matrix)
-    return Geometry(molecule.symbols, molecule.coords_bohr @ matrix.T), blocks @ hessian @ blocks.T
-
-
-def random_rotation(rng: np.random.Generator) -> FloatArray:
-    """Return a random proper rotation (determinant +1)."""
-    q, _ = np.linalg.qr(rng.normal(size=(3, 3)))
-    return np.asarray(q * np.sign(np.linalg.det(q)))
 
 
 def listed_orders(

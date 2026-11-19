@@ -11,8 +11,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from aromir import dft, families, repair
-from aromir.certificate import SPREAD_CHANGES, group_spread, withheld_by_spread
+from aromir import dft, families, own_spread, repair
 from aromir.release import (
     EVALUATION_FILE,
     INVARIANCE_FILE,
@@ -316,35 +315,26 @@ def _sameness(release: Release) -> list[str]:
     ]
 
 
-def _group_verdict(release: Release, *, linear_group: bool) -> str:
-    """Say what this release's record gives one group, and whether its bands are licensed."""
-    spread = group_spread(release, linear_group=linear_group)
-    if spread.spread_cm is None:
-        value = "not measured"
-    elif spread.complete:
-        value = f"{spread.spread_cm:.2f} cm⁻¹"
-    else:
-        value = f"{spread.spread_cm:.2f} cm⁻¹ on the changes measured"
-    group = "with" if linear_group else "without"
-    withheld = withheld_by_spread(release, linear_group=linear_group) is not None
-    verdict = "are not licensed" if withheld else "keep the licence"
-    return f"{value} {group} a linear group, so their bands {verdict}"
-
-
 def _spread_licence(release: Release) -> str:
-    """State the licence rule of the groups' spreads, with this release's numbers."""
+    """State the licence rule of a band's own spread."""
     line = release.evaluation.licence_line_cm
-    verdicts = " and ".join(
-        _group_verdict(release, linear_group=linear_group) for linear_group in (True, False)
+    context = (
+        "The spreads above are the release's record, measured on a few molecules: they "
+        "describe the network and decide no licence."
+        if release.invariance is not None
+        else ""
     )
     return (
-        "- **A molecule's licence follows its group's measured spread.** aromir's certificate "
-        "licenses no band of a molecule while the largest spread this release's invariance "
-        "record gives for molecules of its group (with or without a linear group, an angle "
-        f"near 180° as in a nitrile or an alkyne) under {SPREAD_CHANGES} exceeds {line:g} "
-        "cm⁻¹, nor of a molecule with a linear group while that spread was not measured; for "
-        f"this release it is {verdicts}; the corrected positions are printed either way."
-    )
+        "- **A band's licence follows its own measured spread.** For every molecule, "
+        "aromir's certificate has the networks correct the same molecule given in other ways: "
+        f"{own_spread.N_ROTATIONS} random rotations, the mirror image and a rotated mirror "
+        f"image, {own_spread.N_LISTINGS} random listings of the atoms put into aromir's "
+        f"canonical order and up to {own_spread.N_SWAPS} swaps of atoms the bond graph cannot "
+        f"tell apart, drawn with the seed {own_spread.SEED}. Each band is paired with itself "
+        "by its motion, and it is licensed only when its position moved by no more than "
+        f"{line:g} cm⁻¹ under every one of them; where that cannot be measured, no band is "
+        f"licensed. The corrected positions are printed either way. {context}"
+    ).rstrip()
 
 
 def _limits(release: Release) -> list[str]:
@@ -386,9 +376,9 @@ def _limits(release: Release) -> list[str]:
             "licence line, the molecule lies inside the training sizes and holds no charge "
             "separation or aromatic ring size the training molecules lack, its low-level mode "
             "is real, the band is real for "
-            "the seeds' mean and for every seed, molecules of the molecule's group (with or "
-            "without a linear group) moved by no more than the licence line in the release's "
-            "invariance record, and a CH-stretch or CH-oop band moves "
+            "the seeds' mean and for every seed, its own position moved by no more than the "
+            "licence line when the molecule was turned, mirrored or listed in another order, "
+            "and a CH-stretch or CH-oop band moves "
             "carbon-bound hydrogens. A "
             "ring-ip band is licensed as the rule takes it, C=O stretches included."
         ),
