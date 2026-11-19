@@ -135,24 +135,39 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them. The certificate names each kind, `aromir check` says it, and the card
   states the condition.
 - A band is licensed only while its own spread is within the licence line: the
-  certificate measures, for the molecule itself, how far each band's position moves when
-  the networks correct the same molecule turned (8 random rotations), mirrored (the mirror
-  image and a rotated one) and listed in other atom orders (4 random listings put into the
-  canonical order, up to 12 swaps of atoms the bond graph cannot tell apart), with a
-  generator seeded 7 and each band paired with itself by its motion. Each band states its
-  spread and the change that gave it, a band beyond the line says so in its licence column,
-  the statement says how the licence was decided, and where the check cannot run (a
-  geometry not in the canonical order of its SMILES, inputs the networks cannot build) no
-  band is licensed and the statement says why. The corrected positions are printed
+  certificate measures, for the molecule itself, how far each band's position lies from the
+  printed one when the networks correct the same molecule in other presentations: turned
+  (8 random rotations), mirrored (the mirror image and a rotated one), with atoms the bond
+  graph cannot tell apart swapped (every such order where there are at most 12; of more, 12
+  symmetries of the heavy-atom skeleton, enumerated whole, and 6 exchanges of hydrogens)
+  and listed anew (4 random listings put into the canonical order), with a generator seeded
+  7. Each band is paired with itself by its motion, and two bands whose motion a
+  presentation shares out anew are compared as a pair. The spread is the distance from the
+  printed presentation, not the range between presentations; the line is held against it
+  unrounded, and a spread of 3.004 is printed as 3.004. Each band states its spread and the
+  presentation that gave it, a band beyond the line says so in its licence column, the
+  statement says how the licence was decided, and where the check cannot run (a geometry
+  not in the canonical order of its SMILES, a presentation the networks cannot correct) no
+  band is licensed and the statement says why and which. `certificate.json` records every
+  presentation tried, the seed and the RDKit version. The corrected positions are printed
   unchanged. This replaces the rule by the group's spread in `invariance.json` (2.85 cm⁻¹
   without a linear group, from four molecules), under which 9-methylanthracene's methyl
   torsion, at a real 40 cm⁻¹, was licensed while it moves by 5.16 cm⁻¹ under a swap of
   equivalent atoms; the record's numbers stay on the card and in the certificate as context.
-  On v1.4's stored molecules: benzene 0.88, benzonitrile 2.78 (no longer withheld for its
-  nitrile's group), biphenyl 2.85, diphenyl ether 1.40 cm⁻¹ at most, every band licensed;
-  9-methylanthracene's largest, 9.95 cm⁻¹, is its stored torsion, imaginary and never
-  licensed. The card states the rule. `scripts/measure_invariance.py` and the stored-Hessian
-  tests take their rotation, mirror image and reordering from `aromir.own_spread`.
+  On v1.4's stored molecules: benzene 0.78, biphenyl 2.85, diphenyl ether 1.40 cm⁻¹ at
+  most, every band licensed; 9-methylanthracene's largest, 9.95 cm⁻¹, is its stored
+  torsion, imaginary and never licensed. The card states the rule.
+  `scripts/measure_invariance.py` and the stored-Hessian tests take their rotation, mirror
+  image and reordering from `aromir.own_spread`.
+- A molecule with a linear group (a nitrile, an alkyne) can now be licensed: the group rule
+  withheld every band of every such molecule on v1.4, and the own spread withholds only the
+  bands that move. Benzonitrile's largest is 2.78 cm⁻¹ over the certificate's 8 rotations
+  (1.75 over the first 3, 2.78 over 24, and at most 2.78 over 200 further random
+  rotations), so its 33 bands are licensed, 0.22 cm⁻¹ inside the line; diphenylacetylene
+  moves by up to 13.54 cm⁻¹ and loses the bands that do. The rotations are a sample of the
+  orientations a linear angle's fixed axis can take, not a bound.
+- CI's RDKit-range job runs `tests/test_own_spread.py` on RDKit 2024.9.1 and the newest
+  2026.9: the listings' ties depend on the RDKit version, and no pin rests on them.
 - 'Seen' follows one stereo rule, the training project's: a row without stereo labels
   stands for both mirror images of a molecule whose one stereo element is one tetrahedral
   centre (an xyz sulfoxide that names its configuration is in the training set when the

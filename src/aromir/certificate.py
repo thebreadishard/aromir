@@ -87,10 +87,11 @@ class Band:
             a band of a C–H family moves carbon-bound hydrogens.
         licence_note: The first condition the band fails; empty when it is licensed.
         measured_error_cm: The family's band error of the seeds' mean, per hold-out.
-        own_spread_cm: How far the band's position moved, at most, when this molecule was
-            turned, mirrored or listed in another order (``own_spread``); None when that
-            could not be measured.
-        own_spread_change: The change that moved it most; empty when not measured.
+        own_spread_cm: The furthest the band's position lay from the printed one in any
+            presentation of this molecule tried — turned, mirrored or listed in another
+            order (``own_spread``) — as it is printed (``own_spread.stated``); None when
+            that could not be measured.
+        own_spread_change: The presentation that moved it most; empty when not measured.
     """
 
     wavenumber_cm: float
@@ -116,8 +117,8 @@ class Mode:
         position_cm: The corrected position of the seeds' mean.
         lowest_seed_cm: The lowest position of the band over the seeds.
         off_carbon: The share of its hydrogen motion on hydrogens not bound to carbon.
-        spread_cm: Its own spread, to two decimals; None when it was not measured.
-        spread_change: The change that gave the spread.
+        spread_cm: Its own spread, unrounded; None when it was not measured.
+        spread_change: The presentation that gave the spread.
     """
 
     family: families.Family
@@ -137,12 +138,12 @@ STILL_PRINTED: Final = "the corrected positions are still printed"
 
 
 def _moved_note(mode: Mode, line: float) -> str:
-    """Say that a band's own spread, as stated, is beyond the licence line; "" when it is not."""
+    """Say that a band's own spread, unrounded, is beyond the licence line; "" when it is not."""
     if mode.spread_cm is None or mode.spread_cm <= line:
         return ""
     return (
-        f"its position moved by {mode.spread_cm:.2f} cm⁻¹ under {mode.spread_change} of "
-        "this molecule, more than the licence line"
+        f"its position moved by {own_spread.stated(mode.spread_cm, line)} cm⁻¹ under "
+        f"{mode.spread_change} of this molecule, more than the licence line"
     )
 
 
@@ -224,7 +225,11 @@ def bands(
                     holdout: error.rms_cm
                     for holdout, error in evaluation.band_error_seed_mean_cm[mode.family].items()
                 },
-                own_spread_cm=mode.spread_cm,
+                own_spread_cm=(
+                    None
+                    if mode.spread_cm is None
+                    else float(own_spread.stated(mode.spread_cm, evaluation.licence_line_cm))
+                ),
                 own_spread_change=mode.spread_change,
             )
         )
@@ -474,7 +479,7 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _own_spread_text(spread: own_spread.OwnSpread, rows: list[Band], line: float) -> str:
+def _own_spread_text(spread: own_spread.OwnSpread, line: float) -> str:
     """Say how the licence read the molecule's own spread, and what it found."""
     if not spread.spread_cm:
         return (
@@ -483,7 +488,7 @@ def _own_spread_text(spread: own_spread.OwnSpread, rows: list[Band], line: float
             f"licensed; {STILL_PRINTED}. "
         )
     largest, change = spread.largest
-    n_beyond = sum(row.own_spread_cm is not None and row.own_spread_cm > line for row in rows)
+    n_beyond = sum(value > line for value in spread.spread_cm)
     verdict = (
         f"{n_beyond} band(s) moved by more than the licence line, so none of them is "
         f"licensed; {STILL_PRINTED}"
@@ -492,9 +497,11 @@ def _own_spread_text(spread: own_spread.OwnSpread, rows: list[Band], line: float
     )
     return (
         "Each band's own spread was measured for this molecule: the networks corrected it "
-        f"again given in {len(spread.tried)} other ways ({own_spread.describe(spread.tried)}), "
-        "and a band's spread is the furthest its position moved; the largest is "
-        f"{largest:.2f} cm⁻¹, under {change}, and {verdict}. "
+        f"again in {len(spread.tried)} other presentations "
+        f"({own_spread.describe(spread.tried)}), and a band's spread is the furthest its "
+        "position lay from the printed one in any of them: its distance from the printed "
+        "presentation, not the range between presentations. The largest is "
+        f"{own_spread.stated(largest, line)} cm⁻¹, under {change}, and {verdict}. "
     )
 
 
@@ -538,10 +545,11 @@ def _statement(
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes "
         "and holds no charge separation or aromatic ring size the training molecules lack, "
         "its low-level mode is real, the band is real for the seeds' mean and for every "
-        "seed, its own position moved by no more than the licence line when this molecule "
-        "was turned, mirrored or listed in another atom order, and a band of a C–H family "
-        "moves carbon-bound "
-        f"hydrogens. {_own_spread_text(spread, rows, line)}{flat}{thin}{beyond}"
+        "seed, its own position moved by no more than the licence line in the "
+        f"{f'{len(spread.tried)} ' if spread.tried else ''}presentations tried (this "
+        "molecule turned, mirrored or listed in another atom order), and a band of a C–H "
+        "family moves carbon-bound "
+        f"hydrogens. {_own_spread_text(spread, line)}{flat}{thin}{beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. {_not_experiment(evaluation)}"
     )
 
@@ -624,11 +632,7 @@ def build(
     return {
         "statement": _statement(admitted, release, rows, molecule, spread),
         "molecule": molecule,
-        "own_spread": {
-            "changes_tried": list(spread.tried),
-            "seed": own_spread.SEED,
-            "not_measured_because": spread.refusal,
-        },
+        "own_spread": spread.record(),
         "network": {
             "version": release.network_version,
             "seeds": [recipe.seed for recipe in release.recipes],
@@ -658,6 +662,7 @@ def build(
 def _band_lines(record: dict[str, Any]) -> list[str]:
     holdouts = list(record["accuracy"]["holdouts"])
     error_header = "on test set " + " / ".join(f"({name})" for name in holdouts)
+    line = record["accuracy"]["licence_line_cm"]
     lines = [
         (
             "| position (cm⁻¹) | height (km/mol) | range over seeds and mean | B3LYP "
@@ -676,7 +681,7 @@ def _band_lines(record: dict[str, Any]) -> list[str]:
         spread = (
             "not measured"
             if band["own_spread_cm"] is None
-            else f"{band['own_spread_cm']:.2f}, {band['own_spread_change']}"
+            else f"{own_spread.stated(band['own_spread_cm'], line)}, {band['own_spread_change']}"
         )
         lines.append(
             f"| {band['wavenumber_cm']} | {band['intensity_km_mol']} | {low}–{high} "

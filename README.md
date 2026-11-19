@@ -137,7 +137,7 @@ The result folder then also holds
   or CH-oop band moves carbon-bound
   hydrogens (an O–H stretch
   falls under the CH-stretch rule and is not licensed), with the reason where it is not;
-- its own spread: how far its position moved under those changes, and which one moved it
+- its own spread: how far its position lay from print in those presentations, and which one moved it
   most;
 
 and says whether the molecule lies inside the sizes the network was trained on, whether
@@ -163,20 +163,29 @@ certificate say what that is worth.
 
 The licence also reads how far the same molecule's positions move when it is turned,
 mirrored or listed in another order, measured on the molecule itself (`aromir.own_spread`):
-the networks correct it again after 8 random rotations, the mirror image and a rotated
-mirror image, 4 random listings of its atoms put into aromir's canonical order and up to
-12 swaps of atoms its bond graph cannot tell apart, every band is paired with itself by
-its motion, and a band whose position moved by more than the licence line under any of
-them is not licensed. Its corrected position is printed all the same, with the spread and
-the change that gave it. Where the check cannot run, no band is licensed. It runs no
-quantum chemistry: about half a second per change on a laptop for a molecule of 27 atoms,
-some 13 seconds for 21 changes. A release's `invariance.json` records the same kind of
-spread on a few fixed molecules (v1.4: up to 11.20 cm⁻¹ with a linear group, a nitrile or
-an alkyne, whose angle is measured against a fixed axis in space, and 2.85 without); the
-card and the certificate state it as context, and it decides no licence: a molecule
-outside those few can move further. 9-methylanthracene, which has no linear group, moves
-its methyl torsion by 9.95 cm⁻¹ under a swap of its equivalent atoms (5.16 with the torsion
-real at 40 cm⁻¹), more than the record's 2.85.
+the networks correct it again in other presentations — 8 random rotations, the mirror
+image and a rotated mirror image, swaps of atoms its bond graph cannot tell apart (every
+one where there are at most 12; of more, 12 symmetries of the heavy-atom skeleton and 6
+exchanges of hydrogens on their own atoms) and 4 random listings of its atoms put into
+aromir's canonical order — and every band is paired with itself by its motion; two bands
+whose motion a presentation shares out anew are compared as a pair. A band's spread is the
+furthest its position lay from the printed one in any presentation: its distance from the
+printed presentation, not the range between presentations, and a sample, not a bound. A
+band whose spread, unrounded, is more than the licence line is not licensed; its corrected
+position is printed all the same, with the spread and the presentation that gave it.
+Where the check cannot run, or the networks cannot correct one presentation, no band is
+licensed and the certificate says which. `certificate.json` records every presentation
+tried (a rotation's matrix, an order's atoms), the seed and the RDKit version, which
+decides how a listing's ties fall. It runs no quantum chemistry: about half a second per
+presentation on a laptop for a molecule of 27 atoms, some 12 seconds for 21 of them. A
+release's `invariance.json` records the same kind of spread on a few fixed molecules
+(v1.4: up to 11.20 cm⁻¹ with a linear group, a nitrile or an alkyne, whose angle is
+measured against a fixed axis in space, and 2.85 without); the card and the certificate
+state it as context, and it decides no licence: a molecule outside those few can move
+further, and one with a linear group can move less. 9-methylanthracene, which has no
+linear group, moves its methyl torsion by 9.95 cm⁻¹ under a swap of its equivalent atoms
+(5.16 with the torsion real at 40 cm⁻¹), more than the record's 2.85; benzonitrile, which
+has one, moves by 2.78 at most and is licensed.
 
 `aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it

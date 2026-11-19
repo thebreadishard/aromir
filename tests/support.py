@@ -164,10 +164,17 @@ def as_computed(name: str) -> tuple[str, Geometry, FloatArray]:
 
 def unmoved(n_bands: int) -> own_spread.OwnSpread:
     """Return a molecule's own spread as it would be for a network that moves no band."""
+    return uniform_spread(0.0, n_bands)
+
+
+def uniform_spread(spread_cm: float, n_bands: int) -> own_spread.OwnSpread:
+    """Return the own spread of a molecule whose every band moved alike under one rotation."""
+    turn = own_spread.Change("rotation 1", "rotation", np.eye(3), ())
     return own_spread.OwnSpread(
-        spread_cm=(0.0,) * n_bands,
-        change=("rotation 1",) * n_bands,
-        tried=("rotation 1",),
+        spread_cm=(spread_cm,) * n_bands,
+        change=(turn.name,) * n_bands,
+        tried=(turn,),
+        symmetries=None,
         refusal="",
     )
 

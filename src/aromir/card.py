@@ -329,11 +329,15 @@ def _spread_licence(release: Release) -> str:
         "aromir's certificate has the networks correct the same molecule given in other ways: "
         f"{own_spread.N_ROTATIONS} random rotations, the mirror image and a rotated mirror "
         f"image, {own_spread.N_LISTINGS} random listings of the atoms put into aromir's "
-        f"canonical order and up to {own_spread.N_SWAPS} swaps of atoms the bond graph cannot "
-        f"tell apart, drawn with the seed {own_spread.SEED}. Each band is paired with itself "
-        "by its motion, and it is licensed only when its position moved by no more than "
-        f"{line:g} cm⁻¹ under every one of them; where that cannot be measured, no band is "
-        f"licensed. The corrected positions are printed either way. {context}"
+        f"canonical order and swaps of atoms the bond graph cannot tell apart (all of them up "
+        f"to {own_spread.N_SWAPS}; of more, {own_spread.N_SWAPS} symmetries of the heavy-atom "
+        f"skeleton and {own_spread.N_HYDROGEN_SWAPS} exchanges of hydrogens), drawn with the "
+        f"seed {own_spread.SEED}. Each band is paired with itself by its motion, and it is "
+        "licensed only when its position lay no more than "
+        f"{line:g} cm⁻¹ from the printed one in every presentation tried: the distance from "
+        "the printed presentation, not the range between presentations, and a sample, not a "
+        "bound. Where that cannot be measured, no band is licensed. The corrected positions "
+        f"are printed either way. {context}"
     ).rstrip()
 
 
