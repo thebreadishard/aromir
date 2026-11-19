@@ -95,7 +95,7 @@ def _unruled_bands(name: str) -> list[certificate.Band]:
         _low(hessian),
         corrections,
         _v14().evaluation,
-        inside_training_sizes=True,
+        outside_domain="",
         withheld=None,
     )
 

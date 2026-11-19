@@ -56,7 +56,7 @@ def test_without_a_correction_every_band_is_its_own_b3lyp_band(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
     rows = certificate.bands(
-        benzene, low, _no_correction(), loaded.evaluation, inside_training_sizes=True, withheld=None
+        benzene, low, _no_correction(), loaded.evaluation, outside_domain="", withheld=None
     )
     plain = spectrum.harmonic_bands(low.hessian, benzene, low.polar_tensor)
     scaled = spectrum.scaled(plain)
@@ -75,7 +75,7 @@ def test_each_band_carries_its_familys_record(
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True, withheld=None
+        benzene, low, corrections, loaded.evaluation, outside_domain="", withheld=None
     )
     positions = [row.wavenumber_cm for row in rows]
     assert positions == sorted(positions)
@@ -93,7 +93,7 @@ def test_the_seeds_range_is_their_lowest_and_highest_position(
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True, withheld=None
+        benzene, low, corrections, loaded.evaluation, outside_domain="", withheld=None
     )
     per_seed = [
         vib.vibrational_modes(low.hessian + delta, benzene).wavenumbers
@@ -373,6 +373,37 @@ def test_a_molecule_outside_the_training_sizes_is_marked(
     assert tmp_path.exists()
 
 
+def test_a_molecule_outside_the_training_chemistry_is_printed_and_not_licensed(
+    low: lowlevel.LowLevel, benzene: Geometry, loaded: release.Release
+) -> None:
+    # A release trained on five-membered rings alone has never seen benzene's ring.
+    furans = loaded.training.model_copy(update={"trained_smiles": ["Cc1ccoc1", "c1ccsc1"]})
+    narrow = replace(loaded, training=furans)
+    admitted = admission.admit(admission.read("c1ccccc1"))
+    record = certificate.build(
+        admitted, benzene, low, narrow.corrections(benzene, low.hessian), narrow
+    )
+    caveat = "an aromatic ring of 6 atoms, a size no training molecule has (theirs: 5)"
+    assert record["molecule"]["outside_training_chemistry"] == [caveat]
+    assert record["molecule"]["inside_training_sizes"] is True
+    assert len(record["bands"]) == N_BANDS
+    assert not any(band["licensed"] for band in record["bands"])
+    notes = {band["licence_note"] for band in record["bands"] if band["family"] != "other"}
+    assert notes == {certificate.OUTSIDE_CHEMISTRY}
+    text = certificate.to_markdown(record)
+    assert f"- Outside the training chemistry: {caveat}: no band is licensed." in text
+
+
+def test_a_molecule_inside_the_training_chemistry_has_no_such_caveat(
+    low: lowlevel.LowLevel, benzene: Geometry, loaded: release.Release
+) -> None:
+    admitted = admission.admit(admission.read("c1ccccc1"))
+    record = certificate.build(admitted, benzene, low, _no_correction(), loaded)
+    assert record["molecule"]["outside_training_chemistry"] == []
+    assert certificate.OUTSIDE_CHEMISTRY not in {band["licence_note"] for band in record["bands"]}
+    assert "Outside the training chemistry" not in certificate.to_markdown(record)
+
+
 def test_an_imaginary_corrected_band_is_a_warning(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
@@ -414,7 +445,7 @@ def test_the_printed_position_lies_inside_its_range(
     np.testing.assert_allclose(per_seed[0], per_seed[1], atol=1e-6)
     assert float(np.abs(plain - per_seed[0]).max()) > 1.0
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True, withheld=None
+        benzene, low, corrections, loaded.evaluation, outside_domain="", withheld=None
     )
     for row in rows:
         assert row.seed_range_cm[0] <= row.wavenumber_cm <= row.seed_range_cm[1]

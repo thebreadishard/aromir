@@ -12,7 +12,7 @@ from typing import Final
 from pydantic import ValidationError
 
 import aromir
-from aromir import card, certificate, evaluation, pipeline, records, release
+from aromir import card, certificate, domain, evaluation, pipeline, records, release
 from aromir.dft import Resources
 from aromir.errors import AromirError, RefusedError
 
@@ -167,6 +167,10 @@ def _check(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -> N
     print(f"admitted: {admitted.smiles} ({admitted.formula}, {admitted.n_atoms} atoms)")  # noqa: T201  the command's answer
     notes = list(admitted.input_changes)
     training = loaded.training
+    notes += [
+        f"outside the training chemistry, so no band of it will be licensed: {caveat}"
+        for caveat in domain.outside_training_chemistry(admitted.smiles, training.trained_smiles)
+    ]
     if not training.min_atoms <= admitted.n_atoms <= training.max_atoms:
         notes.append(
             f"the network was trained on {training.min_atoms} to {training.max_atoms} atoms: "

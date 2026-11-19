@@ -110,6 +110,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the run up: another one, or a `run.json` without a version, is refused with both
   versions named and what to do (finish with the version that started it, or delete the
   folder).
+- A molecule outside the training chemistry is computed, printed and named as outside it,
+  and none of its bands is licensed, as for one outside the training sizes: a charged atom
+  whose element, charge, aromaticity, hydrogens and bonded neighbours no training
+  molecule's charged atom shares, or an aromatic ring of a size no training molecule has.
+  Both are read from the release's training list (`aromir.domain`), not from a hand-kept
+  one. v1.4's list holds nitro groups and one aromatic N-oxide as its only charged atoms,
+  and rings of 5 and 6 atoms, so a zwitterion (`[NH3+]c1ccccc1C(=O)[O-]`), phenyl azide,
+  a sulfoxide and tropone are no longer licensed; no molecule of the shipped lists is
+  outside them. The certificate names each kind, `aromir check` says it, and the card
+  states the condition.
 - No band of a molecule is licensed while the release's `invariance.json` gives the
   molecules of its group — with a linear group (the certificate's linear angle: a nitrile,
   an alkyne) or without — a largest spread above the licence line under a rotation, a

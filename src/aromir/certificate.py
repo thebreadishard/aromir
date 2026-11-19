@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from rdkit import Chem
 
-from aromir import families, repair, spectrum, vibrations
+from aromir import domain, families, repair, spectrum, vibrations
 from aromir.admission import fixed_h_key
 from aromir.network import primitives
 from aromir.release import error_text, level_name, made_by, named_test_set
@@ -55,6 +55,8 @@ FLAT_COORDINATE: Final = (
 )
 """The molecule is at no minimum along this mode, which is softer than the soft-mode line:
 the pipeline prints the spectrum there and claims nothing for this band."""
+OUTSIDE_SIZES: Final = "the molecule is outside the training sizes"
+OUTSIDE_CHEMISTRY: Final = "the molecule holds chemistry no training molecule does"
 IMAGINARY: Final = "imaginary position"
 IMAGINARY_FOR_A_SEED: Final = "imaginary for at least one seed"
 OFF_CARBON_SHARE: Final = 0.1
@@ -78,7 +80,8 @@ class Band:
         family: The mode family, by the rule the network's error is measured in.
         licensed: Whether the band passes every condition of the licence: its family's
             error is within the licence line on every hold-out, the molecule lies inside
-            the training sizes, its low-level mode is real, the band is real for the
+            the training sizes and the training chemistry (``aromir.domain``), its
+            low-level mode is real, the band is real for the
             seed mean and for every seed, the molecule's group (with or without a
             linear group) has its recorded spread within the licence line
             (``withheld_by_spread``),
@@ -268,10 +271,14 @@ def licence_note(
     mode: Mode,
     evaluation: Evaluation,
     *,
-    inside_training_sizes: bool,
+    outside_domain: str,
     withheld: Withheld | None,
 ) -> str:
-    """Return the first condition of the licence a band fails, or "" when it passes all."""
+    """Return the first condition of the licence a band fails, or "" when it passes all.
+
+    ``outside_domain`` says why the molecule lies outside the training domain
+    (``domain_note``); it is empty for a molecule inside it.
+    """
     off_carbon = (
         f"{mode.off_carbon:.0%} of its hydrogen motion is on N–H, O–H or S–H, which "
         f"the rule counts as {mode.family}"
@@ -282,7 +289,7 @@ def licence_note(
         (mode.lowest_seed_cm < 0, IMAGINARY_FOR_A_SEED),
         (withheld is not None, "" if withheld is None else withheld.note),
         (not evaluation.licensed(mode.family), "the family's error is above the licence line"),
-        (not inside_training_sizes, "the molecule is outside the training sizes"),
+        (bool(outside_domain), outside_domain),
         (mode.family in C_H_FAMILIES and mode.off_carbon > OFF_CARBON_SHARE, off_carbon),
     )
     return next((note for failed, note in conditions if failed), "")
@@ -294,7 +301,7 @@ def bands(
     corrections: Corrections,
     evaluation: Evaluation,
     *,
-    inside_training_sizes: bool,
+    outside_domain: str,
     withheld: Withheld | None,
 ) -> list[Band]:
     """Return the corrected spectrum's bands in ascending order, each with its record."""
@@ -317,9 +324,7 @@ def bands(
             lowest_seed_cm=float(ranges[index, 0]),
             off_carbon=float(off_carbon[low_index]),
         )
-        note = licence_note(
-            mode, evaluation, inside_training_sizes=inside_training_sizes, withheld=withheld
-        )
+        note = licence_note(mode, evaluation, outside_domain=outside_domain, withheld=withheld)
         rows.append(
             Band(
                 wavenumber_cm=round(mode.position_cm, 1),
@@ -499,10 +504,22 @@ def _molecule(admitted: Admission, geometry: Geometry, release: Release) -> dict
         "input_changes": list(admitted.input_changes),
         "training_atoms": [training.min_atoms, training.max_atoms],
         "inside_training_sizes": inside,
+        "outside_training_chemistry": list(
+            domain.outside_training_chemistry(admitted.smiles, training.trained_smiles)
+        ),
         "seen": acquaintance(admitted.smiles, training, release.measurement),
         "linear_group": has_linear_group(geometry, release),
         "planar": families.is_planar(geometry),
     }
+
+
+def domain_note(molecule: dict[str, Any]) -> str:
+    """Say why a molecule's record puts it outside the training domain; "" when inside."""
+    if not molecule["inside_training_sizes"]:
+        return OUTSIDE_SIZES
+    if molecule["outside_training_chemistry"]:
+        return OUTSIDE_CHEMISTRY
+    return ""
 
 
 def spreads_cm(release: Release, *, linear_group: bool) -> dict[str, tuple[float, int]]:
@@ -612,7 +629,8 @@ def _statement(
         f"Those molecules are {test_sets}. "
         f"{sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every test set "
-        f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
+        f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes "
+        "and holds no charge separation or aromatic ring size the training molecules lack, "
         "its low-level mode is real, the band is real for the seeds' mean and for every "
         f"seed, molecules {group} a linear group moved by no more than the licence line "
         f"under {SPREAD_CHANGES} in the release's invariance record, and a band of a C–H "
@@ -694,7 +712,7 @@ def build(
         low,
         corrections,
         evaluation,
-        inside_training_sizes=molecule["inside_training_sizes"],
+        outside_domain=domain_note(molecule),
         withheld=withheld,
     )
     return {
@@ -834,6 +852,10 @@ def to_markdown(record: dict[str, Any]) -> str:
         (
             f"- {molecule['formula']}, {molecule['n_atoms']} atoms; the training set spans "
             f"{low}–{high} atoms: {size}"
+        ),
+        *(
+            f"- Outside the training chemistry: {caveat}: no band is licensed."
+            for caveat in molecule["outside_training_chemistry"]
         ),
         f"- {molecule['seen']}",
         *(f"- {change[0].upper()}{change[1:]}." for change in molecule["input_changes"]),
