@@ -30,7 +30,7 @@ def test_the_card_states_the_releases_own_numbers(loaded: release.Release) -> No
     assert "- **Seeds:** 2 (0, 1)" in text
     assert (
         "- **Licensed families:** ring-ip, CH-stretch, CH-oop (within 3 cm⁻¹ on "
-        "test set (a): unseen molecules and on test set (b): unseen scaffolds)."
+        "test set (a): unseen molecules and on test set (b): held-out scaffolds)."
     ) in text
     assert "- **Not licensed:** other." in text
     seeds = loaded.evaluation.first_order_error_per_seed_cm["ring-ip"]

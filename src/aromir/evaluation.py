@@ -106,7 +106,7 @@ def read(path: Path) -> Reference:
             hessian = np.array(arrays["hessian"], float)
             reference_hessian = np.array(arrays["reference_hessian"], float)
     except (OSError, ValueError, KeyError, EOFError, zipfile.BadZipFile) as error:
-        raise RefusedError([f"{path} cannot be read as a hold-out molecule: {error}"]) from error
+        raise RefusedError([f"{path} cannot be read as a test-set molecule: {error}"]) from error
     expected = (3 * geometry.n_atoms, 3 * geometry.n_atoms)
     if hessian.shape != expected or reference_hessian.shape != expected:
         reason = (
@@ -146,7 +146,7 @@ def molecule_errors(reference: Reference, release: Release) -> MoleculeErrors:
     if low.n_imaginary:
         reason = (
             f"{reference.name}: the low-level Hessian has {low.n_imaginary} imaginary "
-            "mode(s); a hold-out molecule is at a minimum of the low level"
+            "mode(s); a test-set molecule is at a minimum of the low level"
         )
         raise RefusedError([reason])
     target = vibrations.vibrational_modes(reference.reference_hessian, geometry)
@@ -253,14 +253,14 @@ def evaluate(release: Release, folder: Path) -> dict[str, Any]:
     if release.shipped is not None:
         reason = (
             f"the folder ships release networks of v{release.network_version}, which trained "
-            "on the hold-outs: their error there is no measurement. The folder's errors were "
+            "on the test sets: their error there is no measurement. The folder's errors were "
             "measured on the version's measurement networks, which the package does not ship "
             f"({RELEASE_FILE} names their checkpoints)"
         )
         raise RefusedError([reason])
     holdouts = sorted(path for path in folder.iterdir() if path.is_dir()) if folder.is_dir() else []
     if not holdouts:
-        raise RefusedError([f"{folder}: no hold-out folder in it"])
+        raise RefusedError([f"{folder}: no test-set folder in it"])
     line = release.evaluation.licence_line_cm
     measured = {}
     for holdout in holdouts:

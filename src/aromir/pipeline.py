@@ -80,6 +80,7 @@ _UNREADABLE: Final = (
     OSError,
     ValueError,
     KeyError,
+    TypeError,
     EOFError,
     RuntimeError,
     zipfile.BadZipFile,
@@ -89,11 +90,12 @@ _UNREADABLE: Final = (
 """What reading a damaged step file raises, as measured by flipping every byte of one:
 the archive's own errors, zlib's, a header numpy cannot parse (TokenError), a zip
 version or an encryption flag that is not there (NotImplementedError, RuntimeError), JSON
-that does not parse (ValueError), a field that is missing (KeyError), and the checks of
-the reading itself (ValueError). Only the reading is guarded: the objects are built from
-what was read outside it, so an error of the code (a field this version names otherwise)
-is raised as itself, not reported as a damaged run. A file changed in a way its archive's
-checksum and these checks do not see is read as it stands."""
+that does not parse (ValueError), a field that is missing (KeyError) or of another type
+(TypeError), and the checks of the reading itself (ValueError). Only the reading is
+guarded: the objects are built from what was read outside it, so an error of the code (a
+field this version names otherwise) is raised as itself, not reported as a damaged run.
+A file changed in a way its archive's checksum and these checks do not see is read as it
+stands."""
 
 
 class MoleculeInput(BaseModel):

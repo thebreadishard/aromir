@@ -14,7 +14,7 @@ model_name: aromir ΔH network v1.3
 A correction to the Hessian of an aromatic molecule. The network reads a cheap B3LYP/6-31G* Hessian and returns ΔH, the difference to ωB97X/6-31G* (the DFT proxy: the network's ΔH is trained on ωB97X − B3LYP Hessians). The corrected Hessian gives harmonic infrared band positions closer to that level at the cost of the cheap one.
 
 - **Seeds:** 3 (0, 1, 2); the applied correction is their mean, and their spread is reported per band.
-- **Licensed families:** ring-ip, CH-stretch, CH-oop, other (within 3 cm⁻¹ on test set (a): unseen molecules and on test set (b): unseen scaffolds).
+- **Licensed families:** ring-ip, CH-stretch, CH-oop, other (within 3 cm⁻¹ on test set (a): unseen molecules and on test set (b): held-out scaffolds).
 - **Not licensed:** none.
 - **On thin ground:** 'other' is within the licence line on test set (a) at 2.78 cm⁻¹, on 8 molecules: resampling the test set's molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of the resamples lie above the line.
 - **Use it through:** [aromir](https://github.com/thebreadishard/aromir), which builds the inputs, applies the correction and writes a certificate for every band.
@@ -31,7 +31,7 @@ The rms error of the corrected band positions of the seeds' mean against ωB97X/
 | other | 2.78 [1.68–3.76], 156 bands | 2.77 [2.56–2.97], 1225 bands | yes |
 
 - test set (a): unseen molecules — eight molecules set aside on 19 September 2026, before any network was trained, and never trained on in any form (two more molecules of that set, 2-naphthoic acid and benzonitrile, are left out of this read because the network had trained on them under another identifier)
-- test set (b): unseen scaffolds — 39 substituted molecules of two ring scaffolds, fluorene (20) and fluoranthene (19), set aside on 8 October 2026, the 41 on that list less 9-nitrofluorene, which has an imaginary low-level mode, and 1-(trifluoromethyl)fluorene, which v1.3's training run (chain 35) neither trained on nor read: its record lists it only among the molecules given analytic labels; 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. The network trained on no molecule containing either ring system
+- test set (b): held-out scaffolds — 39 substituted molecules of two ring scaffolds, fluorene (20) and fluoranthene (19), set aside on 8 October 2026, the 41 on that list less 9-nitrofluorene, which has an imaginary low-level mode, and 1-(trifluoromethyl)fluorene, which v1.3's training run (chain 35) neither trained on nor read: its record lists it only among the molecules given analytic labels; 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. The network trained on no molecule containing either ring system
 
 For comparison, the first-order error of each seed alone, the number a training run reports and the one earlier versions of this card printed as the error: its mean over the seeds, each seed's value in brackets. It is not the error of what aromir prints.
 

@@ -90,7 +90,7 @@ _MEAN_TOLERANCE_CM: Final = 0.011
 _Record = TypeVar("_Record", bound=BaseModel)
 BUNDLED_VERSION: Final = "1.4"
 """The network version whose release ships inside the package."""
-TEST_SETS: Final = {"a": "unseen molecules", "b": "unseen scaffolds"}
+TEST_SETS: Final = {"a": "unseen molecules", "b": "held-out scaffolds"}
 """What each hold-out holds, in a reader's words. Readers are told of test sets; code and
 records keep the hold-outs."""
 

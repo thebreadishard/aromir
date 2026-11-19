@@ -248,7 +248,11 @@ def _covered(smiles: str, listed: Iterable[str]) -> bool:
 
 
 def _a_stereoisomer_in(smiles: str, listed: Iterable[str]) -> bool:
-    """Tell whether a list holds the molecule with other, no or more stereo labels."""
+    """Tell whether a list holds the molecule with other, no or more stereo labels.
+
+    Cautious, as the training project's module 08: a labelled mirror image of a labelled
+    row is called a stereoisomer here, while a stereo-free row covers both (``_covered``).
+    """
     plain = _without_stereo(smiles)
     return _among(plain, (_without_stereo(entry) for entry in listed))
 
@@ -543,7 +547,7 @@ def build(
 
 def _band_lines(record: dict[str, Any]) -> list[str]:
     holdouts = list(record["accuracy"]["holdouts"])
-    error_header = "test set " + " / ".join(f"({name})" for name in holdouts)
+    error_header = "on test set " + " / ".join(f"({name})" for name in holdouts)
     lines = [
         (
             "| position (cm⁻¹) | height (km/mol) | range over seeds and mean | B3LYP "

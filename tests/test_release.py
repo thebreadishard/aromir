@@ -259,7 +259,7 @@ def test_an_evaluation_of_another_number_of_seeds_is_refused(tmp_path: Path) -> 
     ("name", "first", "named"),
     [
         ("a", True, "test set (a): unseen molecules"),
-        ("b", True, "test set (b): unseen scaffolds"),
+        ("b", True, "test set (b): held-out scaffolds"),
         ("a", False, "test set (a)"),
         ("c", True, "test set (c)"),
     ],

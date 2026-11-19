@@ -265,7 +265,7 @@ def test_the_record_and_its_text(
     assert f"{n_licensed} of {N_BANDS} bands are licensed" in record["statement"]
     assert "on every test set (ring-ip, CH-stretch, CH-oop)" in record["statement"]
     assert (
-        "never saw. Those molecules are test set (a): unseen molecules and test set (b): unseen "
+        "never saw. Those molecules are test set (a): unseen molecules and test set (b): held-out "
         "scaffolds. "
     ) in record["statement"]
     assert record["statement"].endswith(

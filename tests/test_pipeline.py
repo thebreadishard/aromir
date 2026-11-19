@@ -779,6 +779,35 @@ def test_a_field_this_version_does_not_know_is_no_damaged_run(
     assert synthetic_chemistry == {"optimise": 1, "low level": 1}
 
 
+@pytest.mark.parametrize(
+    ("name", "edit"),
+    [
+        ("geometry.json", lambda stored: [stored]),
+        ("geometry.json", lambda stored: stored | {"symbols": 5}),
+        ("optimisation_progress.json", lambda stored: stored | {"n_steps": None}),
+    ],
+    ids=["a list at the top", "symbols a number", "no number of steps"],
+)
+def test_a_step_file_of_the_wrong_types_is_a_damaged_run(
+    name: str,
+    edit: Callable[[dict[str, Any]], object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_chemistry: Counter[str],
+) -> None:
+    folder = tmp_path / "benzene"
+    _stopped_before_the_repair(folder, monkeypatch)
+    stored = json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    if name == "optimisation_progress.json":
+        (folder / "geometry.json").unlink()
+        (folder / "lowlevel.npz").unlink()
+        stored = {"attempt": stored["attempt"], "coords_bohr": stored["coords_bohr"], "n_steps": 3}
+    (folder / name).write_text(json.dumps(edit(stored)), encoding="utf-8")
+    with pytest.raises(RefusedError, match=rf"{name} in .* holds a damaged run"):
+        pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1}
+
+
 def test_a_bug_in_building_the_saved_low_level_is_raised_as_itself(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
 ) -> None:

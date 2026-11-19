@@ -42,7 +42,7 @@ there as the baseline; band heights are computed on the corrected modes with B3L
 dipole derivatives, which are not corrected, and carry no error bar. The errors are
 measured on two test sets of molecules the networks the error is measured on never saw:
 *test set (a): unseen molecules*, molecules set aside before any network was trained, and
-*test set (b): unseen scaffolds*, the substituted molecules of two ring scaffolds,
+*test set (b): held-out scaffolds*, the substituted molecules of two ring scaffolds,
 fluorene and fluoranthene, set aside as a whole (the model card says what the training
 set holds of them). In code and records these are the hold-outs: never trained on in
 any form — a twin or another charge state included. A band is

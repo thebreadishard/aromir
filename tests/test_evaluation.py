@@ -156,7 +156,7 @@ def test_a_folder_that_holds_no_measurement_is_refused(
     if what == "half a molecule":
         np.savez(folder / "a" / "x.npz", symbols=np.array(["C"]), coords_bohr=np.zeros((1, 3)))
     said = {
-        "no hold-out": "no hold-out folder in it",
+        "no hold-out": "no test-set folder in it",
         "empty hold-out": "no molecule",
         "half a molecule": "no hessian, reference_hessian",
     }[what]
@@ -321,7 +321,7 @@ def test_a_damaged_molecule_file_is_refused_in_words(
     (tmp_path / "a" / "x.npz").write_bytes(content)
     asked = ["evaluate", str(tmp_path), "--release", str(release.bundled().parent / "v1.3")]
     assert cli.main(asked) == cli.EXIT_REFUSED
-    assert "x.npz cannot be read as a hold-out molecule" in capsys.readouterr().err
+    assert "x.npz cannot be read as a test-set molecule" in capsys.readouterr().err
 
 
 def test_the_command_checks_where_it_writes_before_it_measures(

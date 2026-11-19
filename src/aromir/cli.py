@@ -89,6 +89,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument(
         "holdouts",
+        metavar="test_sets",
         type=Path,
         help="a folder of test-set folders of .npz molecules, one per test set; in code and "
         "records these are the hold-outs (see aromir.evaluation)",

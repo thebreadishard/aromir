@@ -77,7 +77,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   1,3,6-trinitropyrene up to 9897). The 719 di- and tri-nitro isomers of twelve PAH
   parents up to 40 atoms now get one name from ten writings each, in milliseconds.
 - Readers are told of test sets: the README, the model cards, the certificate and
-  `aromir evaluate --help` say "test set (a): unseen molecules" and "test set (b): unseen
+  `aromir evaluate --help` say "test set (a): unseen molecules" and "test set (b): held-out
   scaffolds" at first use and "test set (a)" / "(b)" after, where they said "hold-out".
   Code, record fields and the `evaluate` folder layout keep the hold-outs; record text
   (a licence basis, the sources) is quoted as recorded. Both shipped cards are written
