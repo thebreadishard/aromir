@@ -14,6 +14,7 @@ import pytest
 import torch
 from pydantic import ValidationError
 
+import aromir
 from aromir import (
     certificate,
     lowlevel,
@@ -294,6 +295,43 @@ def test_a_run_of_an_older_standard_form_says_so(
         refusal.value.reasons
     )
     assert synthetic_chemistry["optimise"] == 1
+
+
+@pytest.mark.parametrize(
+    ("started_by", "said"),
+    [
+        ("0.0.9", "started by aromir 0.0.9, and this is aromir "),
+        (None, "started by an aromir that did not record its version, and this is aromir "),
+    ],
+)
+def test_a_run_another_version_started_is_not_taken_up(
+    started_by: str | None,
+    said: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_chemistry: Counter[str],
+) -> None:
+    def stop(*_arguments: object) -> None:
+        raise repair.GridResponseMemoryError
+
+    monkeypatch.setattr(repair, "repair", stop)
+    folder = tmp_path / "benzene"
+    with pytest.raises(repair.GridResponseMemoryError):
+        pipeline.run_baseline(_benzene(folder))
+    run = json.loads((folder / pipeline.RUN_FILE).read_text(encoding="utf-8"))
+    assert run["started_by"] == aromir.__version__
+    if started_by is None:
+        del run["started_by"]
+    else:
+        run["started_by"] = started_by
+    (folder / pipeline.RUN_FILE).write_text(json.dumps(run), encoding="utf-8")
+    with pytest.raises(RefusedError, match="a run is taken up only by the version") as refusal:
+        pipeline.run_baseline(_benzene(folder))
+    reason = str(refusal.value.reasons)
+    assert f"{said}{aromir.__version__}" in reason
+    assert ("finish it with aromir 0.0.9, or delete" in reason) == (started_by is not None)
+    assert "delete the folder to start over" in reason
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1}
 
 
 def test_a_folder_with_other_files_is_not_a_result_folder(tmp_path: Path) -> None:

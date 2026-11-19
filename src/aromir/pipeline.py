@@ -28,6 +28,7 @@ import torch
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from aromir import (
+    __version__,
     admission,
     certificate,
     geometry,
@@ -55,7 +56,8 @@ CERTIFICATE_FILE: Final = "certificate.json"
 CERTIFICATE_TEXT_FILE: Final = "certificate.md"
 QUANTUM_LOG_FILE: Final = "pyscf.log"
 RUN_FILE: Final = "run.json"
-"""What the run was asked, and whether it has stepped off a saddle point."""
+"""What the run was asked, the aromir version that started it, and whether it has stepped
+off a saddle point."""
 SADDLE_POINT_PREFIX: Final = "saddle_point_"
 """The name a saddle point's geometry and Hessian are kept under."""
 
@@ -137,11 +139,20 @@ class _SaddlePoint(BaseModel):
 
 
 class _Run(BaseModel):
-    """The state of a run that is not in its step files: the request and the saddle step."""
+    """The state of a run that is not in its step files: the request, its version, the saddle step.
+
+    Attributes:
+        asked: What identifies the request (``_asked``).
+        started_by: The aromir version that started the run; None in a ``run.json`` written
+            before aromir recorded it. Only that version takes the run up: no step is known
+            to be read alike by another.
+        left_saddle_point: The step off a saddle point, once taken.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     asked: dict[str, Any]
+    started_by: str | None = None
     left_saddle_point: _SaddlePoint | None = None
 
     @property
@@ -224,7 +235,7 @@ def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, _Run]:
         raise RefusedError([f"{folder} is a file: --out names a folder"])
     held = [] if not folder.exists() else [path.name for path in folder.iterdir()]
     if all(name in _LEFTOVERS for name in held):
-        return folder, _Run(asked=asked)
+        return folder, _Run(asked=asked, started_by=__version__)
     if BASELINE_FILE in held or CERTIFICATE_FILE in held:
         raise RefusedError([f"{folder} holds a result: a result is never overwritten"])
     if RUN_FILE not in held:
@@ -250,7 +261,24 @@ def _open_folder(out: Path, asked: dict[str, Any]) -> tuple[Path, _Run]:
             "geometry and level takes it up"
         )
         raise RefusedError([reason])
+    if state.started_by != __version__:
+        raise RefusedError([_another_version(folder, state.started_by)])
     return folder, state
+
+
+def _another_version(folder: Path, started_by: str | None) -> str:
+    """Say why a run started by another aromir version is not taken up, and what to do."""
+    started = (
+        "an aromir that did not record its version"
+        if started_by is None
+        else f"aromir {started_by}"
+    )
+    finish = "" if started_by is None else f"finish it with aromir {started_by}, or "
+    return (
+        f"{folder} holds an unfinished run started by {started}, and this is aromir "
+        f"{__version__}: a run is taken up only by the version that started it, for no saved "
+        f"step is known to be read alike by another; {finish}delete the folder to start over"
+    )
 
 
 def _saved_progress(folder: Path, state: _Run, start: Geometry) -> optimisation.Progress | None:

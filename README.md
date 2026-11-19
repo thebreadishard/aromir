@@ -192,11 +192,13 @@ Two checks and a repair guard every result:
   Hessians (v1.3) reads the analytic one; its correction is added to the measured one.
 
 Each step is saved when it ends: `geometry.json`, then `lowlevel.npz`, each naming the
-run that made it, with `run.json` recording what was asked. After a step off a saddle
-point the saddle's two files are kept as `saddle_point_geometry.json` and
-`saddle_point_lowlevel.npz`. A run that fails after hours of quantum
-chemistry, or is stopped, is taken up by the same command into the same folder; an
-optimisation is taken up at its last gradient (`optimisation_progress.json`).
+run that made it, with `run.json` recording what was asked and the aromir version that
+started the run. After a step off a saddle point the saddle's two files are kept as
+`saddle_point_geometry.json` and `saddle_point_lowlevel.npz`. A run that fails after
+hours of quantum chemistry, or is stopped, is taken up by the same command into the same
+folder; an optimisation is taken up at its last gradient (`optimisation_progress.json`).
+Only the version that started a run takes it up: another one refuses the folder and
+names both.
 
 A molecule with a nearly free torsion can have no minimum the optimiser's displacement
 criterion accepts, or none at all at this level. aromir then says what it did instead
