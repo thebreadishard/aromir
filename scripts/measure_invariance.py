@@ -1,13 +1,14 @@
 """Measure a release's invariance record: how far its answer moves for the same molecule.
 
     python scripts/measure_invariance.py <corpus molecules folder> <manifest.csv> <invariance.json>
-        --aromir-commit <commit> [--release <release folder>]
+        [--release <release folder>]
 
 The design is the one release v1.3's ``invariance.json`` was measured with, fixed before any
 other release was measured: the seven molecules below, on their stored B3LYP/6-31G*
-geometries and analytic Hessians (rigid motions projected out) from the training corpus of
-the capstone repository (thebreadishard/udacity-capstone-plan, plan 05), and per molecule,
-from one random generator seeded 7 and drawn in this order:
+geometries and analytic Hessians (rigid motions projected out) from the training corpus,
+public in thebreadishard/capstone-data (``modules/05_support_predictor/corpus/molecules/
+<id>/hessian_b3lyp_analytic.npz`` beside ``geometry.json``, and ``corpus/manifest.csv``),
+and per molecule, from one random generator seeded 7 and drawn in this order:
 
 - 12 xyz files of the geometry with the atoms listed in a random order, each read the way
   aromir reads a request (``admission.read``) and put into its canonical order; the spread
@@ -19,6 +20,10 @@ from one random generator seeded 7 and drawn in this order:
 A record keeps, per change, the largest spread over the molecules with a linear group (a
 nitrile or an alkyne) and over those without. The script runs no quantum chemistry: it
 applies the release's seed-mean correction to stored Hessians, seconds per molecule.
+
+The record names the commit the script ran at, read from git; a tree with a changed tracked
+file, or an untracked file under src/ or scripts/, is refused, for then no commit holds the
+code that measured.
 """
 
 from __future__ import annotations
@@ -26,6 +31,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -62,6 +69,7 @@ LINEAR_BOND = "#"
 against a fixed axis."""
 HESSIAN_FILE = "hessian_b3lyp_analytic.npz"
 MIRROR = np.diag([1.0, 1.0, -1.0])
+REPOSITORY = Path(__file__).resolve().parent.parent
 
 
 @dataclass(frozen=True)
@@ -90,7 +98,7 @@ def corpus_ids(corpus: Path, manifest: Path) -> dict[str, str]:
         for row in csv.DictReader(rows):
             if row["smiles"] in wanted and (corpus / row["id"] / HESSIAN_FILE).is_file():
                 found.setdefault(row["smiles"], row["id"])
-    missing = [smiles for smiles in wanted if smiles not in found]
+    missing = sorted(smiles for smiles in wanted if smiles not in found)
     if missing:
         msg = f"no stored analytic Hessian for {missing}: the registered set cannot be measured"
         raise SystemExit(msg)
@@ -199,13 +207,47 @@ def source_text(loaded: release.Release, folder: Path, commit: str) -> str:
         f"{datetime.now(UTC).date().isoformat()}, on the {kind} {folder.name} ships (tensor "
         f"sha256: {seeds}): {', '.join(with_group[:-1])} and {with_group[-1]} with a linear "
         f"group; {', '.join(without[:-1])} and {without[-1]} without; stored B3LYP geometries "
-        "and Hessians of thebreadishard/udacity-capstone-plan (plan 05), the trials of v1.3's "
-        "record"
+        "and Hessians of thebreadishard/capstone-data "
+        "(modules/05_support_predictor/corpus/molecules), the trials of v1.3's record"
     )
+
+
+def _git(*arguments: str) -> str:
+    """Return a git command's output in this repository.
+
+    autocrlf is set so that a checkout written with Windows line ends, read by a Linux git
+    (WSL on the same folder), is not taken for a changed tree.
+    """
+    git = shutil.which("git")
+    if git is None:
+        msg = "git is not on the PATH: the commit the record names cannot be read"
+        raise SystemExit(msg)
+    done = subprocess.run(  # noqa: S603  a fixed git command, no user input
+        [git, "-c", "core.autocrlf=true", *arguments],
+        cwd=REPOSITORY,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return done.stdout
+
+
+def clean_commit() -> str:
+    """Return the commit the script runs at; refuse a tree that differs from it."""
+    changed = [
+        line[3:]
+        for line in _git("status", "--porcelain").splitlines()
+        if not line.startswith("??") or line[3:].startswith(("src/", "scripts/"))
+    ]
+    if changed:
+        msg = f"the tree differs from its commit in {changed}: commit first, then measure"
+        raise SystemExit(msg)
+    return _git("rev-parse", "HEAD").strip()
 
 
 def measure(arguments: argparse.Namespace) -> dict[str, object]:
     """Measure every molecule of the set and return the release's invariance record."""
+    commit = clean_commit()
     loaded = release.load(arguments.release)
     ids = corpus_ids(arguments.corpus, arguments.manifest)
     rng = np.random.default_rng(SEED)
@@ -224,7 +266,7 @@ def measure(arguments: argparse.Namespace) -> dict[str, object]:
     ):
         per_molecule = {name: getattr(found, change) for name, found in measured.items()}
         record[change] = spread_record(per_molecule, linear, n_trials)
-    record["source"] = source_text(loaded, arguments.release, arguments.aromir_commit)
+    record["source"] = source_text(loaded, arguments.release, commit)
     release.Invariance.model_validate(record)
     return record
 
@@ -235,7 +277,6 @@ def main() -> None:
     parser.add_argument("corpus", type=Path, help="the corpus's molecules folder")
     parser.add_argument("manifest", type=Path, help="the corpus's manifest.csv")
     parser.add_argument("out", type=Path, help="where invariance.json is written")
-    parser.add_argument("--aromir-commit", required=True, help="the commit the script runs at")
     parser.add_argument("--release", type=Path, default=release.bundled())
     arguments = parser.parse_args()
     torch.set_num_threads(2)
