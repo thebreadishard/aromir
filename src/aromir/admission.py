@@ -381,19 +381,26 @@ def fixed_h_key(smiles: str) -> str | None:
     return key or None
 
 
+_LINEAR_WHEN_CUMULATED: Final = ("C", "N")
+"""The elements whose atom with two double bonds is linear, so neither bond has an E/Z."""
+
+
 def _can_be_cis_or_trans(molecule: Mol, bond_index: int) -> bool:
     """Tell whether a double bond can have an E/Z configuration at all.
 
     It cannot when one of its atoms is terminal (=O, =N⁻: nothing on it to lie on one side)
-    or carries a second double bond (the middle N of an azide, an allene's carbon: such an
-    atom is linear). RDKit before 2026.9.2 offers the azide's N=N bonds as potential stereo
-    bonds; ``Chem.FindPotentialStereo`` is documented as returning *possible* stereo
+    or is a carbon or a nitrogen that carries a second double bond (the middle N of an
+    azide, an allene's or a ketene's carbon: such an atom is linear). A sulfur with two
+    double bonds is bent — a sulfine R–CH=S=O and a sulfur diimide have E/Z isomers — and
+    excludes nothing. RDKit before 2026.9.2 offers the azide's N=N bonds as potential
+    stereo bonds; ``Chem.FindPotentialStereo`` is documented as returning *possible* stereo
     elements, so its candidates are filtered here by what a configuration needs.
     """
     bond = molecule.GetBondWithIdx(bond_index)
     for atom in (bond.GetBeginAtom(), bond.GetEndAtom()):
         doubles = sum(other.GetBondType() == Chem.BondType.DOUBLE for other in atom.GetBonds())
-        if atom.GetDegree() < 2 or doubles > 1:
+        linear = doubles > 1 and atom.GetSymbol() in _LINEAR_WHEN_CUMULATED
+        if atom.GetDegree() < 2 or linear:
             return False
     return True
 

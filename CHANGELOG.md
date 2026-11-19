@@ -90,19 +90,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   release loading, the admission tests and the atom-order pins on 2024.9.1 and on the
   newest 2026.9.
 - A double bond that can have no E/Z configuration — one with a terminal atom, or with
-  an atom that carries a second double bond, as in an azide, an allene or a ketene — is
-  never named as an unassigned double bond. RDKit before 2026.9.2 offers phenyl
+  a carbon or a nitrogen that carries a second double bond, as in an azide, an allene or
+  a ketene (a sulfur with two double bonds is bent, and its bonds are kept) — is never
+  named as an unassigned double bond. RDKit before 2026.9.2 offers phenyl
   azide's N=N bonds as potential stereo bonds, and the certificate would have named
   one; with 2026.9.2 nothing changes for any molecule of the releases' lists.
 - A release record's SMILES lists are compared by molecule, not by spelling: each entry
   is read in the standard form the running RDKit writes, which must be that RDKit's own
-  canonical SMILES of the entry (standardising must not change the molecule), and every
+  canonical SMILES of the entry (an entry admission would write otherwise, such as one
+  with atom-map numbers, is not in the standard form), and every
   comparison with the lists — whether a molecule was seen, the counts, the checks of a
   release pair — uses those forms. RDKit 2024.9 spells stilbene's bond directions
   otherwise than 2026.9, which wrote v1.3's list, and a comparison of strings refused v1.3
-  there. An entry that
-  does not parse, that standardising changes, or that is one molecule with another entry
-  of its list is refused with the RDKit version that read it.
+  there. An entry that is empty or holds more than a SMILES, that does not parse, that
+  is not in the standard form, that is listed twice, or that is one molecule with
+  another entry of its list is refused; where RDKit decides, with the version that
+  read it.
 - `run.json` records the aromir version that started a run, and only that version takes
   the run up: another one, or a `run.json` without a version, is refused with both
   versions named and what to do (finish with the version that started it, or delete the

@@ -389,18 +389,25 @@ def _standardised(smiles: list[str]) -> list[str]:
     The 'seen' look-up compares an admitted SMILES, written by the running RDKit, with these
     lists. A record keeps the spelling of the RDKit it was written with, and another RDKit
     series may spell the same molecule otherwise (stilbene's bond directions), so the
-    entries are compared by molecule: standardising an entry must not change it, i.e. its
-    standard form must be the running RDKit's own canonical SMILES of it, and that form is
-    what the record holds in memory. Two different entries that are one molecule are
-    refused rather than merged.
+    entries are compared by molecule: an entry's standard form must be the running RDKit's
+    own canonical SMILES of it (standardising may change the spelling an older RDKit gave,
+    nothing else), and that form is what the record holds in memory. An entry listed
+    twice, and two different entries that are one molecule, are refused rather than merged.
 
     Raises:
-        ValueError: An entry does not parse, standardising it changes the molecule, or two
-            entries are one molecule; the reason names the RDKit that read them.
+        ValueError: An entry is empty or holds more than a SMILES, does not parse, is not in
+            the standard form, is listed twice, or is one molecule with another entry; the
+            reason names the RDKit that read them.
     """
     with_rdkit = f"read with RDKit {rdBase.rdkitVersion}"
     standard_of: dict[str, str] = {}
-    for entry in dict.fromkeys(smiles):
+    for entry in smiles:
+        if entry in standard_of:
+            msg = f"{entry!r} is listed twice: a list names each molecule once"
+            raise ValueError(msg)
+        if len(entry.split()) != 1 or entry != entry.strip():
+            msg = f"{entry!r} is not one SMILES: an entry is a SMILES and nothing beside it"
+            raise ValueError(msg)
         try:
             standard = standard_smiles(entry)
         except ValueError as error:
@@ -409,8 +416,9 @@ def _standardised(smiles: list[str]) -> list[str]:
         canonical = str(Chem.MolToSmiles(Chem.MolFromSmiles(entry)))
         if standard != canonical:
             msg = (
-                f"{entry!r} is not in the standard form admission writes: standardising it "
-                f"gives {standard!r}, another molecule than its own {canonical!r} ({with_rdkit})"
+                f"{entry!r} is not in the standard form admission writes: admission writes "
+                f"{standard!r}, and RDKit's own writing of the entry is {canonical!r} "
+                f"({with_rdkit})"
             )
             raise ValueError(msg)
         standard_of[entry] = standard

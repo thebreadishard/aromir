@@ -228,6 +228,10 @@ def test_an_xyz_sulfoxide_keeps_the_configuration_of_its_geometry(tmp_path: Path
         ("[N-]=[N+]=Nc1ccccc1", [False, False]),
         ("C=C=Cc1ccccc1", [False, False]),
         ("O=C=Cc1ccccc1", [False, False]),
+        # A sulfur with two double bonds is bent: a sulfine's C=S and a sulfur diimide's
+        # N=S bonds have E/Z isomers, and only the terminal S=O is none.
+        ("O=S=Cc1ccccc1", [False, True]),
+        ("CN=S=Nc1ccccc1", [True, True]),
         ("C(=Cc1ccccc1)c1ccccc1", [True]),
         ("CC=NC", [True]),
     ],
@@ -235,8 +239,9 @@ def test_an_xyz_sulfoxide_keeps_the_configuration_of_its_geometry(tmp_path: Path
 def test_only_a_double_bond_that_can_be_cis_or_trans_is_left_open(
     smiles: str, can: list[bool]
 ) -> None:
-    # Whatever RDKit offers as potential stereo, a terminal or cumulated double bond has no
-    # E/Z configuration (RDKit before 2026.9.2 offered the azide's N=N bonds).
+    # Whatever RDKit offers as potential stereo, a terminal double bond or one cumulated on
+    # a carbon or a nitrogen has no E/Z configuration (RDKit before 2026.9.2 offered the
+    # azide's N=N bonds). The rule is asked of each double bond directly, in bond order.
     molecule = Chem.AddHs(Chem.MolFromSmiles(smiles))
     doubles = [
         bond.GetIdx() for bond in molecule.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE

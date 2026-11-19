@@ -83,7 +83,7 @@ jobs:
       - name: Load both bundled releases
         run: |
           python -c 'from aromir import release; [print(release.load(release.bundled().parent / v).network_version) for v in ("v1.3", "v1.4")]'
-      - run: pytest -m "not quantum" tests/test_admission.py tests/test_bundled_release.py tests/test_order_pins.py
+      - run: pytest -m "not quantum" tests/test_admission.py tests/test_bundled_release.py tests/test_certificate.py tests/test_order_pins.py
 
   package:
     name: Build the distribution

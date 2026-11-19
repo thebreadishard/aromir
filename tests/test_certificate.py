@@ -169,6 +169,17 @@ def test_two_spellings_of_one_molecule_in_a_list_are_refused() -> None:
     assert f"(read with RDKit {rdBase.rdkitVersion})" in str(refusal.value)
 
 
+def test_an_entry_listed_twice_is_refused() -> None:
+    with pytest.raises(ValidationError, match="'c1ccccc1' is listed twice"):
+        release.Training.model_validate(TRAINING | {"trained_smiles": ["c1ccccc1", "c1ccccc1"]})
+
+
+@pytest.mark.parametrize("entry", ["", " ", "c1ccccc1 junk", " c1ccccc1", "c1ccccc1\n"])
+def test_an_entry_that_is_not_one_smiles_is_refused(entry: str) -> None:
+    with pytest.raises(ValidationError, match="is not one SMILES"):
+        release.Training.model_validate(TRAINING | {"trained_smiles": [entry]})
+
+
 def test_a_training_record_entry_that_does_not_parse_names_the_rdkit_that_read_it() -> None:
     with pytest.raises(ValidationError, match="does not parse as a SMILES") as refusal:
         release.Training.model_validate(TRAINING | {"trained_smiles": ["c1ccccc"]})

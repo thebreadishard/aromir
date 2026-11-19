@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
+from rdkit import Chem
 
 from aromir import admission, card, certificate, evaluation, geometry, lowlevel, release, response
 from aromir.errors import RefusedError
@@ -247,8 +248,12 @@ def test_a_record_changed_after_the_release_was_written_is_refused(
     folder = write_pair(tmp_path)
     path = folder / name
     record = json.loads(path.read_text(encoding="utf-8"))
-    if "trained_smiles" in record:  # the same set with a molecule listed twice: valid, and changed
-        record["trained_smiles"] = [*record["trained_smiles"], record["trained_smiles"][0]]
+    if (
+        "trained_smiles" in record
+    ):  # the same set with one molecule spelt Kekulé: valid, and changed
+        first = Chem.MolFromSmiles(record["trained_smiles"][0])
+        record["trained_smiles"][0] = Chem.MolToSmiles(first, kekuleSmiles=True)
+        assert record["trained_smiles"][0] != Chem.MolToSmiles(first)
     elif "coupled_cluster" in record:
         record["coupled_cluster"] += " (edited)"
     else:
