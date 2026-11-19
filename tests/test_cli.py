@@ -63,8 +63,8 @@ def test_check_with_the_size_flag_admits_and_says_no_band_is_licensed(
     assert cli.main(["check", OCTYLNAPHTHALENE, "--outside-training-sizes"]) == cli.EXIT_DONE
     assert capsys.readouterr().out == (
         "admitted: CCCCCCCCc1ccc2ccccc2c1 (C18H24, 42 atoms)\n"
-        "note: the network was trained on 8 to 40 atoms: no band of this molecule will be "
-        "licensed\n"
+        "note: 42 atoms: the network was trained on 8 to 40, so no band of this molecule would "
+        "be licensed; --outside-training-sizes computes it all the same\n"
     )
 
 

@@ -114,19 +114,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DetermineConnectivity`, are not those of the admitted SMILES ends the run before its
   Hessian (`AnotherMoleculeError`, exit 1), with the bonds that broke and formed named and
   the geometry kept: a gas-phase zwitterion whose proton moves back was computed and
-  named as the zwitterion. The bonds are perceived as an xyz file's are, where a contact
-  between two atoms that share two bonded neighbours (a four-membered ring's diagonal,
-  1.97 Å in 1-methoxybiphenylene's start geometry) is not a bond. None of v1.4's 1078
-  training molecules' start geometries is refused.
+  named as the zwitterion; a re-run into the same folder takes up the kept geometry and is
+  refused again. A contact that is no bond of the SMILES is not called a bond formed when
+  its two atoms share two neighbours in the SMILES (a biphenylene's four-membered ring,
+  whose diagonals lie at 1.969 to 1.973 Å in the start geometries of v1.4's nine
+  training biphenylenes against a limit of 1.97 Å; a bicyclo[1.1.1]pentane's
+  bridgeheads); a bond of the SMILES is judged by distance alone (a bicyclo[1.1.0]butane's
+  central bond). None of v1.4's 1078 training molecules' start geometries is refused,
+  nor, in the tests, the nine biphenylenes' and four small-ring molecules' start
+  geometries as they are, scaled by 0.995 or with 0.02 Å of noise.
 - A molecule outside the training chemistry is computed, printed and named as outside it,
   and none of its bands is licensed, as for one outside the training sizes: a charged atom
   whose element, charge, aromaticity, hydrogens and bonded neighbours no training
-  molecule's charged atom shares, or an aromatic ring of a size no training molecule has.
-  Both are read from the release's training list (`aromir.domain`), not from a hand-kept
-  one. v1.4's list holds nitro groups and one aromatic N-oxide as its only charged atoms,
-  and rings of 5 and 6 atoms, so a zwitterion (`[NH3+]c1ccccc1C(=O)[O-]`), phenyl azide,
-  a sulfoxide and tropone are no longer licensed; no molecule of the shipped lists is
-  outside them. The certificate names each kind, `aromir check` says it, and the card
+  molecule's charged atom shares, or a ring of aromatic atoms of a size no training
+  molecule has. Both are read from the release's training list (`aromir.domain`), not from
+  a hand-kept one. v1.4's list holds nitro groups and one aromatic N-oxide as its only
+  charged atoms, and rings of 4 (biphenylenes), 5, 6 and 7 (azulenes) aromatic atoms, so a
+  zwitterion (`[NH3+]c1ccccc1C(=O)[O-]`), phenyl azide and a sulfoxide are no longer
+  licensed, and tropone keeps its licence; no molecule of the shipped lists is outside
+  them. The certificate names each kind, `aromir check` says it, and the card
   states the condition.
 - No band of a molecule is licensed while the release's `invariance.json` gives the
   molecules of its group — with a linear group (the certificate's linear angle: a nitrile,
@@ -280,10 +286,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are now perceived from the distances alone, the atoms put in RDKit's canonical ranking
   of that bond graph, and the bond orders sought in that order and, while none is found,
   in its rotations by one atom (at most 16; the training molecules needed at most 8),
-  then mapped back onto the file's atoms; every listing of every training molecule gets
-  its SMILES's name. A contact between two atoms that share two bonded neighbours, a
-  four-membered ring's diagonal, is no bond: 1-methoxybiphenylene's force-field geometry
-  was read as `COC1=C2C34C=C[CH+]C=C3C24C=C[CH-]1`.
+  then mapped back onto the file's atoms. The tests read 20 listings each of seven
+  molecules (four nitro compounds, phenyl azide, pyridine N-oxide, benzonitrile) under
+  their SMILES's name; outside the tests, 20 listings of the force-field geometry of each
+  of the 1085 molecules of v1.4's training list and those seven all got theirs. A ring's
+  diagonal is no bond: a contact between two atoms that share two bonded neighbours and
+  is more than 1.1 times as long as each bond from them to those neighbours is dropped,
+  the longest first and the neighbours counted again after each. Read as a bond, a
+  diagonal gave 1-methoxybiphenylene's force-field geometry the name
+  `COC1=C2C34C=C[CH+]C=C3C24C=C[CH-]1`; the nine training biphenylenes, phenylcubane,
+  phenylbicyclo[1.1.1]pentane and two phenylbicyclo[1.1.0]butanes, whose central bond is
+  kept, are read right as they are, scaled by 0.995 and with 0.02 Å of noise.
 - `aromir check` runs the gates `aromir spectrum` sets before its quantum chemistry, through
   one function both call: a molecule larger or smaller than the release's training
   molecules, with an element the release never trained on, or whose start geometry the

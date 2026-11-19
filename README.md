@@ -128,10 +128,10 @@ The result folder then also holds
   measurement networks never saw);
 - whether the band is licensed: the family's error is within the licence line on both
   test sets, the molecule lies inside the training sizes and the training chemistry (no
-  charged atom of a kind and no aromatic ring of a size the release's training molecules
-  lack: a zwitterion, an azide, a sulfoxide or tropone is printed, named as outside it, and
-  not licensed with v1.4, whose charged training molecules are nitro compounds and one
-  N-oxide), its low-level mode is real, the band is real for the seeds'
+  charged atom of a kind and no ring of aromatic atoms of a size the release's training
+  molecules lack: with v1.4, whose charged training molecules are nitro compounds and one
+  N-oxide and whose rings of aromatic atoms have 4 to 7 atoms, a zwitterion, an azide or
+  a sulfoxide is printed, named as outside it, and not licensed), its low-level mode is real, the band is real for the seeds'
   mean and for every seed, molecules of the molecule's group (with or without a linear
   group: a nitrile, an alkyne) moved by no more than the licence line under a rotation, a
   mirror image or another xyz listing in the release's `invariance.json`, and a CH-stretch

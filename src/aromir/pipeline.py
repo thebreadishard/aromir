@@ -487,7 +487,8 @@ def _same_molecule(smiles: str, optimised: Geometry, folder: Path) -> None:
         msg = (
             f"the optimised geometry is another molecule than {smiles}: {'; '.join(changes)} "
             "(atoms numbered in the canonical order). Its spectrum would be named after a "
-            f"molecule it is not; the geometry is kept in {folder / GEOMETRY_FILE}"
+            f"molecule it is not. The geometry is kept in {folder / GEOMETRY_FILE}: the same "
+            "request into the same folder takes up the run from it and is refused again"
         )
         raise AnotherMoleculeError(msg)
 
@@ -698,7 +699,8 @@ def _untrained_elements(start: Geometry, release: Release) -> list[str]:
     return [f"element(s) {', '.join(unseen)} outside the network's training set ({trained})"]
 
 
-def _untrained_size(start: Geometry, release: Release) -> list[str]:
+def untrained_size(start: Geometry, release: Release) -> list[str]:
+    """Say why a molecule lies outside the release's training sizes; nothing when inside."""
     training = release.training
     if training.min_atoms <= start.n_atoms <= training.max_atoms:
         return []
@@ -804,7 +806,7 @@ def admit_for_spectrum(
     admitted, start = admit(molecule)
     reasons = _untrained_elements(start, release)
     if not outside_training_sizes:
-        reasons += _untrained_size(start, release)
+        reasons += untrained_size(start, release)
     if reasons:
         raise RefusedError(reasons)
     reasons = _no_network_inputs(start, release)

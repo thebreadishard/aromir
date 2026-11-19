@@ -1,12 +1,13 @@
-"""Chemistry an admitted molecule holds that the network's training molecules do not.
+"""Two features of a molecule that the network's training molecules may lack.
 
-Admission takes any neutral, closed-shell aromatic molecule of the supported elements, but
-the training molecules hold less than that: charge separation only of a few kinds (nitro
-groups, an aromatic N-oxide) and aromatic rings of a few sizes. A molecule beyond them is
-computed and printed, and named as outside the training chemistry; no band of it is
-licensed, as for a molecule outside the training sizes, since the measured error rests on
-molecules of neither kind. What counts as inside is read from the release's own training
-list, not from a hand-kept one, so a release trained on more chemistry admits more.
+Admission takes any neutral, closed-shell aromatic molecule of the supported elements. Two
+things about it are compared with the release's training list: its kinds of charged atom
+(v1.4's list holds those of nitro groups and of one aromatic N-oxide) and the sizes of its
+rings of aromatic atoms (v1.4's: 4, 5, 6 and 7). A molecule with a kind or a size the list
+lacks is computed and printed, and named as outside the training chemistry; no band of it
+is licensed, as for a molecule outside the training sizes. Nothing else about the chemistry
+is compared. What counts as inside is read from the release's own list, not from a
+hand-kept one, so a release trained on more admits more.
 """
 
 from __future__ import annotations
@@ -24,6 +25,9 @@ if TYPE_CHECKING:
 ChargeSite = tuple[str, int, bool, int, tuple[tuple[str, int, str], ...]]
 """A charged atom's kind: its element, formal charge, aromaticity and hydrogens, and each
 neighbour's element and formal charge with the type of the bond to it."""
+
+Shown = tuple[int, str]
+"""How a kind is shown: minus the aromatic atoms of a fragment SMILES, and the fragment."""
 
 
 def _molecule(smiles: str) -> Mol:
@@ -53,28 +57,42 @@ def _site(atom: Any) -> ChargeSite:  # noqa: ANN401  an RDKit atom
     )
 
 
+def _shown_sites(smiles: str) -> dict[ChargeSite, Shown]:
+    """Return each kind of charged atom with the fragment that shows it best.
+
+    The fragment is the charged atom with its neighbours. Of the atoms of one kind the one
+    with the most aromatic atoms in its fragment is shown, so a nitro group on a ring reads
+    ``c[N+](=O)[O-]``, and of those the smallest fragment, so the choice does not follow
+    the order of the atoms or of the list.
+    """
+    molecule = _molecule(smiles)
+    sites: dict[ChargeSite, Shown] = {}
+    for atom in molecule.GetAtoms():
+        if atom.GetFormalCharge():
+            used = [atom, *atom.GetNeighbors()]
+            fragment = str(
+                Chem.MolFragmentToSmiles(molecule, atomsToUse=[a.GetIdx() for a in used])
+            )
+            shown = (-sum(a.GetIsAromatic() for a in used), fragment)
+            site = _site(atom)
+            sites[site] = min(sites.get(site, shown), shown)
+    return sites
+
+
 def charge_sites(smiles: str) -> dict[ChargeSite, str]:
     """Return each kind of charged atom a SMILES holds, with a fragment SMILES that shows it.
-
-    The fragment is the charged atom with its neighbours, as ``c[N+](=O)[O-]``; of two
-    atoms of one kind the smaller fragment is kept, so the choice is the order's no more.
 
     Raises:
         ValueError: The string does not parse as a SMILES.
     """
-    molecule = _molecule(smiles)
-    sites: dict[ChargeSite, str] = {}
-    for atom in molecule.GetAtoms():
-        if atom.GetFormalCharge():
-            shown = [atom.GetIdx(), *(neighbour.GetIdx() for neighbour in atom.GetNeighbors())]
-            fragment = str(Chem.MolFragmentToSmiles(molecule, atomsToUse=shown))
-            site = _site(atom)
-            sites[site] = min(sites.get(site, fragment), fragment)
-    return sites
+    return {site: fragment for site, (_, fragment) in _shown_sites(smiles).items()}
 
 
 def aromatic_ring_sizes(smiles: str) -> frozenset[int]:
-    """Return the sizes of the rings of a SMILES's smallest set whose bonds are all aromatic.
+    """Return the sizes of the rings of a SMILES's smallest set whose atoms are all aromatic.
+
+    The atoms, not the bonds, decide: RDKit writes the bond azulene's two rings share, and
+    the bonds of a biphenylene's four-membered ring, as single bonds between aromatic atoms.
 
     Raises:
         ValueError: The string does not parse as a SMILES.
@@ -82,33 +100,31 @@ def aromatic_ring_sizes(smiles: str) -> frozenset[int]:
     molecule = _molecule(smiles)
     return frozenset(
         len(ring)
-        for ring in molecule.GetRingInfo().BondRings()
-        if all(molecule.GetBondWithIdx(bond).GetIsAromatic() for bond in ring)
+        for ring in molecule.GetRingInfo().AtomRings()
+        if all(molecule.GetAtomWithIdx(atom).GetIsAromatic() for atom in ring)
     )
 
 
 @cache
-def _training_chemistry(
-    trained: tuple[str, ...],
-) -> tuple[dict[ChargeSite, str], frozenset[int]]:
-    sites: dict[ChargeSite, str] = {}
+def _training_chemistry(trained: tuple[str, ...]) -> tuple[dict[ChargeSite, Shown], frozenset[int]]:
+    sites: dict[ChargeSite, Shown] = {}
     sizes: set[int] = set()
     for smiles in trained:
-        for site, shown in charge_sites(smiles).items():
+        for site, shown in _shown_sites(smiles).items():
             sites[site] = min(sites.get(site, shown), shown)
         sizes |= aromatic_ring_sizes(smiles)
     return sites, frozenset(sizes)
 
 
 def outside_training_chemistry(smiles: str, trained: Iterable[str]) -> tuple[str, ...]:
-    """Name what a molecule holds that no training molecule does, one sentence per kind.
+    """Name what a molecule holds that no training molecule does, one sentence per feature.
 
-    Two kinds are looked for: a charged atom whose element, charge, aromaticity,
+    Two features are compared: a charged atom whose element, charge, aromaticity,
     hydrogens and bonded neighbours no training molecule's charged atom shares (the
     charge separation of a zwitterion, an azide, an ylide or a sulfoxide in a release
-    trained on nitro groups alone), and an aromatic ring of a size no training molecule
-    has (tropone's seven-membered ring). Both lists of the molecule and of the training
-    set are read from SMILES in the standard form admission writes.
+    trained on nitro groups alone), and a ring of aromatic atoms of a size no training
+    molecule has. Both the molecule and the training list are read from SMILES in the
+    standard form admission writes.
 
     Raises:
         ValueError: A string does not parse as a SMILES.
@@ -116,10 +132,10 @@ def outside_training_chemistry(smiles: str, trained: Iterable[str]) -> tuple[str
     known_sites, known_sizes = _training_chemistry(tuple(trained))
     caveats = []
     unseen = sorted(
-        {shown for site, shown in charge_sites(smiles).items() if site not in known_sites}
+        {fragment for site, fragment in charge_sites(smiles).items() if site not in known_sites}
     )
     if unseen:
-        held = ", ".join(sorted(set(known_sites.values()))) or "none"
+        held = ", ".join(sorted({fragment for _, fragment in known_sites.values()})) or "none"
         caveats.append(
             f"charge separation of a kind no training molecule holds: {', '.join(unseen)} "
             f"(the charged atoms of the training molecules: {held})"

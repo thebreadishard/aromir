@@ -89,29 +89,64 @@ BOND_ORDER_ATTEMPTS: Final = 16
 geometry no neutral pattern fits is refused after a fixed amount of work."""
 
 
+DIAGONAL_STRETCH: Final = 1.1
+"""How much longer than every bond of its triangles a contact must be to count as a
+ring's diagonal (``perceive_connectivity``): a chosen value between the two cases it
+separates. A square's diagonal is √2 = 1.41 times its side, and a biphenylene's
+four-membered ring (diagonals at 1.97 Å, sides up to about 1.51 Å) gives 1.3; in aromir's
+force-field start geometries the bridgeheads of phenylbicyclo[1.1.1]pentane give 1.25, while the
+central bond of phenylbicyclo[1.1.0]butane, a real bond whose two atoms also share two
+neighbours, gives 1.03 (1.532 Å against wing bonds up to 1.490 Å)."""
+
+
+def _distance(molecule: Mol, first: int, second: int) -> float:
+    positions = molecule.GetConformer()
+    return float((positions.GetAtomPosition(first) - positions.GetAtomPosition(second)).Length())
+
+
+def _longest_diagonal(molecule: Mol) -> tuple[int, int] | None:
+    """Return the longest contact that is a ring's diagonal, or None.
+
+    A diagonal joins two atoms that share at least two bonded neighbours and is longer, by
+    ``DIAGONAL_STRETCH``, than each bond from its two atoms to those neighbours.
+    """
+    neighbours = [
+        {neighbour.GetIdx() for neighbour in atom.GetNeighbors()} for atom in molecule.GetAtoms()
+    ]
+    diagonals = []
+    for bond in molecule.GetBonds():
+        first, second = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+        shared = neighbours[first] & neighbours[second]
+        if len(shared) < 2:
+            continue
+        length = _distance(molecule, first, second)
+        edges = [_distance(molecule, end, k) for k in shared for end in (first, second)]
+        if length > DIAGONAL_STRETCH * max(edges):
+            diagonals.append((length, first, second))
+    if not diagonals:
+        return None
+    _, first, second = max(diagonals)
+    return first, second
+
+
 def perceive_connectivity(molecule: Mol) -> Mol:
     """Return a molecule with its bonds perceived from its coordinates, all of them single.
 
     RDKit's ``DetermineConnectivity`` bonds two atoms closer than the sum of their covalent
     radii and 0.45 Å; called as in RDKit's
     ``Code/GraphMol/DetermineBonds/Wrap/testDetermineBonds.py`` (``testCtDConnectivity``).
-    A contact between two atoms that share two bonded neighbours is dropped: it is the
-    diagonal of a four-membered ring, 1.970 Å in 1-methoxybiphenylene's force-field
-    geometry against a limit of 1.97 Å for two carbons, and a bond there would close two
-    three-membered rings, which no aromatic molecule of the domain has.
+    That limit is 1.97 Å for two carbons, and the diagonals of a biphenylene's
+    four-membered ring lie at 1.969 to 1.973 Å in the force-field geometries of v1.4's
+    training biphenylenes. A diagonal (``_longest_diagonal``) is therefore dropped, the
+    longest first and the neighbours counted again after each, so that a ring with both
+    diagonals short loses those two and keeps its sides. A real bond between two atoms
+    with two shared neighbours, as in a bicyclo[1.1.0]butane, is no longer than its
+    neighbours' bonds and is kept.
     """
     perceived = Chem.RWMol(molecule)
     rdDetermineBonds.DetermineConnectivity(perceived)
-    neighbours = [
-        {neighbour.GetIdx() for neighbour in atom.GetNeighbors()} for atom in perceived.GetAtoms()
-    ]
-    diagonals = [
-        (bond.GetBeginAtomIdx(), bond.GetEndAtomIdx())
-        for bond in perceived.GetBonds()
-        if len(neighbours[bond.GetBeginAtomIdx()] & neighbours[bond.GetEndAtomIdx()]) > 1
-    ]
-    for first, second in diagonals:
-        perceived.RemoveBond(first, second)
+    while (diagonal := _longest_diagonal(perceived)) is not None:
+        perceived.RemoveBond(*diagonal)
     return perceived.GetMol()
 
 

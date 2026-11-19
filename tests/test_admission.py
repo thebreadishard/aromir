@@ -10,11 +10,11 @@ import pytest
 from rdkit import Chem
 from rdkit.Chem import rdDetermineBonds
 
-from aromir import admission, pipeline
+from aromir import admission, geometry, pipeline
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.errors import RefusedError
 
-from support import BENZENE_XYZ
+from support import BENZENE_XYZ, SMALL_RINGS, distorted, training_biphenylenes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -486,9 +486,27 @@ def test_the_listings_of_nitrobenzene_include_some_the_plain_call_refuses(tmp_pa
     assert refused > 0
 
 
-def test_a_four_membered_rings_diagonal_is_no_bond_of_an_xyz_file(tmp_path: Path) -> None:
-    # The force-field geometry puts the diagonal at 1.970 Å, within the 1.97 Å of two
-    # carbons: read as a bond, it gave COC1=C2C34C=C[CH+]C=C3C24C=C[CH-]1.
-    named, made = pipeline.admit(pipeline.MoleculeInput(smiles="COc1cccc2c1-c1ccccc1-2"))
-    read = admission.admit(admission.read(_listed(made, tmp_path / "b.xyz", 0)))
-    assert read.smiles == named.smiles
+def _read_as_listed(variants: list[Geometry], folder: Path) -> set[str]:
+    """Return the names of geometries read as xyz files, each in another listing."""
+    return {
+        _without_stereo(admission.admit(admission.read(_listed(g, folder / f"{k}.xyz", k))).smiles)
+        for k, g in enumerate(variants)
+    }
+
+
+def test_every_training_biphenylene_is_read_with_its_four_membered_ring(tmp_path: Path) -> None:
+    # Read as a bond, a diagonal gave 1-methoxybiphenylene's force-field geometry the
+    # name COC1=C2C34C=C[CH+]C=C3C24C=C[CH-]1; dropping every contact between atoms with
+    # two shared neighbours at once took the ring's sides as well when both were short.
+    biphenylenes = training_biphenylenes()
+    assert len(biphenylenes) == 9
+    for smiles in biphenylenes:
+        assert _read_as_listed(distorted(geometry.start_from_smiles(smiles)), tmp_path) == {
+            _without_stereo(smiles)
+        }
+
+
+@pytest.mark.parametrize("smiles", SMALL_RINGS)
+def test_a_small_ring_is_read_from_an_xyz_file_as_its_smiles(smiles: str, tmp_path: Path) -> None:
+    named, made = pipeline.admit(pipeline.MoleculeInput(smiles=smiles))
+    assert _read_as_listed(distorted(made), tmp_path) == {_without_stereo(named.smiles)}

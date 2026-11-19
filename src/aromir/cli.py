@@ -161,21 +161,19 @@ def _spectrum(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -
 
 def _check(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -> None:
     loaded = _release(arguments)
-    admitted, _start = pipeline.admit_for_spectrum(
+    admitted, start = pipeline.admit_for_spectrum(
         molecule, loaded, outside_training_sizes=arguments.outside_training_sizes
     )
     print(f"admitted: {admitted.smiles} ({admitted.formula}, {admitted.n_atoms} atoms)")  # noqa: T201  the command's answer
-    notes = list(admitted.input_changes)
-    training = loaded.training
-    notes += [
-        f"outside the training chemistry, so no band of it will be licensed: {caveat}"
-        for caveat in domain.outside_training_chemistry(admitted.smiles, training.trained_smiles)
+    trained = loaded.training.trained_smiles
+    notes = [
+        *admitted.input_changes,
+        *(
+            f"outside the training chemistry, so no band of it will be licensed: {caveat}"
+            for caveat in domain.outside_training_chemistry(admitted.smiles, trained)
+        ),
+        *pipeline.untrained_size(start, loaded),
     ]
-    if not training.min_atoms <= admitted.n_atoms <= training.max_atoms:
-        notes.append(
-            f"the network was trained on {training.min_atoms} to {training.max_atoms} atoms: "
-            "no band of this molecule will be licensed"
-        )
     for note in notes:
         print(f"note: {note}")  # noqa: T201  the command's answer
 

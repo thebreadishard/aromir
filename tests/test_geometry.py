@@ -14,7 +14,14 @@ from aromir import admission, geometry
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.errors import RefusedError
 
-from support import BENZENE_XYZ, ZWITTERION, proton_moved
+from support import (
+    BENZENE_XYZ,
+    SMALL_RINGS,
+    ZWITTERION,
+    distorted,
+    proton_moved,
+    training_biphenylenes,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -170,11 +177,21 @@ def test_a_ring_that_opened_is_named() -> None:
     assert "the bond C1–C2 broke" in changes
 
 
-def test_the_diagonal_of_a_four_membered_ring_is_no_bond_formed() -> None:
-    # 1-Methoxybiphenylene's start geometry puts the ring's diagonal within bonding
-    # distance (1.970 Å against 1.97 for two carbons).
-    biphenylene = admission.admit(admission.read("COc1cccc2c1-c1ccccc1-2")).smiles
-    assert geometry.changed_bonds(biphenylene, geometry.start_from_smiles(biphenylene)) == []
+def test_the_diagonals_of_every_training_biphenylene_are_no_bonds_formed() -> None:
+    biphenylenes = training_biphenylenes()
+    assert len(biphenylenes) == 9
+    for smiles in biphenylenes:
+        for variant in distorted(geometry.start_from_smiles(smiles)):
+            assert geometry.changed_bonds(smiles, variant) == [], smiles
+
+
+@pytest.mark.parametrize("smiles", SMALL_RINGS)
+def test_a_small_ring_keeps_its_bonds_and_gains_none(smiles: str) -> None:
+    # A bond of the SMILES is kept whatever its neighbours: the bicyclobutanes' central
+    # bond; a contact that is none, the bicyclopentane's bridgeheads, is no bond formed.
+    named = admission.admit(admission.read(smiles)).smiles
+    for variant in distorted(geometry.start_from_smiles(named)):
+        assert geometry.changed_bonds(named, variant) == []
 
 
 def test_a_geometry_of_other_atoms_is_an_error() -> None:

@@ -11,9 +11,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from rdkit import Chem
-from rdkit.Chem import rdDistGeom, rdForceFieldHelpers
+from rdkit.Chem import rdDetermineBonds, rdDistGeom, rdForceFieldHelpers
 
-from aromir.admission import perceive_connectivity, without_hydrogens
+from aromir.admission import without_hydrogens
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.errors import RefusedError
 from aromir.molecule import Geometry
@@ -98,11 +98,19 @@ def changed_bonds(admitted_smiles: str, geometry: Geometry) -> list[str]:
 
     The admitted molecule's bonds are read from its canonical SMILES, whose atoms with
     their hydrogens added are in the canonical order (``start_from_smiles``); the
-    geometry's are perceived from its interatomic distances as an xyz file's are
-    (``admission.perceive_connectivity``; RDKit's ``testCtDConnectivity`` compares the
-    bonds so perceived on a geometry with those of its SMILES). An optimisation that moved
-    a proton, opened a ring or joined two atoms has computed another molecule than the one
-    admitted.
+    geometry's are perceived from its interatomic distances with RDKit's
+    ``DetermineConnectivity``, called as in RDKit's
+    ``Code/GraphMol/DetermineBonds/Wrap/testDetermineBonds.py`` (``testCtDConnectivity``,
+    which compares the bonds so perceived on a geometry with those of its SMILES). An
+    optimisation that moved a proton, opened a ring or joined two atoms has computed
+    another molecule than the one admitted.
+
+    The contacts are judged against the SMILES's bonds, which are known here: a contact
+    that is no bond of the SMILES is not called a bond formed when its two atoms share two
+    neighbours in the SMILES, as the diagonals of a biphenylene's four-membered ring
+    (1.969 to 1.973 Å in the force-field geometries of v1.4's training biphenylenes,
+    against 1.97 Å for two carbons) or the bridgeheads of a bicyclo[1.1.1]pentane do. A bond
+    of the SMILES is kept whatever its neighbours.
 
     Raises:
         ValueError: The geometry's atoms are not the SMILES's, in its order.
@@ -116,16 +124,23 @@ def changed_bonds(admitted_smiles: str, geometry: Geometry) -> list[str]:
         f"{s} {x:.10f} {y:.10f} {z:.10f}"
         for s, (x, y, z) in zip(geometry.symbols, angstrom, strict=True)
     ]
-    perceived = perceive_connectivity(
-        Chem.MolFromXYZBlock("\n".join([str(geometry.n_atoms), "", *rows]) + "\n")
-    )
+    perceived = Chem.MolFromXYZBlock("\n".join([str(geometry.n_atoms), "", *rows]) + "\n")
+    rdDetermineBonds.DetermineConnectivity(perceived)
     expected, found = _pairs(admitted), _pairs(perceived)
+    neighbours = [
+        {neighbour.GetIdx() for neighbour in atom.GetNeighbors()} for atom in admitted.GetAtoms()
+    ]
+    formed = [
+        (first, second)
+        for first, second in sorted(found - expected)
+        if len(neighbours[first] & neighbours[second]) < 2
+    ]
 
     def named(pair: tuple[int, int]) -> str:
         return "–".join(f"{geometry.symbols[k]}{k + 1}" for k in pair)
 
     return [f"the bond {named(pair)} broke" for pair in sorted(expected - found)] + [
-        f"a bond {named(pair)} formed" for pair in sorted(found - expected)
+        f"a bond {named(pair)} formed" for pair in formed
     ]
 
 

@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from rdkit import Chem
 
-from aromir import geometry
+from aromir import geometry, release
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.families import FAMILIES
 from aromir.molecule import Geometry
@@ -206,3 +206,41 @@ def write_release(folder: Path, seeds: tuple[int, ...] = (0, 1), version: str = 
         state = random_network(SMALL_ARCHITECTURE, seed).state_dict()
         weights.save(state, folder, f"seed-{seed}", recipe)
     return folder
+
+
+SMALL_RINGS = (
+    "c1ccc(cc1)C12CC1C2",
+    "c1ccc(cc1)C12C(C)(C)C1C2",
+    "c1ccc(cc1)C12C3C4C1C5C2C3C45",
+    "c1ccc(cc1)C12CC(C1)C2",
+)
+"""Phenylbicyclo[1.1.0]butane and its 2,2-dimethyl analogue, whose central bond joins two
+atoms that share two neighbours; phenylcubane; and phenylbicyclo[1.1.1]pentane, whose
+bridgeheads share three neighbours and lie 1.95 Å apart, within bonding distance."""
+
+
+def training_biphenylenes() -> list[str]:
+    """Return the bundled release's training molecules with a ring of four aromatic atoms."""
+    four = Chem.MolFromSmarts("a1aaa1")
+    trained = release.load(release.bundled()).training.trained_smiles
+    return [s for s in trained if Chem.MolFromSmiles(s).HasSubstructMatch(four)]
+
+
+def distorted(start: Geometry) -> list[Geometry]:
+    """Return a start geometry as it is, scaled by 0.995, and with 0.02 Å noise (5 seeds).
+
+    The diagonals of a biphenylene's four-membered ring lie at 1.969 to 1.973 Å in its
+    start geometry, at RDKit's bonding limit of 1.97 Å for two carbons: these variants put
+    them on both sides of it.
+    """
+    noisy = [
+        start.coords_bohr
+        + np.random.default_rng(seed).normal(
+            scale=0.02 / ANGSTROM_PER_BOHR, size=(start.n_atoms, 3)
+        )
+        for seed in range(5)
+    ]
+    return [
+        Geometry(start.symbols, coords)
+        for coords in [start.coords_bohr, start.coords_bohr * 0.995, *noisy]
+    ]
