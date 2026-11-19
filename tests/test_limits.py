@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -42,6 +43,7 @@ INVARIANCE = {
     "rotation": _spread(5.34, 3, 0.0, 4),
     "mirror_image": _spread(5.22, 3, 2.6, 4),
     "xyz_atom_order": _spread(5.27, 3, 3.07, 4),
+    "tensor_sha256": {"seed-0": "0" * 64, "seed-1": "1" * 64},
     "source": "a test",
 }
 X_H_SPRING = {"C": 0.37, "O": 0.50, "N": 0.45}
@@ -344,12 +346,19 @@ def test_an_order_free_release_does_not_claim_more_than_its_measurements(
     assert "enters with its sign" not in text
 
 
+def _bound(folder: Path, record: dict[str, Any]) -> dict[str, Any]:
+    """Return an invariance record that names the seeds of the release in a folder."""
+    return record | {"tensor_sha256": release.load(folder).seed_sha256}
+
+
 def test_a_release_loads_its_invariance_record(tmp_path: Path) -> None:
     folder = write_release(tmp_path / "release")
     assert release.load(folder).invariance is None
-    (folder / release.INVARIANCE_FILE).write_text(json.dumps(INVARIANCE), encoding="utf-8")
+    bound = _bound(folder, INVARIANCE)
+    (folder / release.INVARIANCE_FILE).write_text(json.dumps(bound), encoding="utf-8")
     invariance = release.load(folder).invariance
     assert invariance is not None
+    assert invariance.tensor_sha256 == bound["tensor_sha256"]
     assert invariance.rotation.of(linear_group=True) == (5.34, 3)
     assert invariance.rotation.of(linear_group=False) == (0.0, 4)
     assert list(invariance.spreads()) == [
@@ -361,10 +370,52 @@ def test_a_release_loads_its_invariance_record(tmp_path: Path) -> None:
 
 def test_an_invariance_record_of_another_version_is_refused(tmp_path: Path) -> None:
     folder = write_release(tmp_path / "release")
-    other = INVARIANCE | {"network_version": "1.4"}
+    other = _bound(folder, INVARIANCE) | {"network_version": "1.4"}
     (folder / release.INVARIANCE_FILE).write_text(json.dumps(other), encoding="utf-8")
     with pytest.raises(RefusedError, match="different network versions"):
         release.load(folder)
+
+
+def test_an_invariance_record_of_other_weights_is_refused(tmp_path: Path) -> None:
+    folder = write_release(tmp_path / "release")
+    one_seed = _bound(folder, INVARIANCE)
+    del one_seed["tensor_sha256"]["seed-1"]
+    (folder / release.INVARIANCE_FILE).write_text(json.dumps(INVARIANCE), encoding="utf-8")
+    with pytest.raises(RefusedError, match="measured on other weights than the seeds beside it"):
+        release.load(folder)
+    (folder / release.INVARIANCE_FILE).write_text(json.dumps(one_seed), encoding="utf-8")
+    with pytest.raises(RefusedError, match="measured on other weights"):
+        release.load(folder)
+
+
+def test_an_invariance_record_without_the_weights_it_measured_is_refused(tmp_path: Path) -> None:
+    folder = write_release(tmp_path / "release")
+    unbound = {key: value for key, value in INVARIANCE.items() if key != "tensor_sha256"}
+    (folder / release.INVARIANCE_FILE).write_text(json.dumps(unbound), encoding="utf-8")
+    with pytest.raises(RefusedError, match=r"invariance\.json: tensor_sha256: Field required"):
+        release.load(folder)
+
+
+@pytest.mark.parametrize("version", ["v1.3", "v1.4"])
+def test_a_release_whose_card_names_its_invariance_record_needs_it(
+    version: str, tmp_path: Path
+) -> None:
+    folder = tmp_path / version
+    shutil.copytree(release.bundled().parent / version, folder)
+    (folder / release.INVARIANCE_FILE).unlink()
+    with pytest.raises(RefusedError, match=r"MODEL_CARD\.md names invariance\.json among its"):
+        release.load(folder)
+    (folder / release.CARD_FILE).unlink()
+    assert release.load(folder).invariance is None
+
+
+@pytest.mark.parametrize("version", ["v1.3", "v1.4"])
+def test_each_shipped_invariance_record_names_its_releases_seeds(version: str) -> None:
+    loaded = release.load(release.bundled().parent / version)
+    assert loaded.invariance is not None
+    assert loaded.invariance.tensor_sha256 == loaded.seed_sha256
+    if loaded.shipped is not None:
+        assert loaded.invariance.tensor_sha256 == loaded.shipped.seed_sha256
 
 
 def test_release_v13_states_its_measured_spreads() -> None:

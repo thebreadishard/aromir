@@ -76,6 +76,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   records each seed's tensor SHA-256 by seed name (as `release.json` binds them), the
   release folder it was read from and whether that is the release inside the package, and
   `certificate.md` says the same in one line under the band table.
+- `invariance.json` names the tensor SHA-256 of each seed it was measured on
+  (`tensor_sha256`, written by `scripts/measure_invariance.py`), and the loader refuses a
+  record without it or of other weights than the seeds beside it, and a folder whose
+  model card names `invariance.json` without the file. v1.3's and v1.4's records carry
+  their seeds' hashes, added by the script's own code without measuring again (the spreads
+  and sources are unchanged; the seeds have not changed since either was measured), and
+  both cards say so. CONTRIBUTING says how the next release binds the record in
+  `release.json`.
 - `run.json` records the aromir version that started a run, and only that version takes
   the run up: another one, or a `run.json` without a version, is refused with both
   versions named and what to do (finish with the version that started it, or delete the

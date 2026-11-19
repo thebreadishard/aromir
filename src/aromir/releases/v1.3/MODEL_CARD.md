@@ -89,7 +89,7 @@ An equivariant message-passing encoder (PaiNN type) over the atoms, and a head t
 | seed-1.safetensors | 1 | `96a15a89b6ac129c527fa643de07f51c7bf075b8de05a7898b9b9382dba2958e` |
 | seed-2.safetensors | 2 | `4a3fda6248785ee6dc198095342ebb19cc66bb47c40823834c9ba9f4ff6a91d8` |
 
-Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json`, `training.json`, `invariance.json` hold the records this card is written from, and `measured.json`, where the folder has it, is the output of `aromir evaluate` the error tables are copied from: the loader refuses tables that differ from it.
+Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json`, `training.json`, `invariance.json` hold the records this card is written from, and `measured.json`, where the folder has it, is the output of `aromir evaluate` the error tables are copied from: the loader refuses tables that differ from it. `invariance.json` names the seeds' tensor files it was measured on by their SHA-256, and the loader refuses it beside other weights.
 
 ## Use
 

@@ -447,6 +447,11 @@ def _files(release: Release) -> list[str]:
         if release.shipped is not None
         else ""
     )
+    if release.invariance is not None:
+        bound += (
+            f" `{INVARIANCE_FILE}` names the seeds' tensor files it was measured on by their "
+            "SHA-256, and the loader refuses it beside other weights."
+        )
     return [
         *lines,
         "",

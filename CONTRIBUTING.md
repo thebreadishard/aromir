@@ -71,6 +71,21 @@ but "polar tensor against finite differences of the dipole on water, 1.2e-5 e". 
 call into a library names, in its docstring, the upstream example or test that makes
 the same call.
 
+## A new release
+
+A release folder's records are bound to its weights in two ways. `release.json` binds the
+records of `aromir.release.RECORDED_FILES` by the SHA-256 of their content, beside the
+seeds' tensor hashes; `invariance.json` names the tensor hashes of the seeds it was
+measured on (`tensor_sha256`, written by `scripts/measure_invariance.py`), and the loader
+refuses it beside other weights, or its absence where the folder's model card names it.
+
+v1.4's `release.json` predates the invariance record and names exactly four records, so
+`invariance.json` is not among them. The builder of the next release adds
+`invariance.json` to the records its `release.json` binds by content: `RECORDED_FILES`
+then depends on the release (a format number in `release.json`, say), because v1.4's
+record, which names four, must still load unchanged. Measure `invariance.json` before
+writing `release.json`, so that the hash it binds is of the record that ships.
+
 ## Commits
 
 One change per commit; the subject line says what is now true. The changelog gets a

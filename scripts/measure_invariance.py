@@ -21,9 +21,10 @@ A record keeps, per change, the largest spread over the molecules with a linear 
 nitrile or an alkyne) and over those without. The script runs no quantum chemistry: it
 applies the release's seed-mean correction to stored Hessians, seconds per molecule.
 
-The record names the commit the script ran at, read from git; a tree with a changed tracked
-file, or an untracked file under src/ or scripts/, is refused, for then no commit holds the
-code that measured.
+The record names each seed's tensor hash (``tensor_sha256``), which the release's loader
+checks against the seeds beside it, and the commit the script ran at, read from git; a
+tree with a changed tracked file, or an untracked file under src/ or scripts/, is refused,
+for then no commit holds the code that measured.
 """
 
 from __future__ import annotations
@@ -196,20 +197,29 @@ def spread_record(
 def source_text(loaded: release.Release, folder: Path, commit: str) -> str:
     """Say how, when, on which networks and on which molecules the record was measured."""
     kind = "release networks" if loaded.shipped is not None else "networks"
-    seeds = ", ".join(
-        f"seed-{recipe.seed} {sha256}"
-        for recipe, sha256 in zip(loaded.recipes, loaded.tensor_sha256, strict=True)
-    )
     with_group = [name for smiles, name in MOLECULES if LINEAR_BOND in smiles]
     without = [name for smiles, name in MOLECULES if LINEAR_BOND not in smiles]
     return (
         f"scripts/measure_invariance.py of aromir at {commit}, "
-        f"{datetime.now(UTC).date().isoformat()}, on the {kind} {folder.name} ships (tensor "
-        f"sha256: {seeds}): {', '.join(with_group[:-1])} and {with_group[-1]} with a linear "
-        f"group; {', '.join(without[:-1])} and {without[-1]} without; stored B3LYP geometries "
-        "and Hessians of thebreadishard/capstone-data "
+        f"{datetime.now(UTC).date().isoformat()}, on the {kind} {folder.name} ships (their "
+        f"tensors are named in tensor_sha256): {', '.join(with_group[:-1])} and "
+        f"{with_group[-1]} with a linear group; {', '.join(without[:-1])} and {without[-1]} "
+        "without; stored B3LYP geometries and Hessians of thebreadishard/capstone-data "
         "(modules/05_support_predictor/corpus/molecules), the trials of v1.3's record"
     )
+
+
+def finished_record(
+    measured: dict[str, object], loaded: release.Release, source: str
+) -> dict[str, object]:
+    """Return a record's spreads with the weights they were measured on and its source, checked.
+
+    The record names each seed's tensor hash as the release's loader reads it, so a
+    release folder refuses the record beside other weights.
+    """
+    record = measured | {"tensor_sha256": loaded.seed_sha256, "source": source}
+    release.Invariance.model_validate(record)
+    return record
 
 
 def _git(*arguments: str) -> str:
@@ -266,9 +276,7 @@ def measure(arguments: argparse.Namespace) -> dict[str, object]:
     ):
         per_molecule = {name: getattr(found, change) for name, found in measured.items()}
         record[change] = spread_record(per_molecule, linear, n_trials)
-    record["source"] = source_text(loaded, arguments.release, commit)
-    release.Invariance.model_validate(record)
-    return record
+    return finished_record(record, loaded, source_text(loaded, arguments.release, commit))
 
 
 def main() -> None:

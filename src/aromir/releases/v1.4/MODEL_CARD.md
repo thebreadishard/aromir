@@ -91,7 +91,7 @@ An equivariant message-passing encoder (PaiNN type) over the atoms, and a head t
 | seed-1.safetensors | 1 | `14059360ed350c1bfaa2ca51bb852fa22eccb6e2644226b2250ccb6652a831aa` |
 | seed-2.safetensors | 2 | `c6451ca246977bd704392d45911233b8d7ea581bfc33268212b54bc504400b0c` |
 
-Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json`, `training.json`, `invariance.json`, `release.json`, `measurement.json` hold the records this card is written from, and `measured.json`, where the folder has it, is the output of `aromir evaluate` the error tables are copied from: the loader refuses tables that differ from it. `release.json` binds `evaluation.json`, `training.json`, `measurement.json` and `measured.json` by the SHA-256 of their content.
+Each `seed-<n>.json` beside its tensors holds the recipe and that sha256; `evaluation.json`, `training.json`, `invariance.json`, `release.json`, `measurement.json` hold the records this card is written from, and `measured.json`, where the folder has it, is the output of `aromir evaluate` the error tables are copied from: the loader refuses tables that differ from it. `release.json` binds `evaluation.json`, `training.json`, `measurement.json` and `measured.json` by the SHA-256 of their content. `invariance.json` names the seeds' tensor files it was measured on by their SHA-256, and the loader refuses it beside other weights.
 
 ## Use
 

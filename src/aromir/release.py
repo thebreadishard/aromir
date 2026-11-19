@@ -6,13 +6,16 @@ A release is a folder:
     evaluation.json                    the version's measured error per family and hold-out
     training.json                      the elements, sizes and molecules it was trained on
     invariance.json                    how far its answer moves under a rotation, a
-                                       reflection and another atom listing (optional)
+                                       reflection and another atom listing, with the
+                                       tensor hashes of the seeds it was measured on
+                                       (optional, unless the card names it)
     measured.json                      the output of ``aromir evaluate`` on the hold-outs,
                                        which the evaluation's tables are (optional)
     release.json, measurement.json     present together, when the seeds are release
                                        networks: which networks the folder ships, the
                                        checks that let them ship, and the training record
                                        of the measurement networks the errors belong to
+    MODEL_CARD.md                      the card ``aromir card`` writes from the rest
 
 A version can be a pair trained on one recipe. Its measurement networks are trained
 without the hold-outs, and every error and the licence are read on them; its release
@@ -66,7 +69,13 @@ error tables, shipped beside it where a release has it."""
 RELEASE_FILE: Final = "release.json"
 MEASUREMENT_FILE: Final = "measurement.json"
 RECORDED_FILES: Final = (EVALUATION_FILE, TRAINING_FILE, MEASUREMENT_FILE, MEASURED_FILE)
-"""The records ``release.json`` binds by the hash of their content, beside the seeds' tensors."""
+"""The records ``release.json`` binds by the hash of their content, beside the seeds' tensors.
+
+``INVARIANCE_FILE`` is not among them for v1.4, whose ``release.json`` names these four;
+the invariance record binds itself to the seeds by their tensor hashes instead
+(``Invariance.tensor_sha256``). CONTRIBUTING says what the next release's builder does."""
+CARD_FILE: Final = "MODEL_CARD.md"
+"""The model card ``aromir card`` writes, shipped in a release folder."""
 RELEASE_CHECKS: Final = (
     "same_recipe",
     "pool_agreement",
@@ -618,6 +627,9 @@ class Invariance(BaseModel):
         mirror_image: Under a reflection of both.
         xyz_atom_order: Between listings of one geometry's atoms in another order, each
             put into aromir's canonical order.
+        tensor_sha256: The SHA-256 of each seed's tensor file the numbers were measured on,
+            by seed name (``seed-0``): what binds this record to the weights beside it,
+            which ``release.json`` does not.
         source: The record the numbers were read from.
     """
 
@@ -627,6 +639,7 @@ class Invariance(BaseModel):
     rotation: MeasuredSpread
     mirror_image: MeasuredSpread
     xyz_atom_order: MeasuredSpread
+    tensor_sha256: dict[str, Hex64] = Field(min_length=1)
     source: str
 
     def spreads(self) -> dict[str, MeasuredSpread]:
@@ -740,6 +753,37 @@ def _reasons_to_refuse(
         reasons.append("its seeds differ in architecture or input settings")
     reasons += _seeds_that_disagree(recipes, evaluation)
     return reasons + _records_that_disagree(evaluation, training)
+
+
+def _invariance_reasons(
+    folder: Path, invariance: Invariance | None, seeds: dict[str, str]
+) -> list[str]:
+    """Name an invariance record of other weights, or one the folder's card names but lacks.
+
+    ``seeds`` is each seed's tensor hash by seed name.
+    """
+    if invariance is None:
+        card = folder / CARD_FILE
+        if not card.exists():
+            return []
+        try:
+            text = card.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            return [f"{CARD_FILE} cannot be read as UTF-8 text: {error}"]
+        if f"`{INVARIANCE_FILE}`" not in text:
+            return []
+        missing = (
+            f"{CARD_FILE} names {INVARIANCE_FILE} among its records, and the folder has "
+            "none: the card's spreads have no record"
+        )
+        return [missing]
+    if invariance.tensor_sha256 == seeds:
+        return []
+    other = (
+        f"{INVARIANCE_FILE} was measured on other weights than the seeds beside it (its "
+        "tensor_sha256 differs): its spreads are another network's"
+    )
+    return [other]
 
 
 def _pair_reasons(
@@ -1037,6 +1081,7 @@ def load(folder: Path) -> Release:
     recipes = tuple(recipe for _, _, recipe in loaded)
     seeds = {seed_name(recipe.seed): weights.recorded_sha256(path) for path, _, recipe in loaded}
     reasons = _reasons_to_refuse(recipes, evaluation, measured, invariance)
+    reasons += _invariance_reasons(folder, invariance, seeds)
     reasons += _pair_reasons(seeds, evaluation, training, pair)
     reasons += _measured_reasons(folder, evaluation)
     if pair is not None:
