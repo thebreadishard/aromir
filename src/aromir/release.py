@@ -48,7 +48,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from rdkit import rdBase
+from rdkit import Chem, rdBase
 from safetensors import SafetensorError
 
 from aromir.admission import standard_smiles
@@ -383,29 +383,48 @@ class CationTest(BaseModel):
     source: str = Field(min_length=1)
 
 
-def _refuse_nonstandard(smiles: list[str]) -> None:
-    """Raise for the first entry that is not in the standard form admission writes.
+def _standardised(smiles: list[str]) -> list[str]:
+    """Return a list's entries in the standard form admission writes with the running RDKit.
 
-    The standard form is RDKit's canonical SMILES of admission's standardisation, so an
-    RDKit series that writes it otherwise refuses a record another series wrote: the
-    reason names the RDKit that read it.
+    The 'seen' look-up compares an admitted SMILES, written by the running RDKit, with these
+    lists. A record keeps the spelling of the RDKit it was written with, and another RDKit
+    series may spell the same molecule otherwise (stilbene's bond directions), so the
+    entries are compared by molecule: standardising an entry must not change it, i.e. its
+    standard form must be the running RDKit's own canonical SMILES of it, and that form is
+    what the record holds in memory. Two different entries that are one molecule are
+    refused rather than merged.
 
     Raises:
-        ValueError: An entry does not parse, or admission would write it otherwise.
+        ValueError: An entry does not parse, standardising it changes the molecule, or two
+            entries are one molecule; the reason names the RDKit that read them.
     """
     with_rdkit = f"read with RDKit {rdBase.rdkitVersion}"
-    for entry in smiles:
+    standard_of: dict[str, str] = {}
+    for entry in dict.fromkeys(smiles):
         try:
             standard = standard_smiles(entry)
         except ValueError as error:
             msg = f"{error}, {with_rdkit}"
             raise ValueError(msg) from error
-        if standard != entry:
+        canonical = str(Chem.MolToSmiles(Chem.MolFromSmiles(entry)))
+        if standard != canonical:
             msg = (
-                f"{entry!r} is not in the standard form admission writes ({standard!r}, "
-                f"{with_rdkit})"
+                f"{entry!r} is not in the standard form admission writes: standardising it "
+                f"gives {standard!r}, another molecule than its own {canonical!r} ({with_rdkit})"
             )
             raise ValueError(msg)
+        standard_of[entry] = standard
+    entries_of: dict[str, list[str]] = {}
+    for entry, standard in standard_of.items():
+        entries_of.setdefault(standard, []).append(entry)
+    merged = [entries for entries in entries_of.values() if len(entries) > 1]
+    if merged:
+        msg = (
+            f"{' and '.join(repr(entry) for entry in merged[0])} are one molecule, "
+            f"{standard_of[merged[0][0]]!r} ({with_rdkit}): a list names each molecule once"
+        )
+        raise ValueError(msg)
+    return [standard_of[entry] for entry in smiles]
 
 
 class Training(BaseModel):
@@ -416,13 +435,13 @@ class Training(BaseModel):
         elements: The elements of the training molecules.
         min_atoms: The smallest training molecule's atom count.
         max_atoms: The largest's.
-        trained_smiles: Canonical SMILES of every neutral molecule a seed fitted or
-            stopped on.
-        held_out_smiles: Canonical SMILES of the hold-out molecules, by hold-out.
+        trained_smiles: SMILES of every neutral molecule a seed fitted or stopped on, held
+            in memory in the standard form the running RDKit writes (``_standardised``).
+        held_out_smiles: SMILES of the hold-out molecules, by hold-out, held the same way.
         soft_mode_repair: Whether the training Hessians had their soft modes repaired; a
             molecule's Hessian is then prepared the same way before the network reads it.
-        cation_parent_smiles: Canonical SMILES of the neutral parents of the radical
-            cations a seed fitted or stopped on; None where the record does not say.
+        cation_parent_smiles: SMILES of the neutral parents of the radical cations a seed
+            fitted or stopped on, held the same way; None where the record does not say.
         cation_test: What such training was seen to do to a neutral parent; given exactly
             when there are such cations.
     """
@@ -439,21 +458,17 @@ class Training(BaseModel):
     cation_parent_smiles: list[str] | None = None
     cation_test: CationTest | None = None
 
-    # The 'seen' look-up compares an admitted SMILES with these lists, and admission writes
-    # a molecule's standard form: an entry in another form could never be found, and
-    # rewriting it could merge two entries unseen, so it is refused.
+    # Every comparison with these lists (the 'seen' look-up, the counts, the checks of a
+    # release pair) reads them as the running RDKit writes them (``_standardised``).
     @field_validator("trained_smiles", "cation_parent_smiles", mode="after")
     @classmethod
     def _standard_list(cls, smiles: list[str] | None) -> list[str] | None:
-        _refuse_nonstandard(smiles or [])
-        return smiles
+        return None if smiles is None else _standardised(smiles)
 
     @field_validator("held_out_smiles", mode="after")
     @classmethod
     def _standard_lists(cls, held_out: dict[str, list[str]]) -> dict[str, list[str]]:
-        for smiles in held_out.values():
-            _refuse_nonstandard(smiles)
-        return held_out
+        return {name: _standardised(smiles) for name, smiles in held_out.items()}
 
     @model_validator(mode="after")
     def _a_set_that_can_exist(self) -> Self:

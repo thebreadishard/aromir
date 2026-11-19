@@ -148,20 +148,25 @@ def test_the_evaluation_record_is_the_measurement_that_ships_beside_it() -> None
 def test_every_smiles_a_shipped_release_lists_is_in_the_form_admission_writes(
     version: str,
 ) -> None:
-    # The loader reads the lists in admission's standard form; a shipped record already in
-    # that form is read as it is written, and its hash and counts mean what they say.
+    # The loader reads the lists as the running RDKit writes them. Standardising a shipped
+    # entry leaves the molecule as it is, and no two entries of a list become one: the
+    # counts the card states are the record's on every RDKit the bounds allow.
     folder = release.bundled().parent / f"v{version}"
     listed = []
     for name in (release.TRAINING_FILE, release.MEASUREMENT_FILE):
         if not (folder / name).is_file():
             continue
         record = json.loads((folder / name).read_text(encoding="utf-8"))
-        listed += record["trained_smiles"] + (record.get("cation_parent_smiles") or [])
-        listed += [s for held in record["held_out_smiles"].values() for s in held]
+        lists = [record["trained_smiles"], *record["held_out_smiles"].values()]
+        lists += [record.get("cation_parent_smiles") or []]
+        loaded = release.Training.model_validate(record)
+        read = [loaded.trained_smiles, *loaded.held_out_smiles.values()]
+        read += [loaded.cation_parent_smiles or []]
+        for stored, standard in zip(lists, read, strict=True):
+            assert len(set(standard)) == len(set(stored))
+            assert standard == [str(Chem.MolToSmiles(Chem.MolFromSmiles(s))) for s in stored]
+        listed += [s for smiles in lists for s in smiles]
     assert len(listed) > 700
-    rewritten = [s for s in listed if admission.standard_smiles(s) != s]
-    assert rewritten == []
-    assert all(Chem.MolToSmiles(Chem.MolFromSmiles(s)) == s for s in listed)
     # The 'seen' look-up's second key must name one entry: no two molecules share one.
     distinct = set(listed)
     keys = {admission.fixed_h_key(s) for s in distinct}

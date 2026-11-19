@@ -147,6 +147,28 @@ def test_a_training_record_not_in_the_form_admission_writes_is_refused(
     assert f"read with RDKit {rdBase.rdkitVersion})" in str(refusal.value)
 
 
+def test_a_training_record_is_read_by_molecule_not_by_spelling() -> None:
+    # Kekulé benzene and stilbene with its bond directions written the other way round
+    # are the molecules admission writes, spelt otherwise: read in the running RDKit's form.
+    record = release.Training.model_validate(
+        TRAINING
+        | {
+            "trained_smiles": ["C1=CC=CC=C1", "C(/c1ccccc1)=C\\c1ccccc1"],
+            "held_out_smiles": {"a": ["C1=CC=CC=C1"], "b": []},
+        }
+    )
+    stilbene = admission.standard_smiles("C(=C\\c1ccccc1)/c1ccccc1")
+    assert record.trained_smiles == ["c1ccccc1", stilbene]
+    assert record.held_out_smiles["a"] == ["c1ccccc1"]
+    assert record.n_held_out("a") == 0
+
+
+def test_two_spellings_of_one_molecule_in_a_list_are_refused() -> None:
+    with pytest.raises(ValidationError, match="are one molecule, 'c1ccccc1'") as refusal:
+        release.Training.model_validate(TRAINING | {"trained_smiles": ["C1=CC=CC=C1", "c1ccccc1"]})
+    assert f"(read with RDKit {rdBase.rdkitVersion})" in str(refusal.value)
+
+
 def test_a_training_record_entry_that_does_not_parse_names_the_rdkit_that_read_it() -> None:
     with pytest.raises(ValidationError, match="does not parse as a SMILES") as refusal:
         release.Training.model_validate(TRAINING | {"trained_smiles": ["c1ccccc"]})

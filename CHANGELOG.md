@@ -87,9 +87,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `release.json`.
 - RDKit's lower bound is 2024.9 (was 2023.9): older series' wheels are built against
   numpy 1 and do not import under numpy 2, which the numpy bound allows.
-- A release record's SMILES that is not in admission's standard form, or does not parse,
-  is refused with the RDKit version that read it: the standard form is RDKit's canonical
-  SMILES, so another RDKit series may write it otherwise.
+- A release record's SMILES lists are compared by molecule, not by spelling: each entry
+  is read in the standard form the running RDKit writes, which must be that RDKit's own
+  canonical SMILES of the entry (standardising must not change the molecule), and every
+  comparison with the lists — whether a molecule was seen, the counts, the checks of a
+  release pair — uses those forms. RDKit 2024.9 spells stilbene's bond directions
+  otherwise than 2026.9, which wrote v1.3's list, and a comparison of strings refused v1.3
+  there. An entry that
+  does not parse, that standardising changes, or that is one molecule with another entry
+  of its list is refused with the RDKit version that read it.
 - `run.json` records the aromir version that started a run, and only that version takes
   the run up: another one, or a `run.json` without a version, is refused with both
   versions named and what to do (finish with the version that started it, or delete the
