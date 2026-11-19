@@ -72,6 +72,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- No band of a molecule with a linear group (the certificate's linear angle: a nitrile, an
+  alkyne) is licensed while the release's `invariance.json` gives such molecules a spread
+  above the licence line under a rotation, a mirror image or another xyz listing, or does
+  not measure it; the reason is stated in the certificate's statement and in every band's
+  licence column, and the corrected positions are printed unchanged. v1.4's record gives
+  11.20 cm⁻¹ and v1.3's 5.34, so neither licenses diphenylacetylene or benzonitrile any more
+  (benzonitrile by its group: its own turns move it less). A release whose record puts the
+  spread at or below the line licenses them again. The card states the rule with its
+  release's number.
 - 'Seen' follows one stereo rule, the training project's: a row without stereo labels
   stands for both mirror images of a molecule whose one stereo element is one tetrahedral
   centre (an xyz sulfoxide that names its configuration is in the training set when the

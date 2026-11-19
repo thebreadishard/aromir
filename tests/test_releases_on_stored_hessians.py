@@ -24,7 +24,7 @@ from aromir import vibrations as vib
 from aromir.constants import ANGSTROM_PER_BOHR
 from aromir.molecule import Geometry
 
-from support import rotation_matrix
+from support import RELEASE_DATA, rotation_matrix, stored_molecule
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 
     from aromir.molecule import FloatArray
 
-DATA = Path(__file__).parent / "data" / "release"
 VERSIONS = ("v1.3", "v1.4")
 SAME_CM = 1e-3
 """Two answers to one molecule agree when no band differs by more: single-precision noise
@@ -62,12 +61,6 @@ def _release(version: str) -> release.Release:
     return release.load(release.bundled().parent / version)
 
 
-def _stored(name: str) -> tuple[Geometry, FloatArray]:
-    with np.load(DATA / f"stored_{name}.npz") as arrays:
-        symbols = tuple(str(symbol) for symbol in arrays["symbols"])
-        return Geometry(symbols, np.array(arrays["coords_bohr"])), np.array(arrays["hessian"])
-
-
 def _corrected(loaded: release.Release, molecule: Geometry, hessian: FloatArray) -> FloatArray:
     answer = loaded.corrections(molecule, hessian).mean
     return np.asarray(vib.vibrational_modes(hessian + answer, molecule).wavenumbers)
@@ -82,7 +75,7 @@ def _moved(
 
 
 def _largest_change(loaded: release.Release, name: str, matrices: list[FloatArray]) -> float:
-    molecule, hessian = _stored(name)
+    molecule, hessian = stored_molecule(name)
     as_stored = _corrected(loaded, molecule, hessian)
     return max(
         float(np.abs(_corrected(loaded, *_moved(molecule, hessian, matrix)) - as_stored).max())
@@ -107,7 +100,7 @@ def _as_listed(molecule: Geometry, listing: list[int], path: Path) -> list[int]:
 
 def _largest_listing_change(loaded: release.Release) -> float:
     """Return the largest band difference between listings of one biphenyl geometry."""
-    molecule, hessian = _stored("biphenyl")
+    molecule, hessian = stored_molecule("biphenyl")
     rng = np.random.default_rng(7)
     spectra = []
     with TemporaryDirectory() as folder:
@@ -220,7 +213,9 @@ def test_the_bundled_release_is_among_those_tested() -> None:
 
 def test_a_holdout_molecule_has_the_errors_the_evaluation_measured() -> None:
     bundled = _release("v1.3")
-    errors = evaluation.molecule_errors(evaluation.read(DATA / "holdout_a_benzene.npz"), bundled)
+    errors = evaluation.molecule_errors(
+        evaluation.read(RELEASE_DATA / "holdout_a_benzene.npz"), bundled
+    )
     band_family = np.array(errors.band_family)
     first_order_family = np.array(errors.first_order_family)
     counts = {family: int((band_family == family).sum()) for family in families.FAMILIES}

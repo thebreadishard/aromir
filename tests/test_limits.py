@@ -150,7 +150,9 @@ def test_a_stretch_on_oxygen_or_nitrogen_is_not_licensed_as_a_ch_stretch(
 
 
 def _note(mode: certificate.Mode, loaded: release.Release) -> str:
-    return certificate.licence_note(mode, loaded.evaluation, inside_training_sizes=True)
+    return certificate.licence_note(
+        mode, loaded.evaluation, inside_training_sizes=True, withheld=None
+    )
 
 
 def test_a_mixed_stretch_and_a_wag_off_carbon_fail_the_licence(loaded: release.Release) -> None:

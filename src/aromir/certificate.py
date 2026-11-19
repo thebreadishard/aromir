@@ -7,8 +7,9 @@ the error measured for that family on molecules the networks behind that error n
 (for release networks: the version's measurement networks), whether the band is
 licensed for this molecule, and how far the network's seeds disagree. It also states what
 that error does not cover: how far the positions move when the same molecule is turned,
-mirrored or listed in another atom order. Every number about the network comes from the
-release's records.
+mirrored or listed in another atom order; where that is more than the licence line for
+molecules with a linear group, no band of such a molecule is licensed. Every number about
+the network comes from the release's records.
 """
 
 from __future__ import annotations
@@ -78,7 +79,8 @@ class Band:
         licensed: Whether the band passes every condition of the licence: its family's
             error is within the licence line on every hold-out, the molecule lies inside
             the training sizes, its low-level mode is real, the band is real for the
-            seed mean and for every seed,
+            seed mean and for every seed, a molecule with a linear group has its
+            recorded spread within the licence line (``withheld_for_linear_group``),
             and a band of a C–H family moves carbon-bound hydrogens.
         licence_note: The first condition the band fails; empty when it is licensed.
         measured_error_cm: The family's band error of the seeds' mean, per hold-out.
@@ -114,7 +116,100 @@ class Mode:
     off_carbon: float
 
 
-def licence_note(mode: Mode, evaluation: Evaluation, *, inside_training_sizes: bool) -> str:
+@dataclass(frozen=True)
+class Withheld:
+    """Why no band of a molecule with a linear group is licensed.
+
+    Attributes:
+        spread_cm: The recorded spread above the licence line; None when it was not
+            measured.
+        note: What each band's licence column says.
+        reason: The sentence the certificate's statement gives.
+    """
+
+    spread_cm: float | None
+    note: str
+    reason: str
+
+
+SPREAD_CHANGES: Final = "a rotation, a mirror image or another xyz listing of the atoms"
+"""The changes of the invariance record a user's input can make, all three: an xyz file in
+any orientation, the other configuration of a molecule whose one stereo element is one
+centre (``only_mirror_images``) and any listing of an xyz file's atoms. The evaluation's
+arbitrary SMILES orders are not among them: aromir writes every SMILES of a molecule in
+one order."""
+STILL_PRINTED: Final = (
+    "so the network's correction for this molecule is not licensed; the corrected positions "
+    "are still printed"
+)
+
+
+def linear_group_spread_cm(release: Release) -> tuple[float | None, bool]:
+    """Return the largest spread recorded for molecules with a linear group, and its completeness.
+
+    The spread is the largest, cm⁻¹, over the changes of ``SPREAD_CHANGES`` the release's
+    invariance record measured on such molecules; None when it measured none. The flag
+    says whether the record measured every one of those changes on them.
+    """
+    if release.invariance is None:
+        return None, False
+    values = [spread.of(linear_group=True)[0] for spread in release.invariance.spreads().values()]
+    measured = [value for value in values if value is not None]
+    return max(measured, default=None), len(measured) == len(values)
+
+
+def withheld_for_linear_group(release: Release, *, linear_group: bool) -> Withheld | None:
+    """Say why a molecule's bands are not licensed for its linear group; None when they may be.
+
+    A molecule with a linear group is licensed only while the release's invariance record
+    shows its spread under ``SPREAD_CHANGES`` within the licence line. A release whose
+    record does not measure it there licenses no such molecule: a licence is a claim that
+    needs its measurement, and v1.3 and v1.4, the releases measured, were both above the
+    line.
+    """
+    if not linear_group:
+        return None
+    line = release.evaluation.licence_line_cm
+    spread, complete = linear_group_spread_cm(release)
+    if spread is not None and spread > line:
+        return Withheld(
+            spread_cm=spread,
+            note=(
+                "the molecule has a linear group, and molecules with one moved by up to "
+                f"{spread:.2f} cm⁻¹ under a rotation, a mirror image or another xyz listing, "
+                "more than the licence line"
+            ),
+            reason=(
+                "the molecule has a linear group (an angle near 180°, as in a nitrile or an "
+                f"alkyne), and the measured spread under {SPREAD_CHANGES} for molecules with "
+                f"one ({spread:.2f} cm⁻¹, from the release's invariance record) exceeds the "
+                f"licence line of {line:g} cm⁻¹, {STILL_PRINTED}"
+            ),
+        )
+    if not complete:
+        return Withheld(
+            spread_cm=None,
+            note=(
+                "the molecule has a linear group, and the spread of molecules with one under a "
+                "rotation, a mirror image or another xyz listing was not measured for this "
+                "release"
+            ),
+            reason=(
+                "the molecule has a linear group (an angle near 180°, as in a nitrile or an "
+                f"alkyne), and the spread under {SPREAD_CHANGES} was not measured for this "
+                f"release on a molecule with one, {STILL_PRINTED}"
+            ),
+        )
+    return None
+
+
+def licence_note(
+    mode: Mode,
+    evaluation: Evaluation,
+    *,
+    inside_training_sizes: bool,
+    withheld: Withheld | None,
+) -> str:
     """Return the first condition of the licence a band fails, or "" when it passes all."""
     off_carbon = (
         f"{mode.off_carbon:.0%} of its hydrogen motion is on N–H, O–H or S–H, which "
@@ -124,6 +219,7 @@ def licence_note(mode: Mode, evaluation: Evaluation, *, inside_training_sizes: b
         (mode.low_level_cm < 0, FLAT_COORDINATE),
         (mode.position_cm < 0, IMAGINARY),
         (mode.lowest_seed_cm < 0, IMAGINARY_FOR_A_SEED),
+        (withheld is not None, "" if withheld is None else withheld.note),
         (not evaluation.licensed(mode.family), "the family's error is above the licence line"),
         (not inside_training_sizes, "the molecule is outside the training sizes"),
         (mode.family in C_H_FAMILIES and mode.off_carbon > OFF_CARBON_SHARE, off_carbon),
@@ -138,6 +234,7 @@ def bands(
     evaluation: Evaluation,
     *,
     inside_training_sizes: bool,
+    withheld: Withheld | None,
 ) -> list[Band]:
     """Return the corrected spectrum's bands in ascending order, each with its record."""
     low_modes = vibrations.vibrational_modes(low.hessian, geometry)
@@ -159,7 +256,9 @@ def bands(
             lowest_seed_cm=float(ranges[index, 0]),
             off_carbon=float(off_carbon[low_index]),
         )
-        note = licence_note(mode, evaluation, inside_training_sizes=inside_training_sizes)
+        note = licence_note(
+            mode, evaluation, inside_training_sizes=inside_training_sizes, withheld=withheld
+        )
         rows.append(
             Band(
                 wavenumber_cm=round(mode.position_cm, 1),
@@ -414,7 +513,11 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
 
 
 def _statement(
-    admitted: Admission, release: Release, rows: list[Band], molecule: dict[str, Any]
+    admitted: Admission,
+    release: Release,
+    rows: list[Band],
+    molecule: dict[str, Any],
+    withheld: Withheld | None,
 ) -> str:
     evaluation = release.evaluation
     line = evaluation.licence_line_cm
@@ -439,6 +542,7 @@ def _statement(
             "nothing is claimed for it. "
         )
     test_sets = " and ".join(named_test_set(name, first=True) for name in evaluation.holdouts)
+    linear = "" if withheld is None else f"{withheld.reason[0].upper()}{withheld.reason[1:]}. "
     return (
         f"{admitted.smiles}: the harmonic infrared spectrum of ΔH network "
         f"v{release.network_version} ({len(release.networks)} seeds), {LEVEL_NOTE} towards "
@@ -448,9 +552,10 @@ def _statement(
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every test set "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
         "its low-level mode is real, the band is real for the seeds' mean and for every "
-        "seed, and a band of a C–H "
+        "seed, a molecule with a linear group moved by no more than the licence line under "
+        f"{SPREAD_CHANGES} in the release's invariance record, and a band of a C–H "
         "family moves carbon-bound "
-        f"hydrogens. {flat}{thin}{beyond}"
+        f"hydrogens. {linear}{flat}{thin}{beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. {_not_experiment(evaluation)}"
     )
 
@@ -521,15 +626,17 @@ def build(
     evaluation = release.evaluation
     within = [family for family in families.FAMILIES if evaluation.licensed(family)]
     molecule = _molecule(admitted, geometry, release)
+    withheld = withheld_for_linear_group(release, linear_group=molecule["linear_group"])
     rows = bands(
         geometry,
         low,
         corrections,
         evaluation,
         inside_training_sizes=molecule["inside_training_sizes"],
+        withheld=withheld,
     )
     return {
-        "statement": _statement(admitted, release, rows, molecule),
+        "statement": _statement(admitted, release, rows, molecule, withheld),
         "molecule": molecule,
         "network": {
             "version": release.network_version,

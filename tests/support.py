@@ -10,12 +10,13 @@ import numpy as np
 import torch
 
 from aromir.families import FAMILIES
+from aromir.molecule import Geometry
 from aromir.network import weights
 from aromir.network.inputs import InputSettings
 from aromir.network.model import Architecture, DeltaHessianNetwork
 
 if TYPE_CHECKING:
-    from aromir.molecule import FloatArray, Geometry
+    from aromir.molecule import FloatArray
 
 Bonds = tuple[tuple[int, int, float], ...]
 
@@ -97,6 +98,15 @@ def random_network(architecture: Architecture, seed: int) -> DeltaHessianNetwork
 
 
 RELEASE_DATA = Path(__file__).parent / "data" / "release"
+
+
+def stored_molecule(name: str) -> tuple[Geometry, FloatArray]:
+    """Return a stored molecule of the test data and its B3LYP Hessian (see its README)."""
+    with np.load(RELEASE_DATA / f"stored_{name}.npz") as arrays:
+        symbols = tuple(str(symbol) for symbol in arrays["symbols"])
+        return Geometry(symbols, np.array(arrays["coords_bohr"])), np.array(arrays["hessian"])
+
+
 SMALL_ARCHITECTURE = Architecture(n_features=16, n_blocks=2, hidden=24)
 TRAINING: dict[str, Any] = {
     "network_version": "1.3",

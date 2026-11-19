@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from aromir import dft, families, repair
+from aromir.certificate import SPREAD_CHANGES, linear_group_spread_cm, withheld_for_linear_group
 from aromir.release import (
     EVALUATION_FILE,
     INVARIANCE_FILE,
@@ -314,6 +315,28 @@ def _sameness(release: Release) -> list[str]:
     ]
 
 
+def _linear_group_licence(release: Release) -> str:
+    """State the licence rule for molecules with a linear group, with this release's number."""
+    line = release.evaluation.licence_line_cm
+    withheld = withheld_for_linear_group(release, linear_group=True)
+    if withheld is None:
+        spread, _ = linear_group_spread_cm(release)
+        verdict = f"for this release it is {spread:.2f} cm⁻¹, so their bands keep the licence"
+    elif withheld.spread_cm is None:
+        verdict = "for this release it was not measured, so their bands are not licensed"
+    else:
+        verdict = (
+            f"for this release it is {withheld.spread_cm:.2f} cm⁻¹, so their bands are not licensed"
+        )
+    return (
+        "- **A molecule with a linear group is licensed only within the line.** aromir's "
+        "certificate licenses no band of a molecule with an angle near 180° (a nitrile, an "
+        "alkyne) while the largest spread this release's invariance record gives for such "
+        f"molecules under {SPREAD_CHANGES} exceeds {line:g} cm⁻¹ or was not measured; "
+        f"{verdict}; the corrected positions are printed either way."
+    )
+
+
 def _limits(release: Release) -> list[str]:
     evaluation, training = release.evaluation, release.training
     unlicensed = [f for f in families.FAMILIES if not evaluation.licensed(f)]
@@ -341,6 +364,7 @@ def _limits(release: Release) -> list[str]:
         ),
         f"- {_order_statement(release)}",
         *_sameness(release),
+        _linear_group_licence(release),
         (
             "- **Band heights have no error bar.** They are computed on the corrected modes "
             "with the cheap level's dipole derivatives, which are not corrected."
@@ -351,7 +375,8 @@ def _limits(release: Release) -> list[str]:
             + " aromir's certificate licenses a band only when its family is within the "
             "licence line, the molecule lies inside the training sizes, its low-level mode "
             "is real, the band is real for "
-            "the seeds' mean and for every seed, and a CH-stretch or CH-oop band moves "
+            "the seeds' mean and for every seed, a molecule with a linear group moved by no "
+            "more than the licence line in the record above, and a CH-stretch or CH-oop band moves "
             "carbon-bound hydrogens. A "
             "ring-ip band is licensed as the rule takes it, C=O stretches included."
         ),

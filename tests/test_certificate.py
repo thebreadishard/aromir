@@ -55,7 +55,7 @@ def test_without_a_correction_every_band_is_its_own_b3lyp_band(
     benzene: Geometry, low: lowlevel.LowLevel, loaded: release.Release
 ) -> None:
     rows = certificate.bands(
-        benzene, low, _no_correction(), loaded.evaluation, inside_training_sizes=True
+        benzene, low, _no_correction(), loaded.evaluation, inside_training_sizes=True, withheld=None
     )
     plain = spectrum.harmonic_bands(low.hessian, benzene, low.polar_tensor)
     scaled = spectrum.scaled(plain)
@@ -74,7 +74,7 @@ def test_each_band_carries_its_familys_record(
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True
+        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True, withheld=None
     )
     positions = [row.wavenumber_cm for row in rows]
     assert positions == sorted(positions)
@@ -92,7 +92,7 @@ def test_the_seeds_range_is_their_lowest_and_highest_position(
 ) -> None:
     corrections = loaded.corrections(benzene, low.hessian)
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True
+        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True, withheld=None
     )
     per_seed = [
         vib.vibrational_modes(low.hessian + delta, benzene).wavenumbers
@@ -359,7 +359,7 @@ def test_the_printed_position_lies_inside_its_range(
     np.testing.assert_allclose(per_seed[0], per_seed[1], atol=1e-6)
     assert float(np.abs(plain - per_seed[0]).max()) > 1.0
     rows = certificate.bands(
-        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True
+        benzene, low, corrections, loaded.evaluation, inside_training_sizes=True, withheld=None
     )
     for row in rows:
         assert row.seed_range_cm[0] <= row.wavenumber_cm <= row.seed_range_cm[1]
