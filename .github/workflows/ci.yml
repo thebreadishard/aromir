@@ -65,6 +65,11 @@ jobs:
           # The lowest allowed release, beside the numpy pip chooses.
           - rdkit: "2024.9.1"
             python: "3.11"
+          # The first releases of the next two series: where the lower bound can move.
+          - rdkit: "2025.3.1"
+            python: "3.11"
+          - rdkit: "2025.9.1"
+            python: "3.11"
           # The highest allowed series, at its newest release.
           - rdkit: "2026.9.*"
             python: "3.13"
