@@ -1,4 +1,4 @@
-"""Infrared bands from a Hessian and dipole derivatives, and the curve drawn from them.
+"""Infrared bands from a Hessian and dipole derivatives.
 
 Intensities are double-harmonic: A_k = 974.88 km/mol · |P L_k / √m|², with P the atomic
 polar tensor (∂μ/∂R, shape (3, 3N), in e) and L_k a mass-weighted mode vector.
@@ -22,12 +22,6 @@ if TYPE_CHECKING:
 
     from aromir.molecule import FloatArray, Geometry
     from aromir.vibrations import Modes
-
-FWHM: Final = 10.0
-"""Full width at half maximum of the drawn Lorentzian, cm⁻¹."""
-
-GRID: Final = (500.0, 3500.0, 1.0)
-"""The drawn range: first wavenumber, end (exclusive) and step, cm⁻¹."""
 
 SCALING_REGION_EDGES: Final = (10000.0 / 9.0, 2500.0)
 """cm⁻¹; the regions of Bauschlicher, Ricca, Boersma & Allamandola (2018), ApJS 234, 32,
@@ -90,26 +84,6 @@ def scaled(bands: Bands) -> Bands:
     position = bands.wavenumbers
     region = np.where(position < low, 0, np.where(position > high, 2, 1))
     return Bands(np.array(SCALING_FACTORS)[region] * position, bands.intensities)
-
-
-def grid() -> FloatArray:
-    """Return the wavenumbers the spectrum is drawn on."""
-    return np.arange(*GRID)
-
-
-def broadened(bands: Bands, wavenumbers: FloatArray, fwhm: float = FWHM) -> FloatArray:
-    """Return the Lorentzian-broadened spectrum on the given wavenumbers.
-
-    Each band becomes a Lorentzian of unit area times its intensity, so the curve is in
-    km/mol per cm⁻¹.
-    """
-    if fwhm <= 0:
-        msg = f"a line width of {fwhm} cm⁻¹ is not positive"
-        raise ValueError(msg)
-    half_width = 0.5 * fwhm
-    offsets = wavenumbers[None, :] - bands.wavenumbers[:, None]
-    lines = bands.intensities[:, None] * half_width / np.pi / (offsets**2 + half_width**2)
-    return np.asarray(lines.sum(axis=0), dtype=float)
 
 
 def partners(corrected: Modes, reference: Modes) -> NDArray[np.int64]:

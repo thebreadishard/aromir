@@ -764,6 +764,37 @@ def test_a_low_level_file_that_numpy_cannot_open_is_a_damaged_run(
     assert synthetic_chemistry == {"optimise": 1, "low level": 1}
 
 
+def test_a_field_this_version_does_not_know_is_no_damaged_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    # A step file that reads cleanly but names a field another version wrote: the error is
+    # the code's, and the folder's hours of DFT must not be called damaged.
+    folder = tmp_path / "benzene"
+    _stopped_before_the_repair(folder, monkeypatch)
+    stored = json.loads((folder / "geometry.json").read_text(encoding="utf-8"))
+    stored["optimisation"]["a_field_renamed_later"] = 1
+    (folder / "geometry.json").write_text(json.dumps(stored), encoding="utf-8")
+    with pytest.raises(TypeError, match="a_field_renamed_later"):
+        pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1}
+
+
+def test_a_bug_in_building_the_saved_low_level_is_raised_as_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
+) -> None:
+    folder = tmp_path / "benzene"
+    _stopped_before_the_repair(folder, monkeypatch)
+
+    def broken(**_fields: object) -> None:
+        msg = "a bug in the code, not in the file"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(lowlevel, "LowLevel", broken)
+    with pytest.raises(RuntimeError, match="a bug in the code"):
+        pipeline.run_baseline(_benzene(folder))
+    assert synthetic_chemistry == {"optimise": 1, "low level": 1}
+
+
 def test_a_geometry_file_that_does_not_name_its_run_is_refused_before_the_next_step(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, synthetic_chemistry: Counter[str]
 ) -> None:

@@ -19,7 +19,7 @@ import math
 import tokenize
 import zipfile
 import zlib
-from dataclasses import asdict, replace
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Self, TextIO
 
@@ -80,7 +80,6 @@ _UNREADABLE: Final = (
     OSError,
     ValueError,
     KeyError,
-    TypeError,
     EOFError,
     RuntimeError,
     zipfile.BadZipFile,
@@ -89,9 +88,12 @@ _UNREADABLE: Final = (
 )
 """What reading a damaged step file raises, as measured by flipping every byte of one:
 the archive's own errors, zlib's, a header numpy cannot parse (TokenError), a zip
-version or an encryption flag that is not there (NotImplementedError, RuntimeError). A
-file changed in a way its archive's checksum and these checks do not see is read as it
-stands."""
+version or an encryption flag that is not there (NotImplementedError, RuntimeError), JSON
+that does not parse (ValueError), a field that is missing (KeyError), and the checks of
+the reading itself (ValueError). Only the reading is guarded: the objects are built from
+what was read outside it, so an error of the code (a field this version names otherwise)
+is raised as itself, not reported as a damaged run. A file changed in a way its archive's
+checksum and these checks do not see is read as it stands."""
 
 
 class MoleculeInput(BaseModel):
@@ -181,7 +183,7 @@ def _a_record(made_with: object) -> dict[str, Any]:
     """Return what a step file says made it; anything but a record is a damaged file."""
     if not isinstance(made_with, dict):
         msg = f"what made it is {made_with!r}, not a record"
-        raise TypeError(msg)
+        raise ValueError(msg)  # noqa: TRY004  a damaged file, not a caller's mistake
     return made_with
 
 
@@ -266,27 +268,46 @@ def _saved_progress(folder: Path, state: _Run, start: Geometry) -> optimisation.
         if n_steps < 1:
             msg = f"{n_steps} gradients taken"
             raise ValueError(msg)
-        return optimisation.Progress(coords.tolist(), n_steps)
     except _UNREADABLE as error:
         raise _damaged(folder, PROGRESS_FILE, error) from error
+    return optimisation.Progress(coords.tolist(), n_steps)
+
+
+def _saved_geometry(folder: Path, state: _Run) -> dict[str, Any] | None:
+    """Return this attempt's saved optimisation as stored; None when there is none."""
+    path = folder / GEOMETRY_FILE
+    if not path.is_file():
+        return None
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        if stored["attempt"] != state.attempt:
+            return None
+        # A step that does not name its run cannot go into a record: said now, before the
+        # next step is computed on top of it.
+        _a_record(stored["made_with"])
+        coords = np.array(stored["coords_bohr"], dtype=float)
+        if coords.shape != (len(stored["symbols"]), 3) or not isinstance(
+            stored["optimisation"], dict
+        ):
+            msg = f"coordinates of shape {coords.shape}, or no record of the optimisation"
+            raise ValueError(msg)
+    except _UNREADABLE as error:
+        raise _damaged(folder, GEOMETRY_FILE, error) from error
+    return {
+        "symbols": tuple(stored["symbols"]),
+        "coords_bohr": coords,
+        "optimisation": stored["optimisation"],
+    }
 
 
 def _optimised(
     start: Geometry, folder: Path, state: _Run, resources: Resources, log: TextIO
 ) -> optimisation.Optimisation:
     """Return the optimised geometry: the saved one of this attempt, or a new one, saved."""
-    path = folder / GEOMETRY_FILE
-    if path.is_file():
-        try:
-            stored = json.loads(path.read_text(encoding="utf-8"))
-            if stored["attempt"] == state.attempt:
-                # A step that does not name its run cannot go into a record: said now,
-                # before the next step is computed on top of it.
-                _a_record(stored["made_with"])
-                minimum = Geometry(tuple(stored["symbols"]), np.array(stored["coords_bohr"]))
-                return optimisation.Optimisation(minimum, **stored["optimisation"])
-        except _UNREADABLE as error:
-            raise _damaged(folder, GEOMETRY_FILE, error) from error
+    saved = _saved_geometry(folder, state)
+    if saved is not None:
+        minimum = Geometry(saved["symbols"], saved["coords_bohr"])
+        return optimisation.Optimisation(minimum, **saved["optimisation"])
     progress = folder / PROGRESS_FILE
 
     def keep(reached: optimisation.Progress) -> None:
@@ -307,7 +328,7 @@ def _optimised(
         },
         "attempt": state.attempt,
     }
-    records.write_json(path, record)
+    records.write_json(folder / GEOMETRY_FILE, record)
     progress.unlink(missing_ok=True)
     return optimised
 
@@ -361,25 +382,15 @@ def _saved_low_level(
             saved["coords_bohr"], minimum.coords_bohr
         ):
             return None
-        before, after, rounds, columns = saved["refinement"].tolist()
-        soft_modes = None
-        if "soft_modes" in saved:
-            n_directions, *positions = saved["soft_modes"].tolist()
-            soft_modes = repair.Repair(int(n_directions), *positions)
-        low = lowlevel.LowLevel(
-            energy=float(saved["energy"]),
-            hessian=saved["hessian"],
-            polar_tensor=saved["polar_tensor"],
-            refinement=response.Refinement(before, after, int(rounds), int(columns)),
-            sum_rule_violation=float(saved["sum_rule_violation"]),
-            seconds=float(saved["seconds"]),
-            soft_modes=soft_modes,
-            analytic_hessian=saved.get("analytic_hessian"),
-        )
         made_with = _a_record(json.loads(str(saved["made_with"])))
         expected = (3 * minimum.n_atoms, 3 * minimum.n_atoms)
-        if low.hessian.shape != expected or low.polar_tensor.shape != (3, expected[0]):
-            msg = f"arrays of shape {low.hessian.shape} and {low.polar_tensor.shape}"
+        hessian, polar_tensor = saved["hessian"], saved["polar_tensor"]
+        if hessian.shape != expected or polar_tensor.shape != (3, expected[0]):
+            msg = f"arrays of shape {hessian.shape} and {polar_tensor.shape}"
+            raise ValueError(msg)
+        missing = sorted({"energy", "refinement", "seconds", "sum_rule_violation"} - set(saved))
+        if missing or saved["refinement"].shape != (len(fields(response.Refinement)),):
+            msg = f"fields {missing} missing, or a refinement that is not one"
             raise ValueError(msg)
         if "low level" not in made_with:
             msg = "it does not name the run that computed it"
@@ -389,7 +400,26 @@ def _saved_low_level(
             raise ValueError(msg)
     except _UNREADABLE as error:
         raise _damaged(folder, LOW_LEVEL_FILE, error) from error
-    return low, made_with
+    return _built_low_level(saved), made_with
+
+
+def _built_low_level(saved: dict[str, Any]) -> lowlevel.LowLevel:
+    """Build the low level from the arrays of a step file that has been read and checked."""
+    before, after, rounds, columns = saved["refinement"].tolist()
+    soft_modes = None
+    if "soft_modes" in saved:
+        n_directions, *positions = saved["soft_modes"].tolist()
+        soft_modes = repair.Repair(int(n_directions), *positions)
+    return lowlevel.LowLevel(
+        energy=float(saved["energy"]),
+        hessian=saved["hessian"],
+        polar_tensor=saved["polar_tensor"],
+        refinement=response.Refinement(before, after, int(rounds), int(columns)),
+        sum_rule_violation=float(saved["sum_rule_violation"]),
+        seconds=float(saved["seconds"]),
+        soft_modes=soft_modes,
+        analytic_hessian=saved.get("analytic_hessian"),
+    )
 
 
 def _low_level(

@@ -55,7 +55,8 @@ say what a thing is. The matrices keep the literature's letters (H, B, F, P).
 Every behaviour has a test, and every switch has a test for each side. Three kinds
 carry the weight:
 
-- **A known answer**: a spring's frequency, a Lorentzian's area.
+- **A known answer**: a spring's frequency, the intensity of a stretch between two
+  point charges.
 - **An invariance**: a rotated molecule has the same spectrum.
 - **An independent counterpart**: the polar tensor against finite differences of the
   dipole; the Hessian against pyscf's own.

@@ -46,8 +46,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The analytic B3LYP Hessian and the atomic polar tensor from one orbital response, with
   the response checked against its own equations and the polar tensor against the
   translation sum rule.
-- Harmonic bands with double-harmonic intensities, the scaled-B3LYP baseline, and a
-  Lorentzian broadening function (no command writes a curve yet).
+- Harmonic bands with double-harmonic intensities and the scaled-B3LYP baseline.
 - The repair of soft modes: a Hessian's modes below 20 cm⁻¹ measured from gradients that
   include the grid's response, for the baseline and for a release trained that way.
 - `aromir check` and `aromir baseline`.
@@ -197,6 +196,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Resuming a run reads a step file inside the guard and builds the step outside it: an
+  error of the code, such as a field another version wrote, is raised as itself and no
+  longer reported as "the folder holds a damaged run; delete it to start over".
+- An absolute intensity is pinned: a stretch between two point charges of ±1 e on C and
+  O gives 974.88 km/mol / μ = 142.19 km/mol, derived by hand in the test.
+
 - `aromir.dft` said the training Hessians were psi4's at psi4's minima. They are pyscf's
   analytic B3LYP/6-31G* Hessians at grid (99, 590), computed at geometries psi4 optimised
   (density-fitted, grid (75, 302)).
@@ -301,3 +306,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   atoms); a bend above about 0.1 rad (6°) is refused, and so is a molecule in which that
   rotation comes within a tenth of the smallest real singular value — rods of several
   alkynes and some 90 atoms or more.
+
+### Removed
+
+- The Lorentzian broadening (`spectrum.broadened`, `grid`, `FWHM`, `GRID`), which no
+  command used, with its tests.

@@ -1,4 +1,4 @@
-"""Spectrum: intensities against a hand calculation, region scaling, line shape."""
+"""Spectrum: intensities against a hand calculation, region scaling, mode partners."""
 
 from __future__ import annotations
 
@@ -20,6 +20,33 @@ def test_intensity_matches_the_definition(water: Geometry, water_hessian: FloatA
     expected = KM_PER_MOL_PER_SQUARED_DIPOLE_DERIVATIVE * np.sum((polar_tensor @ first_mode) ** 2)
     assert bands.intensities[0] == pytest.approx(expected, rel=1e-12)
     np.testing.assert_array_equal(bands.wavenumbers, modes.wavenumbers)
+
+
+def test_a_stretch_between_two_point_charges_has_the_textbook_intensity() -> None:
+    """Pin one intensity in km/mol by hand, without the package's constant or formula.
+
+    A spring joins C (12 amu) and O (15.99491462 amu); H, a third atom, makes the molecule
+    bent and is neither bonded nor charged. The polar tensor is that of point charges,
+    +1 e on C and -1 e on O: ∂μ/∂R_C = +I, ∂μ/∂R_O = -I, ∂μ/∂R_H = 0.
+
+    The stretch keeps the centre of mass: x_C = -a Q e, x_O = +b Q e along the bond e, with
+    m_C a = m_O b and m_C a² + m_O b² = 1 (Q mass-weighted). Then a + b = 1/√μ with the
+    reduced mass μ = m_C m_O / (m_C + m_O) = 12 · 15.99491462 / 27.99491462 = 6.8562086
+    amu, and ∂μ/∂Q = (+1)(-a) e + (-1)(+b) e = -(a + b) e, so |∂μ/∂Q|² = 1/μ (e²/amu).
+
+    The double-harmonic intensity is N_A / (12 ε₀ c²) |∂μ/∂Q|². In SI (CODATA 2018),
+    N_A e² / (12 ε₀ c² amu) = 6.02214076e23 · (1.602176634e-19)² / (12 · 8.8541878128e-12
+    · 299792458² · 1.66053906660e-27) = 974 880 m/mol = 974.88 km/mol per (e/√amu)², so
+    A = 974.88 / 6.8562086 = 142.19 km/mol.
+    """
+    co = Geometry.from_angstrom(
+        ("C", "O", "H"), [[0.0, 0.0, 0.0], [1.13, 0.0, 0.0], [-1.0, 1.5, 0.0]]
+    )
+    hessian = bond_force_field(co, ((0, 1, 0.5),))
+    polar_tensor = np.hstack([np.eye(3), -np.eye(3), np.zeros((3, 3))])
+    bands = spectrum.harmonic_bands(hessian, co, polar_tensor)
+    assert bands.wavenumbers[-1] > 1000.0  # the stretch: the other two modes are free
+    assert bands.intensities[-1] == pytest.approx(142.19, rel=1e-4)
 
 
 def test_a_zero_polar_tensor_gives_dark_bands(water: Geometry, water_hessian: FloatArray) -> None:
@@ -62,42 +89,6 @@ def test_each_region_gets_its_factor_and_heights_stay() -> None:
         scaled.wavenumbers, [800.0 * 0.979, 1111.2 * 0.969, 2500.0 * 0.969, 3100.0 * 0.960]
     )
     np.testing.assert_array_equal(scaled.intensities, bands.intensities)
-
-
-def test_the_drawn_grid_is_the_registered_one() -> None:
-    wavenumbers = spectrum.grid()
-    assert wavenumbers[0] == 500.0
-    assert wavenumbers[-1] == 3499.0
-    assert len(wavenumbers) == 3000
-
-
-def test_a_broadened_band_keeps_its_area_and_width() -> None:
-    bands = spectrum.Bands(np.array([1000.0]), np.array([7.0]))
-    wavenumbers = np.arange(0.0, 2000.0, 0.01)
-    curve = spectrum.broadened(bands, wavenumbers, fwhm=10.0)
-    # A Lorentzian's tails beyond ±1000 cm⁻¹ hold 2/π · atan(γ/1000) of its area: 0.32 %.
-    assert np.sum(curve) * 0.01 == pytest.approx(7.0, rel=4e-3)
-    peak = float(np.max(curve))
-    assert peak == pytest.approx(7.0 / (np.pi * 5.0), rel=1e-9)
-    above_half = wavenumbers[curve >= 0.5 * peak]
-    assert above_half[-1] - above_half[0] == pytest.approx(10.0, abs=0.02)
-
-
-def test_broadening_adds_bands() -> None:
-    wavenumbers = spectrum.grid()
-    first = spectrum.Bands(np.array([900.0]), np.array([2.0]))
-    second = spectrum.Bands(np.array([1500.0]), np.array([5.0]))
-    both = spectrum.Bands(np.array([900.0, 1500.0]), np.array([2.0, 5.0]))
-    np.testing.assert_allclose(
-        spectrum.broadened(both, wavenumbers),
-        spectrum.broadened(first, wavenumbers) + spectrum.broadened(second, wavenumbers),
-    )
-
-
-def test_a_line_width_must_be_positive() -> None:
-    bands = spectrum.Bands(np.array([900.0]), np.array([2.0]))
-    with pytest.raises(ValueError, match="not positive"):
-        spectrum.broadened(bands, spectrum.grid(), fwhm=0.0)
 
 
 def test_partners_follow_the_motion_not_the_position(
