@@ -99,8 +99,11 @@ def test_the_bundled_release_ships_release_networks_and_names_both_kinds() -> No
         for recipe, sha in zip(loaded.recipes, loaded.tensor_sha256, strict=True)
     }
     assert loaded.shipped.seed_sha256 == seeds == loaded.seed_sha256
-    assert loaded.is_bundled
-    assert not release.load(release.bundled().parent / "v1.3").is_bundled
+    assert loaded.inside_package
+    assert loaded.release_name == "aromir/releases/v1.4"
+    v13 = release.load(release.bundled().parent / "v1.3")
+    assert v13.inside_package
+    assert v13.release_name == "aromir/releases/v1.3"
     assert loaded.shipped.fitted_share == 0.85
     assert set(loaded.shipped.checks) == {
         "same_recipe",
@@ -189,9 +192,10 @@ def test_a_certificate_names_the_bundled_release_and_its_weights() -> None:
     record = certificate.build(admitted, benzene, low, corrections, loaded)
     assert loaded.shipped is not None
     assert record["network"]["tensor_sha256"] == loaded.shipped.seed_sha256
-    assert record["network"]["release_folder"] == str(release.bundled().resolve())
-    assert record["network"]["bundled"] is True
+    assert record["network"]["release"] == "aromir/releases/v1.4"
+    assert record["network"]["inside_package"] is True
     text = certificate.to_markdown(record)
-    assert f"`{release.bundled().resolve()}` (the release inside the package); the seeds'" in text
+    assert "release v1.4, `aromir/releases/v1.4` (inside the package); the seeds'" in text
+    assert str(release.bundled().parent) not in json.dumps(record) + text
     for sha256 in loaded.shipped.seed_sha256.values():
         assert f"`{sha256}`" in text

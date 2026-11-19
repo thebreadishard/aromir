@@ -260,8 +260,9 @@ cannot be installed on Apple silicon yet, so the bound is 2.15.0 itself) and tor
 2.15 (2.14 on the development machine); on Python 3.12 and 3.13 with numpy 2.5 and scipy
 1.18, on Python 3.11 with numpy 2.4 and scipy 1.17, the last series that support it. The
 upper bounds in `pyproject.toml` are those series; the lower bounds are not tested, except
-RDKit's: a CI job loads both releases, admits molecules and checks the atom-order pins
-with RDKit 2023.9.1 (on numpy 1, which that series needs) and with the newest 2026.9. RDKit
+RDKit's: a job in CI loads both releases, admits molecules and checks the atom-order
+pins with RDKit 2024.9.1, the lowest allowed, and with the newest 2026.9 (older RDKit
+series are built against numpy 1 and are not allowed). RDKit
 decides the atom order and geomeTRIC the internal coordinates, and the releases' answers
 depend on both, so a newer series of either is allowed only after the pins in
 `tests/test_order_pins.py` pass with it. Those pins hold seven molecules' internal

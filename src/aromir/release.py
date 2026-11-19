@@ -727,9 +727,20 @@ class Release:
         }
 
     @property
-    def is_bundled(self) -> bool:
-        """Tell whether the release is the one inside the package."""
-        return self.folder == bundled().resolve()
+    def inside_package(self) -> bool:
+        """Tell whether the release is one of the folders that ship inside the package."""
+        return self.folder.parent == bundled().parent.resolve()
+
+    @property
+    def release_name(self) -> str:
+        """Name the release folder without the machine's paths.
+
+        A release inside the package is named by its place in it (``aromir/releases/v1.4``),
+        any other by its folder's name alone: the tensor hashes say which weights it holds.
+        """
+        if self.inside_package:
+            return f"aromir/releases/{self.folder.name}"
+        return self.folder.name
 
     @property
     def measured_training(self) -> Training:
@@ -790,11 +801,17 @@ def _invariance_reasons(
             "none: the card's spreads have no record"
         )
         return [missing]
-    if invariance.tensor_sha256 == seeds:
+    differing = [
+        f"{name}: {invariance.tensor_sha256.get(name, 'none')} measured, "
+        f"{seeds.get(name, 'none')} beside it"
+        for name in sorted(set(invariance.tensor_sha256) | set(seeds))
+        if invariance.tensor_sha256.get(name) != seeds.get(name)
+    ]
+    if not differing:
         return []
     other = (
-        f"{INVARIANCE_FILE} was measured on other weights than the seeds beside it (its "
-        "tensor_sha256 differs): its spreads are another network's"
+        f"{INVARIANCE_FILE} was measured on other weights than the seeds beside it "
+        f"({'; '.join(differing)}): its spreads are another network's"
     )
     return [other]
 

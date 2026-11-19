@@ -38,12 +38,14 @@ def _spread(
     }
 
 
+OTHER_WEIGHTS = {"seed-0": "0" * 64, "seed-1": "1" * 64}
+"""The tensor hashes ``INVARIANCE`` names: no seeds' of a written release."""
 INVARIANCE = {
     "network_version": "1.3",
     "rotation": _spread(5.34, 3, 0.0, 4),
     "mirror_image": _spread(5.22, 3, 2.6, 4),
     "xyz_atom_order": _spread(5.27, 3, 3.07, 4),
-    "tensor_sha256": {"seed-0": "0" * 64, "seed-1": "1" * 64},
+    "tensor_sha256": OTHER_WEIGHTS,
     "source": "a test",
 }
 X_H_SPRING = {"C": 0.37, "O": 0.50, "N": 0.45}
@@ -380,12 +382,20 @@ def test_an_invariance_record_of_other_weights_is_refused(tmp_path: Path) -> Non
     folder = write_release(tmp_path / "release")
     one_seed = _bound(folder, INVARIANCE)
     del one_seed["tensor_sha256"]["seed-1"]
+    beside = _bound(folder, INVARIANCE)["tensor_sha256"]
     (folder / release.INVARIANCE_FILE).write_text(json.dumps(INVARIANCE), encoding="utf-8")
-    with pytest.raises(RefusedError, match="measured on other weights than the seeds beside it"):
+    with pytest.raises(
+        RefusedError, match="measured on other weights than the seeds beside it"
+    ) as refusal:
         release.load(folder)
+    for name, measured in OTHER_WEIGHTS.items():
+        assert f"{name}: {measured} measured, {beside[name]} beside it" in str(refusal.value)
     (folder / release.INVARIANCE_FILE).write_text(json.dumps(one_seed), encoding="utf-8")
-    with pytest.raises(RefusedError, match="measured on other weights"):
+    with pytest.raises(RefusedError, match="measured on other weights") as refusal:
         release.load(folder)
+    reason = str(refusal.value)
+    assert f"seed-1: none measured, {beside['seed-1']} beside it" in reason
+    assert "seed-0" not in reason
 
 
 def test_an_invariance_record_without_the_weights_it_measured_is_refused(tmp_path: Path) -> None:

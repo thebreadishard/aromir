@@ -62,14 +62,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The lowest allowed series. Its wheels are built against numpy 1, so numpy 2
-          # cannot import it.
-          - rdkit: "2023.9.1"
-            extra: "numpy<2"
+          # The lowest allowed release, beside the numpy pip chooses.
+          - rdkit: "2024.9.1"
             python: "3.11"
           # The highest allowed series, at its newest release.
           - rdkit: "2026.9.*"
-            extra: ""
             python: "3.13"
     steps:
       - uses: actions/checkout@v5
@@ -78,12 +75,9 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      # $EXTRA is left unquoted so that an empty one adds no argument; an expanded "<" is
-      # no redirection.
-      - run: pip install -e ".[dev]" "rdkit==$RDKIT" $EXTRA
+      - run: pip install -e ".[dev]" "rdkit==$RDKIT"
         env:
           RDKIT: ${{ matrix.rdkit }}
-          EXTRA: ${{ matrix.extra }}
       - run: pip list
       - name: Load both bundled releases
         run: |

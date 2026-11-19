@@ -73,9 +73,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The certificate names the weights and the release it was made with: `certificate.json`
-  records each seed's tensor SHA-256 by seed name (as `release.json` binds them), the
-  release folder it was read from and whether that is the release inside the package, and
-  `certificate.md` says the same in one line under the band table.
+  records each seed's tensor SHA-256 by seed name (as `release.json` binds them) and the
+  release, named without the machine's paths: `aromir/releases/v1.4` for a release inside
+  the package (`inside_package`), the folder's name for any other; `certificate.md` says
+  the same in one line under the band table.
 - `invariance.json` names the tensor SHA-256 of each seed it was measured on
   (`tensor_sha256`, written by `scripts/measure_invariance.py`), and the loader refuses a
   record without it or of other weights than the seeds beside it, and a folder whose
@@ -84,6 +85,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and sources are unchanged; the seeds have not changed since either was measured), and
   both cards say so. CONTRIBUTING says how the next release binds the record in
   `release.json`.
+- RDKit's lower bound is 2024.9 (was 2023.9): older series' wheels are built against
+  numpy 1 and do not import under numpy 2, which the numpy bound allows.
 - A release record's SMILES that is not in admission's standard form, or does not parse,
   is refused with the RDKit version that read it: the standard form is RDKit's canonical
   SMILES, so another RDKit series may write it otherwise.

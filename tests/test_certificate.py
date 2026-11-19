@@ -269,8 +269,8 @@ def test_the_record_and_its_text(
             "seed-0": loaded.tensor_sha256[0],
             "seed-1": loaded.tensor_sha256[1],
         },
-        "release_folder": str(loaded.folder),
-        "bundled": False,
+        "release": loaded.folder.name,
+        "inside_package": False,
         "higher_level": loaded.evaluation.higher_level,
         "kind": "measurement",
         "errors_measured_on": None,
@@ -298,9 +298,11 @@ def test_the_record_and_its_text(
     assert text.startswith("# Certificate: c1ccccc1\n")
     assert "the training set spans 10–30 atoms: inside" in text
     assert (
-        f"*Network:* release v1.3 read from `{loaded.folder}`; the seeds' tensor files by "
-        f"SHA-256: seed-0 `{loaded.tensor_sha256[0]}`, seed-1 `{loaded.tensor_sha256[1]}`.\n"
+        f"*Network:* release v1.3, `{loaded.folder.name}` (a folder outside the package); the "
+        f"seeds' tensor files by SHA-256: seed-0 `{loaded.tensor_sha256[0]}`, seed-1 "
+        f"`{loaded.tensor_sha256[1]}`.\n"
     ) in text
+    assert str(loaded.folder.parent) not in json.dumps(record) + text
     seeds = loaded.evaluation.first_order_error_per_seed_cm["other"]
     in_brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
     assert "| other | 2.78 [1.68–3.76], 156 bands | 3.89 [3.50–4.20], 1225 bands | no |" in text

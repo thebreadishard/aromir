@@ -26,6 +26,7 @@ from aromir.release import (
     made_by,
     named_test_set,
     pool,
+    seed_name,
 )
 
 if TYPE_CHECKING:
@@ -433,7 +434,7 @@ def _architecture(release: Release) -> list[str]:
 def _files(release: Release) -> list[str]:
     lines = ["## Files", "", "| file | seed | sha256 |", "|---|---|---|"]
     lines += [
-        f"| seed-{recipe.seed}.safetensors | {recipe.seed} | `{sha256}` |"
+        f"| {seed_name(recipe.seed)}.safetensors | {recipe.seed} | `{sha256}` |"
         for recipe, sha256 in zip(release.recipes, release.tensor_sha256, strict=True)
     ]
     records = [EVALUATION_FILE, TRAINING_FILE]

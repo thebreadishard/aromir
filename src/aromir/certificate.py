@@ -704,8 +704,8 @@ def build(
             "version": release.network_version,
             "seeds": [recipe.seed for recipe in release.recipes],
             "tensor_sha256": release.seed_sha256,
-            "release_folder": str(release.folder),
-            "bundled": release.is_bundled,
+            "release": release.release_name,
+            "inside_package": release.inside_package,
             "higher_level": evaluation.higher_level,
             "kind": "measurement" if release.shipped is None else "release",
             "errors_measured_on": (
@@ -810,12 +810,12 @@ def _whose_error(kind: str) -> str:
 
 
 def _network_line(network: dict[str, Any]) -> str:
-    """Say which release folder and which weights, by their tensors' SHA-256, made the spectrum."""
-    where = " (the release inside the package)" if network["bundled"] else ""
+    """Say which release and which weights, by their tensors' SHA-256, made the spectrum."""
+    where = "inside the package" if network["inside_package"] else "a folder outside the package"
     tensors = ", ".join(f"{name} `{sha256}`" for name, sha256 in network["tensor_sha256"].items())
     return (
-        f"*Network:* release v{network['version']} read from `{network['release_folder']}`"
-        f"{where}; the seeds' tensor files by SHA-256: {tensors}."
+        f"*Network:* release v{network['version']}, `{network['release']}` ({where}); the "
+        f"seeds' tensor files by SHA-256: {tensors}."
     )
 
 
