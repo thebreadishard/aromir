@@ -62,15 +62,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The first release of each series from the lower bound on, on the oldest
-          # Python.
+          # The lower bound, on the oldest Python. The first releases of 2025.3, 2025.9
+          # and 2026.3 passed the same tests in run 44592464724.
           - rdkit: "2024.9.1"
-            python: "3.11"
-          - rdkit: "2025.3.1"
-            python: "3.11"
-          - rdkit: "2025.9.1"
-            python: "3.11"
-          - rdkit: "2026.3.1"
             python: "3.11"
           # The highest allowed series, at its newest release.
           - rdkit: "2026.9.*"

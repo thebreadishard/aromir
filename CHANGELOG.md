@@ -85,10 +85,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and sources are unchanged; the seeds have not changed since either was measured), and
   both cards say so. CONTRIBUTING says how the next release binds the record in
   `release.json`.
-- RDKit's lower bound is 2026.9.2 (was 2023.9). With the first release of each series
-  from 2024.9 to 2026.9 (2024.9.1, 2025.3.1, 2025.9.1, 2026.3.1, 2026.9.1), admission
-  leaves phenyl azide a double bond open in CI, so its certificate would name an unassigned double bond it does not have;
-  series before 2024.9 are built against numpy 1 and do not import under numpy 2.
+- RDKit's lower bound is 2024.9 (was 2023.9): older series are built against numpy 1
+  and do not import under numpy 2, which the numpy bound allows. A job in CI runs the
+  release loading, the admission tests and the atom-order pins on 2024.9.1 and on the
+  newest 2026.9.
+- A double bond that can have no E/Z configuration — one with a terminal atom, or with
+  an atom that carries a second double bond, as in an azide, an allene or a ketene — is
+  never named as an unassigned double bond. RDKit before 2026.9.2 offers phenyl
+  azide's N=N bonds as potential stereo bonds, and the certificate would have named
+  one; with 2026.9.2 nothing changes for any molecule of the releases' lists.
 - A release record's SMILES lists are compared by molecule, not by spelling: each entry
   is read in the standard form the running RDKit writes, which must be that RDKit's own
   canonical SMILES of the entry (standardising must not change the molecule), and every
