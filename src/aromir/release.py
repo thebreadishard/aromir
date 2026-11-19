@@ -48,6 +48,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from rdkit import rdBase
 from safetensors import SafetensorError
 
 from aromir.admission import standard_smiles
@@ -385,13 +386,25 @@ class CationTest(BaseModel):
 def _refuse_nonstandard(smiles: list[str]) -> None:
     """Raise for the first entry that is not in the standard form admission writes.
 
+    The standard form is RDKit's canonical SMILES of admission's standardisation, so an
+    RDKit series that writes it otherwise refuses a record another series wrote: the
+    reason names the RDKit that read it.
+
     Raises:
         ValueError: An entry does not parse, or admission would write it otherwise.
     """
+    with_rdkit = f"read with RDKit {rdBase.rdkitVersion}"
     for entry in smiles:
-        standard = standard_smiles(entry)
+        try:
+            standard = standard_smiles(entry)
+        except ValueError as error:
+            msg = f"{error}, {with_rdkit}"
+            raise ValueError(msg) from error
         if standard != entry:
-            msg = f"{entry!r} is not in the standard form admission writes ({standard!r})"
+            msg = (
+                f"{entry!r} is not in the standard form admission writes ({standard!r}, "
+                f"{with_rdkit})"
+            )
             raise ValueError(msg)
 
 

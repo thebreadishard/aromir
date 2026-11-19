@@ -84,6 +84,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and sources are unchanged; the seeds have not changed since either was measured), and
   both cards say so. CONTRIBUTING says how the next release binds the record in
   `release.json`.
+- A release record's SMILES that is not in admission's standard form, or does not parse,
+  is refused with the RDKit version that read it: the standard form is RDKit's canonical
+  SMILES, so another RDKit series may write it otherwise.
 - `run.json` records the aromir version that started a run, and only that version takes
   the run up: another one, or a `run.json` without a version, is refused with both
   versions named and what to do (finish with the version that started it, or delete the

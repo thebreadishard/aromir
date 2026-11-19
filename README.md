@@ -259,7 +259,9 @@ The tests run on Linux and macOS with RDKit 2026.9, geomeTRIC 1.1, pyscf 2.15.0 
 cannot be installed on Apple silicon yet, so the bound is 2.15.0 itself) and torch
 2.15 (2.14 on the development machine); on Python 3.12 and 3.13 with numpy 2.5 and scipy
 1.18, on Python 3.11 with numpy 2.4 and scipy 1.17, the last series that support it. The
-upper bounds in `pyproject.toml` are those series; the lower bounds are not tested. RDKit
+upper bounds in `pyproject.toml` are those series; the lower bounds are not tested, except
+RDKit's: a CI job loads both releases, admits molecules and checks the atom-order pins
+with RDKit 2023.9.1 (on numpy 1, which that series needs) and with the newest 2026.9. RDKit
 decides the atom order and geomeTRIC the internal coordinates, and the releases' answers
 depend on both, so a newer series of either is allowed only after the pins in
 `tests/test_order_pins.py` pass with it. Those pins hold seven molecules' internal

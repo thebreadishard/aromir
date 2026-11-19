@@ -52,6 +52,44 @@ jobs:
       - run: pip list
       - run: pytest --cov --cov-report=term-missing
 
+  rdkit-range:
+    # The loader reads every SMILES of a release in admission's standard form, which is
+    # RDKit's canonical SMILES: both ends of pyproject's RDKit range must load the shipped
+    # releases, admit as the tests say and give the pinned atom order.
+    name: RDKit ${{ matrix.rdkit }} (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The lowest allowed series. Its wheels are built against numpy 1, so numpy 2
+          # cannot import it.
+          - rdkit: "2023.9.1"
+            extra: "numpy<2"
+            python: "3.11"
+          # The highest allowed series, at its newest release.
+          - rdkit: "2026.9.*"
+            extra: ""
+            python: "3.13"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      # $EXTRA is left unquoted so that an empty one adds no argument; an expanded "<" is
+      # no redirection.
+      - run: pip install -e ".[dev]" "rdkit==$RDKIT" $EXTRA
+        env:
+          RDKIT: ${{ matrix.rdkit }}
+          EXTRA: ${{ matrix.extra }}
+      - run: pip list
+      - name: Load both bundled releases
+        run: |
+          python -c 'from aromir import release; [print(release.load(release.bundled().parent / v).network_version) for v in ("v1.3", "v1.4")]'
+      - run: pytest -m "not quantum" tests/test_admission.py tests/test_bundled_release.py tests/test_order_pins.py
+
   package:
     name: Build the distribution
     runs-on: ubuntu-latest

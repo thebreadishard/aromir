@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 from pydantic import ValidationError
+from rdkit import rdBase
 
 from aromir import admission, certificate, families, geometry, lowlevel, release, response, spectrum
 from aromir import vibrations as vib
@@ -139,8 +140,17 @@ def test_the_certificate_says_whether_the_network_met_the_molecule(
 def test_a_training_record_not_in_the_form_admission_writes_is_refused(
     field: str, entry: object
 ) -> None:
-    with pytest.raises(ValidationError, match="is not in the standard form admission writes"):
+    with pytest.raises(
+        ValidationError, match="is not in the standard form admission writes"
+    ) as refusal:
         release.Training.model_validate(TRAINING | {field: entry})
+    assert f"read with RDKit {rdBase.rdkitVersion})" in str(refusal.value)
+
+
+def test_a_training_record_entry_that_does_not_parse_names_the_rdkit_that_read_it() -> None:
+    with pytest.raises(ValidationError, match="does not parse as a SMILES") as refusal:
+        release.Training.model_validate(TRAINING | {"trained_smiles": ["c1ccccc"]})
+    assert f"read with RDKit {rdBase.rdkitVersion}" in str(refusal.value)
 
 
 def test_a_molecule_is_found_by_its_fixed_h_key_where_its_name_differs() -> None:
