@@ -17,6 +17,7 @@ from aromir.release import (
     INVARIANCE_FILE,
     MEASURED_FILE,
     MEASUREMENT_FILE,
+    RECORDED_FILES,
     RELEASE_FILE,
     TRAINING_FILE,
     error_text,
@@ -394,8 +395,11 @@ def _files(release: Release) -> list[str]:
     records = [EVALUATION_FILE, TRAINING_FILE]
     records += [INVARIANCE_FILE] if release.invariance is not None else []
     records += [RELEASE_FILE, MEASUREMENT_FILE] if release.shipped is not None else []
+    named = [f"`{name}`" for name in RECORDED_FILES]
+    # invariance.json is not among them: a reader is told which records the hashes guard.
     bound = (
-        f" `{RELEASE_FILE}` binds the other records by the SHA-256 of their content."
+        f" `{RELEASE_FILE}` binds {', '.join(named[:-1])} and {named[-1]} by the SHA-256 of "
+        "their content."
         if release.shipped is not None
         else ""
     )

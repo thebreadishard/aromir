@@ -36,6 +36,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   interval, whose share of resamples within the line contradicts the interval, that counts
   more molecules with a band than bands, or whose tables or hold-out sizes differ from the
   `measured.json` beside it.
+- v1.4 ships `invariance.json`, measured on its release networks by
+  `scripts/measure_invariance.py` with v1.3's molecules and trials (the script gives v1.3's
+  record to the last digit): with / without a nitrile or an alkyne, 11.20 / 0.00 cm⁻¹ under
+  a rotation, 4.46 / 2.67 cm⁻¹ for the mirror image, 11.03 / 2.85 cm⁻¹ between listings of
+  one xyz geometry; the largest with a linear group is diphenylacetylene's. The certificate
+  and the card state these numbers where they said "not measured for this release"; the
+  card names the records `release.json` binds, which do not include `invariance.json`. The
+  strict invariance xfails cover v1.4 beside v1.3, and each release's largest change on the
+  stored molecules is pinned.
 
 - Admission: a molecule is parsed from a SMILES or an xyz file and refused, with every
   reason, unless it is one neutral, closed-shell aromatic molecule of H, C, N, O, F, S

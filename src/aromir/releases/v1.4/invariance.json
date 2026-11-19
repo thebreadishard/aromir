@@ -1,0 +1,25 @@
+{
+ "network_version": "1.4",
+ "rotation": {
+  "with_linear_group_cm": 11.2,
+  "n_with_linear_group": 3,
+  "without_linear_group_cm": 0.0,
+  "n_without_linear_group": 4,
+  "n_trials": 8
+ },
+ "mirror_image": {
+  "with_linear_group_cm": 4.46,
+  "n_with_linear_group": 3,
+  "without_linear_group_cm": 2.67,
+  "n_without_linear_group": 4,
+  "n_trials": 1
+ },
+ "xyz_atom_order": {
+  "with_linear_group_cm": 11.03,
+  "n_with_linear_group": 3,
+  "without_linear_group_cm": 2.85,
+  "n_without_linear_group": 4,
+  "n_trials": 12
+ },
+ "source": "scripts/measure_invariance.py of aromir at baa53bb, 2026-11-19, on the release networks v1.4 ships (tensor sha256: seed-0 4e82e0f99715bb99ef050410410869e2f68cdbcf57f43398cd0d7febee655a14, seed-1 14059360ed350c1bfaa2ca51bb852fa22eccb6e2644226b2250ccb6652a831aa, seed-2 c6451ca246977bd704392d45911233b8d7ea581bfc33268212b54bc504400b0c): benzonitrile, phenylacetylene and diphenylacetylene with a linear group; benzene, biphenyl, 2-methylnaphthalene and phenol without; stored B3LYP geometries and Hessians of thebreadishard/udacity-capstone-plan (plan 05), the trials of v1.3's record"
+}

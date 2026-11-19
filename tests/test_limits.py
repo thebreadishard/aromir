@@ -368,3 +368,20 @@ def test_release_v13_states_its_measured_spreads() -> None:
     spreads = certificate.spreads_cm(bundled, linear_group=True)
     assert spreads[certificate.ATOM_ORDER] == (10.73, 3)
     assert max(value for value, _ in spreads.values()) > bundled.evaluation.licence_line_cm
+
+
+def test_release_v14_states_its_measured_spreads() -> None:
+    bundled = release.load(release.bundled().parent / "v1.4")
+    assert bundled.invariance is not None
+    measured = {
+        name: (spread.of(linear_group=True), spread.of(linear_group=False))
+        for name, spread in bundled.invariance.spreads().items()
+    }
+    assert list(measured.values()) == [
+        ((11.2, 3), (0.0, 4)),
+        ((4.46, 3), (2.67, 4)),
+        ((11.03, 3), (2.85, 4)),
+    ]
+    spreads = certificate.spreads_cm(bundled, linear_group=True)
+    assert certificate.ATOM_ORDER not in spreads
+    assert max(value for value, _ in spreads.values()) > bundled.evaluation.licence_line_cm

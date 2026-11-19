@@ -16,4 +16,5 @@
 - `holdout_a_benzene.npz`: benzene as hold-out (a) holds it, in the format of
   `aromir.evaluation` (with the ωB97X `reference_hessian`). Written by
   `probes/results_m1/aromir_e2e_2026-11-16/make_test_fixtures.py` of the capstone
-  repository, which also printed the numbers `tests/test_v13_on_stored_hessians.py` pins.
+  repository, which also printed the benzene numbers `tests/test_releases_on_stored_hessians.py`
+  pins.

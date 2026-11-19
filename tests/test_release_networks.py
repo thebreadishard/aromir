@@ -269,7 +269,10 @@ def test_a_record_the_release_binds_cannot_be_missing(tmp_path: Path) -> None:
 def test_the_card_of_release_networks_names_every_record(pair: release.Release) -> None:
     text = card.to_markdown(pair)
     assert "`release.json`, `measurement.json` hold the records this card is written from" in text
-    assert "`release.json` binds the other records by the SHA-256 of their content." in text
+    assert (
+        "`release.json` binds `evaluation.json`, `training.json`, `measurement.json` and "
+        "`measured.json` by the SHA-256 of their content." in text
+    )
 
 
 def test_a_measurement_record_of_another_version_is_refused(tmp_path: Path) -> None:

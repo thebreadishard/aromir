@@ -202,13 +202,13 @@ agree to 3e-7 relative in ΔH, with every integer input identical.
 The correction is symmetric and free of translations by construction. It is free of
 rotations and turns with the molecule where the internal coordinates hold no linear
 angle; the tests check that on biphenyl with random networks. A nitrile or an alkyne
-has linear angles, which are measured against a fixed axis in space: release v1.3 moved
-the bands of three such molecules by up to 5.34 cm⁻¹ when they were turned, and its
-model card and every certificate state the measured spreads. With the `canonical` angle choice and
-`cos`-encoded dihedrals the network also gives one answer for every atom order; that
-is tested on a molecule without symmetry-equivalent atoms, and neither v1.3 nor v1.4
-was trained with those settings. For v1.4 the spreads under a rotation, a mirror image and
-another atom order are not measured yet, and its certificate says so.
+has linear angles, which are measured against a fixed axis in space: when three such
+molecules were turned, release v1.3 moved their bands by up to 5.34 cm⁻¹ and v1.4 by up
+to 11.20 cm⁻¹ (diphenylacetylene, measured by `scripts/measure_invariance.py`), and each
+release's model card and every certificate state the measured spreads. With the
+`canonical` angle choice and `cos`-encoded dihedrals the network also gives one answer
+for every atom order; that is tested on a molecule without symmetry-equivalent atoms, and
+neither v1.3 nor v1.4 was trained with those settings.
 
 A checkpoint of the training code becomes weight files with
 
