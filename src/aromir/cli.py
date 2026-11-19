@@ -42,8 +42,20 @@ def _parser() -> argparse.ArgumentParser:
     source.add_argument("smiles", nargs="?", help="the molecule as a SMILES string")
     source.add_argument("--xyz", type=Path, help="the molecule as an xyz file in Å")
 
+    # check and spectrum take the same gates, so they take the same options of them.
+    gates = argparse.ArgumentParser(add_help=False)
+    gates.add_argument("--release", type=Path, help=RELEASE_HELP)
+    gates.add_argument(
+        "--outside-training-sizes",
+        action="store_true",
+        help="compute a molecule smaller or larger than the network's training molecules, "
+        "although none of its bands can be licensed",
+    )
     commands.add_parser(
-        "check", parents=[molecule], help="say whether a molecule is supported; compute nothing"
+        "check",
+        parents=[molecule, gates],
+        help="say whether spectrum would compute a molecule, through the gates it sets "
+        "before any quantum chemistry; compute nothing",
     )
     baseline = commands.add_parser(
         "baseline",
@@ -52,15 +64,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     spectrum = commands.add_parser(
         "spectrum",
-        parents=[molecule],
+        parents=[molecule, gates],
         help="compute the corrected spectrum with a network release and write its certificate",
-    )
-    spectrum.add_argument("--release", type=Path, help=RELEASE_HELP)
-    spectrum.add_argument(
-        "--outside-training-sizes",
-        action="store_true",
-        help="compute a molecule smaller or larger than the network's training molecules, "
-        "although none of its bands can be licensed",
     )
     for computing in (baseline, spectrum):
         computing.add_argument(
@@ -154,6 +159,23 @@ def _spectrum(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -
     return EXIT_DONE
 
 
+def _check(arguments: argparse.Namespace, molecule: pipeline.MoleculeInput) -> None:
+    loaded = _release(arguments)
+    admitted, _start = pipeline.admit_for_spectrum(
+        molecule, loaded, outside_training_sizes=arguments.outside_training_sizes
+    )
+    print(f"admitted: {admitted.smiles} ({admitted.formula}, {admitted.n_atoms} atoms)")  # noqa: T201  the command's answer
+    notes = list(admitted.input_changes)
+    training = loaded.training
+    if not training.min_atoms <= admitted.n_atoms <= training.max_atoms:
+        notes.append(
+            f"the network was trained on {training.min_atoms} to {training.max_atoms} atoms: "
+            "no band of this molecule will be licensed"
+        )
+    for note in notes:
+        print(f"note: {note}")  # noqa: T201  the command's answer
+
+
 def _evaluate(arguments: argparse.Namespace) -> None:
     out = arguments.out
     if out is not None and out.exists():
@@ -177,10 +199,7 @@ def _run(arguments: argparse.Namespace) -> int:
         return EXIT_DONE
     molecule = pipeline.MoleculeInput(smiles=arguments.smiles, xyz=arguments.xyz)
     if arguments.command == "check":
-        admitted, _start = pipeline.admit(molecule)
-        print(f"admitted: {admitted.smiles} ({admitted.formula}, {admitted.n_atoms} atoms)")  # noqa: T201  the command's answer
-        for change in admitted.input_changes:
-            print(f"note: {change}")  # noqa: T201  the command's answer
+        _check(arguments, molecule)
         return EXIT_DONE
     if arguments.command == "spectrum":
         return _spectrum(arguments, molecule)

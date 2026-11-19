@@ -761,6 +761,31 @@ def _flat_note(low: lowlevel.LowLevel, minimum: Geometry) -> list[str]:
     return [note]
 
 
+def admit_for_spectrum(
+    molecule: MoleculeInput, release: Release, *, outside_training_sizes: bool
+) -> tuple[admission.Admission, Geometry]:
+    """Pass a molecule through every gate ``spectrum`` sets before its quantum chemistry.
+
+    ``aromir check`` and ``aromir spectrum`` both call this, so a molecule the first
+    admits is one the second computes: admission, the network's training elements, its
+    training sizes (unless ``outside_training_sizes``) and whether the network can read
+    the start geometry.
+
+    Raises:
+        RefusedError: With the reasons of the first gate the molecule fails.
+    """
+    admitted, start = admit(molecule)
+    reasons = _untrained_elements(start, release)
+    if not outside_training_sizes:
+        reasons += _untrained_size(start, release)
+    if reasons:
+        raise RefusedError(reasons)
+    reasons = _no_network_inputs(start, release)
+    if reasons:
+        raise RefusedError(reasons)
+    return admitted, start
+
+
 def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
     """Compute a molecule's corrected spectrum and certificate and write its result folder.
 
@@ -780,19 +805,13 @@ def run_spectrum(request: Request, release: Release) -> dict[str, Any]:
         NotAMinimumError: No minimum was found.
         ResponseError: The dipole derivatives failed their checks.
     """
-    admitted, start = admit(request.molecule)
-    reasons = _untrained_elements(start, release)
-    if not request.outside_training_sizes:
-        reasons += _untrained_size(start, release)
-    if reasons:
-        raise RefusedError(reasons)
-    folder, state = _open_folder(request.out, _asked("spectrum", admitted, start))
     # pyscf is told its threads by the resources; torch takes every core unless told too.
     # The setting is torch's own, for the whole process, and stays after this call.
     torch.set_num_threads(request.resources.threads)
-    reasons = _no_network_inputs(start, release)
-    if reasons:
-        raise RefusedError(reasons)
+    admitted, start = admit_for_spectrum(
+        request.molecule, release, outside_training_sizes=request.outside_training_sizes
+    )
+    folder, state = _open_folder(request.out, _asked("spectrum", admitted, start))
     launched = records.provenance()
     optimised, low = _compute(start, folder, state, request.resources)
     as_trained = low.as_trained(soft_modes_measured=release.training.soft_mode_repair)

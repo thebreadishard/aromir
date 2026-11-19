@@ -255,6 +255,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aromir check` runs the gates `aromir spectrum` sets before its quantum chemistry, through
+  one function both call: a molecule larger or smaller than the release's training
+  molecules, with an element the release never trained on, or whose start geometry the
+  network cannot read is refused by `check` as by `spectrum`, where `check` said
+  "admitted". `check` takes `--release` and `--outside-training-sizes`; with the flag it
+  says that no band will be licensed.
 - Resuming a run reads a step file inside the guard and builds the step outside it: an
   error of the code, such as a field another version wrote, is raised as itself and no
   longer reported as "the folder holds a damaged run; delete it to start over".

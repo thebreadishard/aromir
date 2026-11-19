@@ -56,7 +56,8 @@ molecules its networks are trained on (v1.4's also trained on the radical cation
 them). A molecule outside that domain is refused with the reasons, not answered badly:
 so is an isotope label, a SMILES with anything after it, and, for `aromir spectrum`, a
 molecule smaller or larger than the training molecules unless
-`--outside-training-sizes` asks for it. The command's exit code is 0 for a result, 2
+`--outside-training-sizes` asks for it. `aromir check` runs every gate `aromir spectrum`
+sets before its quantum chemistry, the release's included, and computes nothing else. The command's exit code is 0 for a result, 2
 for a refusal, 1 for a failure, and 3 for a corrected spectrum that was written but
 holds an imaginary band (a band named a flat coordinate, see below, is no band position
 and does not count there). A failure is one line; with `AROMIR_TRACEBACK=1` in the

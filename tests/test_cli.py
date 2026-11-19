@@ -8,7 +8,9 @@ import pytest
 
 import aromir
 from aromir import admission, certificate, cli, pipeline, release
-from aromir.errors import ConvergenceError
+from aromir.errors import ConvergenceError, InternalCoordinatesError
+
+from support import write_release
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,6 +33,63 @@ def test_check_refuses_with_every_reason(capsys: pytest.CaptureFixture[str]) -> 
     printed = capsys.readouterr().err
     assert "net charge" in printed
     assert "no aromatic ring" in printed
+
+
+OCTYLNAPHTHALENE = "CCCCCCCCc1ccc2ccccc2c1"
+"""C18H24, 42 atoms: above the bundled release's 8 to 40."""
+
+
+def test_check_refuses_a_molecule_larger_than_the_training_sizes_as_spectrum_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["check", OCTYLNAPHTHALENE]) == cli.EXIT_REFUSED
+    checked = capsys.readouterr().err
+    assert "42 atoms: the network was trained on 8 to 40" in checked
+    reached = []
+
+    def compute(*_arguments: object, **_options: object) -> None:
+        reached.append(True)
+
+    monkeypatch.setattr(pipeline, "_compute", compute)
+    out = tmp_path / "octylnaphthalene"
+    assert cli.main(["spectrum", OCTYLNAPHTHALENE, "--out", str(out)]) == cli.EXIT_REFUSED
+    assert capsys.readouterr().err == checked
+    assert reached == []
+
+
+def test_check_with_the_size_flag_admits_and_says_no_band_is_licensed(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert cli.main(["check", OCTYLNAPHTHALENE, "--outside-training-sizes"]) == cli.EXIT_DONE
+    assert capsys.readouterr().out == (
+        "admitted: CCCCCCCCc1ccc2ccccc2c1 (C18H24, 42 atoms)\n"
+        "note: the network was trained on 8 to 40 atoms: no band of this molecule will be "
+        "licensed\n"
+    )
+
+
+def test_check_refuses_a_molecule_the_network_cannot_read(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def unreadable(_self: release.Release, _geometry: object, _hessian: object) -> None:
+        msg = "the primitives span more than 3N − 6 = 30 directions"
+        raise InternalCoordinatesError(msg)
+
+    monkeypatch.setattr(release.Release, "corrections", unreadable)
+    assert cli.main(["check", "c1ccccc1"]) == cli.EXIT_REFUSED
+    assert "the network cannot read this molecule's start geometry: the prim" in (
+        capsys.readouterr().err
+    )
+
+
+def test_check_reads_the_release_it_is_given(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    folder = write_release(tmp_path / "release")
+    assert cli.main(["check", "c1ccccc1", "--release", str(folder)]) == cli.EXIT_DONE
+    assert capsys.readouterr().out == "admitted: c1ccccc1 (C6H6, 12 atoms)\n"
+    assert cli.main(["check", "c1ccoc1", "--release", str(folder)]) == cli.EXIT_REFUSED
+    assert "9 atoms: the network was trained on 10 to 30" in capsys.readouterr().err
 
 
 def test_an_invalid_setting_is_refused_before_anything_runs(
