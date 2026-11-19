@@ -64,3 +64,24 @@ jobs:
       - run: python -m build
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install dist/*.whl && aromir --version
+      # The installed wheel, not the checkout: outside it, the bundled releases load (every
+      # record, hash and SMILES check of the loader), the card they write is the one shipped,
+      # and `aromir evaluate` corrects a stored Hessian. No quantum chemistry runs.
+      - name: Use the installed wheel's releases
+        working-directory: ${{ runner.temp }}
+        env:
+          FIXTURE: ${{ github.workspace }}/tests/data/release/holdout_a_benzene.npz
+        run: |
+          releases="$(python -c 'import aromir.release as r; print(r.bundled().parent)')"
+          case "$releases" in
+            */site-packages/aromir/releases) ;;
+            *) echo "aromir was imported from $releases, not from the wheel"; exit 1 ;;
+          esac
+          aromir check "c1ccc2ccccc2c1"
+          aromir card --out card.md
+          cmp card.md "$releases/v1.4/MODEL_CARD.md"
+          aromir card --release "$releases/v1.3" --out card_v13.md
+          cmp card_v13.md "$releases/v1.3/MODEL_CARD.md"
+          mkdir -p test_sets/a && cp "$FIXTURE" test_sets/a/
+          aromir evaluate test_sets --release "$releases/v1.3" --out measured.json
+          python -c 'import json; m = json.load(open("measured.json")); assert m["a"]["n_molecules"] == 1, m'
