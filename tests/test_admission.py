@@ -297,9 +297,15 @@ def test_an_enumeration_that_reaches_its_cap_keeps_the_structure(
     assert admission.admit(admission.read("N#[N+][N-]c1ccccc1")).smiles == "N#[N+][N-]c1ccccc1"
 
 
-def test_an_enumeration_past_its_time_keeps_the_structure(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(admission, "RESONANCE_SECONDS", -1.0)
+def test_a_molecule_with_too_many_charged_atoms_keeps_the_structure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(admission, "RESONANCE_MAX_CHARGED_ATOMS", 1)
     assert admission.admit(admission.read("N#[N+][N-]c1ccccc1")).smiles == "N#[N+][N-]c1ccccc1"
+
+
+HANG_GUARD_S = 60.0
+"""Only a guard against a hang: the bounds are counts, not time."""
 
 
 @pytest.mark.parametrize(
@@ -312,10 +318,29 @@ def test_an_enumeration_past_its_time_keeps_the_structure(monkeypatch: pytest.Mo
         "[N-]=[N+]=Nc1c(N=[N+]=[N-])c(N=[N+]=[N-])c(N=[N+]=[N-])c(N=[N+]=[N-])c1N=[N+]=[N-]",
     ],
 )
-def test_the_resonance_enumeration_is_bounded_in_time(smiles: str) -> None:
+def test_a_heavily_charged_molecule_gets_one_name_and_finishes(smiles: str) -> None:
     started = time.monotonic()
-    admission.read(smiles)
-    assert time.monotonic() - started < 10 * admission.RESONANCE_SECONDS
+    names = {admission.admit(admission.read(smiles)).smiles for _ in range(2)}
+    assert len(names) == 1
+    assert time.monotonic() - started < HANG_GUARD_S
+
+
+SYDNONE_WRITINGS = (SYDNONE, "[O-]c1cn(-c2ccccc2)n[o+]1")
+
+
+def test_two_tied_writings_of_a_sydnone_get_one_name(tmp_path: Path) -> None:
+    # The two structures rank alike and are not the same writing: the smaller canonical
+    # SMILES names the molecule, from any writing and any listing of an xyz file.
+    names = set()
+    for writing in SYDNONE_WRITINGS:
+        for listing in Chem.MolToRandomSmilesVect(Chem.MolFromSmiles(writing), 10, randomSeed=3):
+            names.add(admission.admit(admission.read(listing)).smiles)
+    _, made = pipeline.admit(pipeline.MoleculeInput(smiles=SYDNONE_WRITINGS[1]))
+    for seed in range(8):
+        names.add(
+            admission.admit(admission.read(_listed(made, tmp_path / f"{seed}.xyz", seed))).smiles
+        )
+    assert names == {SYDNONE}
 
 
 @pytest.mark.parametrize(

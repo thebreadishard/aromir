@@ -6,7 +6,6 @@ request outside that domain is refused with every reason found, not answered bad
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -121,8 +120,10 @@ def without_hydrogens(molecule: Mol) -> Mol:
 _NORMALIZER: Final = rdMolStandardize.Normalizer()
 """RDKit's Normalizer with its default (MolVS) transforms, built once."""
 
-RESONANCE_MAX_STRUCTURES: Final = 64
-"""The most resonance structures enumerated; a molecule with more keeps its own structure."""
+RESONANCE_MAX_STRUCTURES: Final = 256
+"""The most resonance structures enumerated; a molecule with more keeps its own structure.
+How many RDKit finds depends on the structure and atom order it starts from: 30 to 82 for
+the writings and xyz listings of 3-phenylsydnone, so a cap of 64 left some unnamed."""
 
 RESONANCE_FLAGS: Final = Chem.UNCONSTRAINED_ANIONS | Chem.UNCONSTRAINED_CATIONS
 """Let the enumeration move a charge onto any atom. By default RDKit keeps a negative charge
@@ -130,8 +131,10 @@ on the most electronegative atoms, so from the structure bond perception gives a
 methylide (``C=[N+]1C=CC=C[CH-]1``) or a diazo compound it finds no other, and from
 ``[N-]=[N+]=Cc1ccccc1`` none at all; ``_preference`` still puts carbanions last."""
 
-RESONANCE_SECONDS: Final = 1.0
-"""Wall-clock limit of the enumeration; a molecule that needs longer keeps its own structure."""
+RESONANCE_MAX_CHARGED_ATOMS: Final = 8
+"""The most charged atoms a molecule may have to be enumerated; one with more keeps its own
+structure. Twice the most in any entry of the shipped training lists (4, a dinitro
+compound); octanitronaphthalene (16) took 6 s to reach the structure cap."""
 
 Composition = tuple[str, tuple[int, ...], tuple[int, ...]]
 """The formula and each atom's hydrogens and unpaired electrons: what no step may change."""
@@ -184,15 +187,9 @@ def _charge_placement(form: Mol) -> tuple[tuple[int, int], ...]:
     )
 
 
-class _Deadline(Chem.ResonanceMolSupplierCallback):
-    """Cancel a resonance enumeration that outlasts its time (returning False cancels it)."""
-
-    def __init__(self, seconds: float) -> None:
-        super().__init__()
-        self._end = time.monotonic() + seconds
-
-    def __call__(self) -> bool:  # type: ignore[override]  # RDKit's stubs add a None overload
-        return time.monotonic() < self._end
+def _canonical(form: Mol) -> str:
+    """Return a structure's canonical SMILES without stereo: what tells structures apart."""
+    return str(Chem.MolToSmiles(without_hydrogens(form), isomericSmiles=False))
 
 
 def _resonance_candidates(molecule: Mol) -> list[Mol]:
@@ -200,16 +197,19 @@ def _resonance_candidates(molecule: Mol) -> list[Mol]:
 
     A structure qualifies when it sanitises, keeps the formula and every atom's hydrogens
     and unpaired electrons, and keeps at least as many aromatic atoms as the molecule
-    (a betaine is not swapped for its quinoid form). An enumeration that finds nothing,
-    reaches ``RESONANCE_MAX_STRUCTURES`` (the choice would depend on which ones it found)
-    or outlasts ``RESONANCE_SECONDS`` keeps the molecule as it is. The supplier is built as
-    in RDKit's ``Code/GraphMol/Wrap/rough_test.py`` (its resonance supplier tests, which
-    also set a progress callback).
+    (a betaine is not swapped for its quinoid form). A molecule with more than
+    ``RESONANCE_MAX_CHARGED_ATOMS`` charged atoms is not enumerated, and an enumeration
+    that finds nothing or reaches ``RESONANCE_MAX_STRUCTURES`` (the choice would depend on
+    which ones it found) keeps the molecule as it is: both bounds are counts, so the
+    result does not depend on the machine. The supplier is built as in RDKit's
+    ``Code/GraphMol/Wrap/rough_test.py`` (its resonance supplier tests).
     """
+    n_charged = sum(atom.GetFormalCharge() != 0 for atom in molecule.GetAtoms())
+    if n_charged > RESONANCE_MAX_CHARGED_ATOMS:
+        return []
     supplier = Chem.ResonanceMolSupplier(molecule, RESONANCE_FLAGS, RESONANCE_MAX_STRUCTURES)
-    supplier.SetProgressCallback(_Deadline(RESONANCE_SECONDS))
     supplier.Enumerate()
-    if supplier.WasCanceled() or not 0 < len(supplier) < RESONANCE_MAX_STRUCTURES:
+    if not 0 < len(supplier) < RESONANCE_MAX_STRUCTURES:
         return []
     composition, n_aromatic = _composition(molecule), _n_aromatic(molecule)
     candidates = []
@@ -247,19 +247,25 @@ def _one_resonance_structure(molecule: Mol) -> None:
 
     Bond perception from a geometry places the charges of an azide where it happens to
     (``N#[N+][N-]R`` or ``N#[N+]N=c1cccc[cH-]1`` for ``[N-]=[N+]=NR``). Among the
-    candidates (``_resonance_candidates``) the molecule keeps its own bonds and charges
-    when its ``_preference`` is the smallest; otherwise it takes the candidate with the
-    smallest, a tie broken by ``_charge_placement``.
+    candidates (``_resonance_candidates``) and the molecule itself, those with the smallest
+    ``_preference`` tie; of them the one with the smallest canonical SMILES is taken, so
+    two writings of a sydnone get one name. The molecule keeps its own bonds and charges
+    when it is one of those (a nitro group keeps its charge on the oxygen it was given);
+    otherwise a remaining tie is broken by ``_charge_placement``.
     """
     candidates = _resonance_candidates(molecule)
     if not candidates:
         return
     own = _preference(molecule)
     best = min(*map(_preference, candidates), own)
-    if own == best:
+    tied = [form for form in candidates if _preference(form) == best]
+    chosen = min(
+        [_canonical(form) for form in tied] + ([_canonical(molecule)] if own == best else [])
+    )
+    if own == best and _canonical(molecule) == chosen:
         return
-    tied = (form for form in candidates if _preference(form) == best)
-    _set_structure(molecule, min(tied, key=_charge_placement))
+    named = (form for form in tied if _canonical(form) == chosen)
+    _set_structure(molecule, min(named, key=_charge_placement))
 
 
 def standardised(molecule: Mol) -> Mol:
@@ -350,7 +356,7 @@ def fixed_h_key(smiles: str) -> str | None:
     """Return a SMILES's InChIKey with the fixed-hydrogen layer; None where InChI makes none.
 
     The second key of the 'seen' look-up: a molecule whose standard form still depends on
-    how it was given (a structure the resonance step keeps as it is) is found by it. RDKit
+    how it was given (one past the resonance step's bounds) is found by it. RDKit
     hands ``options`` to InChI as its command-line options; ``/FixedH`` is used so in RDKit's
     ``rdkit/Chem/UnitTestInchi.py`` and, for the key, ``Code/PgSQL/rdkit/sql/inchi.sql``.
     """

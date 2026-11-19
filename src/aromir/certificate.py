@@ -204,9 +204,8 @@ def _keys(listed: tuple[str, ...]) -> frozenset[str]:
 def _among(smiles: str, listed: Iterable[str]) -> bool:
     """Tell whether a molecule is in a list: by its standard SMILES, else by its FixedH key.
 
-    The key finds a molecule whose admitted structure depends on how it was given, such
-    as a pyridinium ylide read from an xyz file, where the resonance step keeps the
-    structure bond perception gave.
+    The key finds a molecule whose admitted structure depends on how it was given: one
+    past the resonance step's bounds, which keeps the structure it was given.
     """
     listed = tuple(listed)
     if smiles in listed:

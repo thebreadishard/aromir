@@ -144,13 +144,17 @@ def test_a_training_record_not_in_the_form_admission_writes_is_refused(
 
 
 def test_a_molecule_is_found_by_its_fixed_h_key_where_its_name_differs() -> None:
-    # A sydnone read from an xyz file keeps the structure bond perception gave, which
-    # depends on the atom order: its name differs, its key does not.
-    training = release.Training.model_validate(
-        TRAINING | {"trained_smiles": ["[O-]c1c[n+](-c2ccccc2)no1"]}
+    # Hexaazidobenzene has more charged atoms than the resonance step enumerates, so it
+    # keeps the structure it was given: one azide written N#[N+][N-] names it otherwise.
+    azide, other_azide = "N=[N+]=[N-]", "[N-][N+]#N"
+    usual = admission.standard_smiles(
+        f"c1({azide})c({azide})c({azide})c({azide})c({azide})c1{azide}"
     )
-    other = "[O-]c1cn(-c2ccccc2)n[o+]1"
-    assert admission.standard_smiles(other) == other
+    other = admission.standard_smiles(
+        f"c1({other_azide})c({azide})c({azide})c({azide})c({azide})c1{azide}"
+    )
+    assert other != usual
+    training = release.Training.model_validate(TRAINING | {"trained_smiles": [usual]})
     assert "in the network's training set" in certificate.acquaintance(other, training)
     # The fixed-hydrogen layer keeps tautomers apart: 2-pyridone does not stand for
     # 2-hydroxypyridine.

@@ -171,25 +171,30 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- One molecule, one name and one atom order, however it is given. Atom-map numbers in a
-  SMILES entered the canonical SMILES, so `[CH3:5]c1ccc(O)cc1Cl` was numbered as another
-  molecule than `Cc1ccc(O)cc1Cl` (the network is not order-free: bands moved by up to
-  2.85 cm⁻¹ between orders) and `[cH:1]1ccccc1` was called unseen although benzene is in
-  the training data. Bond perception from an xyz file placed the charges of an azide or
-  a sulfoxide otherwise than the SMILES did, with the same consequences. Both routes now
-  read the input into one standard form (`admission.read`): map numbers are cleared and
-  the certificate and `aromir check` say so; RDKit's Normalizer writes a hypervalent
-  sulfoxide or nitro group charge-separated; a molecule that still carries charges keeps
-  its structure when no resonance structure is preferred to it, and otherwise takes the
-  preferred one (`[N-]=[N+]=N` for an azide, `[CH2-][n+]1ccccc1` for a pyridinium
-  ylide). No step may change the formula, an atom's hydrogens or its aromatic count (a
-  sydnone keeps its hydrogens, a betaine its aromatic form); an enumeration that finds
-  nothing, passes 64 structures or 1 s keeps the given structure. The 'seen' look-up
-  matches the standard SMILES and then InChI's fixed-hydrogen key, which is the same for
-  every resonance structure. A release whose training lists hold an entry admission
-  would write otherwise is refused; every SMILES the shipped releases list is already in
-  that form and no two share a key, so their records and hashes are unchanged. A run
-  started by an earlier version from such a request is refused with that reason.
+- A molecule's name and atom order no longer depend on atom-map numbers in a SMILES, or
+  on whether a group is written hypervalent or charge-separated or in another resonance
+  structure; ties between resonance structures are resolved by the canonical SMILES.
+  Before, atom-map numbers entered the canonical SMILES, so `[CH3:5]c1ccc(O)cc1Cl` was
+  numbered as another molecule than `Cc1ccc(O)cc1Cl` (the network is not order-free:
+  bands moved by up to 2.85 cm⁻¹ between orders) and `[cH:1]1ccccc1` was called unseen
+  although benzene is in the training data; bond perception from an xyz file placed the
+  charges of an azide or a sulfoxide otherwise than the SMILES did. Both routes now read
+  the input into one standard form (`admission.read`): map numbers are cleared and the
+  certificate and `aromir check` say so; RDKit's Normalizer writes a hypervalent
+  sulfoxide or nitro group charge-separated; a molecule that still carries charges takes
+  its preferred resonance structure (`[N-]=[N+]=N` for an azide, `[CH2-][n+]1ccccc1` for
+  a pyridinium ylide, one writing for both of a sydnone's), keeping its own where it is
+  one of the preferred (a nitro group keeps its charge where it was given). No step may
+  change the formula, an atom's hydrogens or its aromatic count. A molecule with more
+  than 8 charged atoms, or more than 256 resonance structures, keeps the structure it was
+  given. The 'seen' look-up matches the standard SMILES and then InChI's fixed-hydrogen
+  key, the same for every resonance structure. A release whose training lists hold an
+  entry admission would write otherwise is refused; every SMILES the shipped releases
+  list is already in that form and no two share a key, so their records and hashes are
+  unchanged. A run started by an earlier version from such a request is refused with
+  that reason. Not yet the same from an xyz file: a betaine, which bond perception reads
+  as its uncharged quinoid form and admission refuses for want of an aromatic ring, and
+  nitro compounds, for about a third of whose atom listings RDKit finds no bond orders.
 - A molecule with a flat coordinate — a nearly free torsion — gets its spectrum. On
   3-vinylfuran the run found a saddle point at -12 cm⁻¹, stepped 0.1 bohr off it, and
   the second optimisation ended after 100 steps with the energy and the forces
