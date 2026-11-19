@@ -62,13 +62,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The lowest allowed release, beside the numpy pip chooses.
-          - rdkit: "2024.9.1"
+          # 2024.9.1, 2025.3.1 and 2025.9.1 leave phenyl azide a double bond open (run
+          # 44586387779): the first releases of the two newest series, where the bound can be.
+          - rdkit: "2026.3.1"
             python: "3.11"
-          # The first releases of the next two series: where the lower bound can move.
-          - rdkit: "2025.3.1"
-            python: "3.11"
-          - rdkit: "2025.9.1"
+          - rdkit: "2026.9.1"
             python: "3.11"
           # The highest allowed series, at its newest release.
           - rdkit: "2026.9.*"
