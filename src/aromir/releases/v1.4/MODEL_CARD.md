@@ -14,37 +14,37 @@ model_name: aromir ΔH network v1.4
 A correction to the Hessian of an aromatic molecule. The network reads a cheap B3LYP/6-31G* Hessian and returns ΔH, the difference to ωB97X/6-31G* (the DFT proxy: the network's ΔH is trained on ωB97X − B3LYP Hessians). The corrected Hessian gives harmonic infrared band positions closer to that level at the cost of the cheap one.
 
 - **Seeds:** 3 (0, 1, 2); the applied correction is their mean, and their spread is reported per band.
-- **Networks:** The spectrum is made by the release networks of version 1.4, trained on the 1132 labelled entries of their training pool, the hold-out molecules included (1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules): each of the 3 networks is fitted on a random 85 % of the entries and stopped on the other 15 %, a different 15 % per seed, so not every entry is fitted by every network (with 3 networks about 0.15³ ≈ 0.3 % by none). Its error bars were measured on the measurement networks of the same version — the same recipe trained without the hold-out molecules — on molecules those networks never saw; the release networks themselves have seen the hold-out molecules, so they have no held-out error of their own.
-- **Licensed families:** ring-ip, CH-stretch, CH-oop, other.
+- **Networks:** The spectrum is made by the release networks of version 1.4, trained on the 1132 labelled entries of their training pool, the test sets' molecules included (1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules): each of the 3 networks is fitted on a random 85 % of the entries and stopped on the other 15 %, a different 15 % per seed, so not every entry is fitted by every network (with 3 networks about 0.15³ ≈ 0.3 % by none). Its error bars were measured on the measurement networks of the same version — the same recipe trained without the test sets' molecules — on molecules those networks never saw; the release networks themselves have seen the test sets' molecules, so they have no out-of-sample error of their own.
+- **Licensed families:** ring-ip, CH-stretch, CH-oop, other (within 3 cm⁻¹ on test set (a): unseen molecules and on test set (b): unseen scaffolds).
 - **Not licensed:** none.
-- **On thin ground:** 'CH-oop' is within the licence line on hold-out (a) at 1.88 cm⁻¹, on 5 of the hold-out's 8 molecules (the others have no 'CH-oop' band): resampling the hold-out's molecules puts the error between 0.93 and 3.24 cm⁻¹, and 4% of the resamples lie above the line.
-- **On thin ground:** 'other' is within the licence line on hold-out (a) at 2.38 cm⁻¹, on 8 molecules: resampling the hold-out's molecules puts the error between 1.45 and 3.19 cm⁻¹, and 7% of the resamples lie above the line.
+- **On thin ground:** 'CH-oop' is within the licence line on test set (a) at 1.88 cm⁻¹, on 5 of the test set's 8 molecules (the others have no 'CH-oop' band): resampling the test set's molecules puts the error between 0.93 and 3.24 cm⁻¹, and 4% of the resamples lie above the line.
+- **On thin ground:** 'other' is within the licence line on test set (a) at 2.38 cm⁻¹, on 8 molecules: resampling the test set's molecules puts the error between 1.45 and 3.19 cm⁻¹, and 7% of the resamples lie above the line.
 - **Use it through:** [aromir](https://github.com/thebreadishard/aromir), which builds the inputs, applies the correction and writes a certificate for every band.
 
 ## How well it is known
 
-The rms error of the corrected band positions of the seeds' mean against ωB97X/6-31G*, in cm⁻¹, on molecules the measurement networks never trained on — the same recipe trained without the hold-outs, whose error is the error bar of what aromir prints; the release networks aromir runs trained on these molecules too. In square brackets the 95 % interval when the hold-out's molecules are resampled. The licence is read on the band error of the measurement networks' seed mean, the error bar of what the release networks deliver, as recorded to two decimals; chosen on 16 November 2026, after it and the first-order error per seed had both been measured on both hold-outs.
+The rms error of the corrected band positions of the seeds' mean against ωB97X/6-31G*, in cm⁻¹, on molecules the measurement networks never trained on — the same recipe trained without the test sets, whose error is the error bar of what aromir prints; the release networks aromir runs trained on these molecules too. In square brackets the 95 % interval when the test set's molecules are resampled. The licence is read on the band error of the measurement networks' seed mean, the error bar of what the release networks deliver, as recorded to two decimals; chosen on 16 November 2026, after it and the first-order error per seed had both been measured on both hold-outs.
 
-| family | (a), 8 molecules | (b), 40 molecules | licensed |
+| family | test set (a), 8 molecules | test set (b), 40 molecules | licensed |
 |---|---|---|---|
 | ring-ip | 1.17 [0.90–1.41], 199 bands | 1.22 [1.09–1.34], 1194 bands | yes |
 | CH-stretch | 0.80 [0.44–1.20], 73 bands | 1.67 [1.37–1.95], 410 bands | yes |
 | CH-oop | 1.88 [0.93–3.24], 46 bands | 1.26 [0.98–1.59], 84 bands | yes |
 | other | 2.38 [1.45–3.19], 156 bands | 2.10 [1.88–2.34], 1258 bands | yes |
 
-- (a): eight of the ten molecules set aside on 19 September 2026, before any network was trained; the licence and the promotion are decided on these eight, the set of 30 October on which v1.3 and v1.4 are both clean. For v1.4 the other two, benzonitrile and 2-naphthoic acid, are clean as well: on all ten its measurement networks read ring-ip 1.10 [0.82–1.34], CH-stretch 0.78 [0.47–1.15], CH-oop 1.75 [0.91–2.83], other 2.23 [1.34–3.02] cm⁻¹, which decides nothing
-- (b): the 40 substituted molecules of two ring scaffolds, fluorene (21) and fluoranthene (19), set aside on 8 October 2026, that have analytic Hessians at both levels and a minimum at the low level: of the 41 on that list, 9-nitrofluorene has an imaginary low-level mode, and 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. No measurement network trained on a molecule containing fluorene's ring system; five that contain fluoranthene's, benzo[k]fluoranthene and four of its derivatives, were trained on
+- test set (a): unseen molecules — eight of the ten molecules set aside on 19 September 2026, before any network was trained; the licence and the promotion are decided on these eight, the set of 30 October on which v1.3 and v1.4 are both clean. For v1.4 the other two, benzonitrile and 2-naphthoic acid, are clean as well: on all ten its measurement networks read ring-ip 1.10 [0.82–1.34], CH-stretch 0.78 [0.47–1.15], CH-oop 1.75 [0.91–2.83], other 2.23 [1.34–3.02] cm⁻¹, which decides nothing
+- test set (b): unseen scaffolds — the 40 substituted molecules of two ring scaffolds, fluorene (21) and fluoranthene (19), set aside on 8 October 2026, that have analytic Hessians at both levels and a minimum at the low level: of the 41 on that list, 9-nitrofluorene has an imaginary low-level mode, and 30 more fluoranthene children (set b+) have semi-numerical Hessians only and are not read here. No measurement network trained on a molecule containing fluorene's ring system; five that contain fluoranthene's, benzo[k]fluoranthene and four of its derivatives, were trained on
 
 For comparison, the first-order error of each seed alone, the number a training run reports and the one earlier versions of this card printed as the error: its mean over the seeds, each seed's value in brackets. It is not the error of what aromir prints.
 
-| family | (a) | (b) |
+| family | test set (a) | test set (b) |
 |---|---|---|
 | ring-ip | 1.55 (1.77, 1.52, 1.37) | 1.64 (1.53, 1.49, 1.89) |
 | CH-stretch | 1.15 (1.34, 1.19, 0.92) | 2.02 (2.32, 2.20, 1.55) |
 | CH-oop | 2.24 (2.27, 2.10, 2.36) | 1.72 (1.80, 1.95, 1.42) |
 | other | 2.91 (2.79, 3.10, 2.84) | 3.68 (3.20, 4.15, 3.70) |
 
-A family is licensed when the band error of the seeds' mean, as recorded to two decimals, is within 3 cm⁻¹ on every hold-out. aromir's certificate marks each band with its family, that family's error and whether the band itself is licensed, which asks more: see the limits below.
+A family is licensed when the band error of the seeds' mean, as recorded to two decimals, is within 3 cm⁻¹ on every test set. aromir's certificate marks each band with its family, that family's error and whether the band itself is licensed, which asks more: see the limits below.
 
 Coupled cluster: not measured for this network version.
 
@@ -52,10 +52,10 @@ Sources: every error in this record: `aromir evaluate` with the measurement netw
 
 ## What it was trained on
 
-- 1132 labelled entries of the training pool, each a neutral closed-shell molecule or the radical cation of one, with an aromatic ring: 1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules (the 1082 neutral entries hold 1078 distinct molecules: a molecule may be an entry under more than one identifier). The measurement networks, on which every error is read, trained on 1028 of those neutral molecules; the release networks on all of the entries, the hold-out molecules included.
+- 1132 labelled entries of the training pool, each a neutral closed-shell molecule or the radical cation of one, with an aromatic ring: 1078 distinct neutral molecules by SMILES and the radical cations of 50 molecules (the 1082 neutral entries hold 1078 distinct molecules: a molecule may be an entry under more than one identifier). The measurement networks, on which every error is read, trained on 1028 of those neutral molecules; the release networks on all of the entries, the test sets' molecules included.
 - Elements: C, Cl, F, H, N, O, S.
 - Sizes: 8 to 40 atoms.
-- Held out from the measurement networks, on which every error is read: 8 in (a); 40 in (b); the release networks trained on these molecules.
+- Held out from the measurement networks, on which every error is read: 8 in test set (a); 40 in test set (b); the release networks trained on these molecules.
 - The training Hessians were used as pyscf's analytic Hessians, without the soft-mode repair; aromir gives the network a molecule's Hessian prepared the same way. It measures the soft modes in either case, to decide whether the geometry is a minimum and for the positions it prints: the correction is added to the Hessian with its soft modes measured.
 
 ## Where it stops being known
@@ -67,7 +67,7 @@ Sources: every error in this record: `aromir evaluate` with the measurement netw
 - **Not licensed: no family.** Bands of an unlicensed family are printed with their measured error and marked.
 - **The answer depends on how the molecule's atoms are numbered**: the internal coordinates are chosen by atom number, and a dihedral near ±180° enters by its raw value. aromir orders the atoms of every input by the bond graph first, so every SMILES of a molecule gets one order; atoms the graph cannot tell apart keep the order of an xyz file, so two listings of one geometry can still differ. Do not feed the network a molecule in another order. The spread between atom orders was not measured for this release.
 - **The same molecule turned or mirrored** may get another answer; by how much was not measured for this release.
-- **Band heights are the cheap level's.** The dipole derivatives are not corrected.
+- **Band heights have no error bar.** They are computed on the corrected modes with the cheap level's dipole derivatives, which are not corrected.
 - **A family is a rule, not a kind of bond.** ring-ip: between 950 and 1750 cm⁻¹ and in the molecular plane: ring stretches and in-plane bends, and with them every other mode there, such as a C=O stretch or a CH₃ deformation; in a non-planar molecule every mode in that window. CH-stretch: above 2800 cm⁻¹ with most of its motion on hydrogens: the C–H stretches, and by the same rule an O–H or N–H stretch. CH-oop: between 600 and 1050 cm⁻¹, out of the molecular plane and on hydrogens; a non-planar molecule has none, and its C–H wags fall under other or ring-ip. other: every mode the three rules above do not take. aromir's certificate licenses a band only when its family is within the licence line, the molecule lies inside the training sizes, its low-level mode is real, the band is real for the seeds' mean and for every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens. A ring-ip band is licensed as the rule takes it, C=O stretches included.
 
 ## What it is

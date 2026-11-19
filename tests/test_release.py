@@ -54,8 +54,8 @@ def test_the_licence_follows_the_measured_errors() -> None:
     assert list(evaluation.thin_ground("other")) == ["a"]
     assert all(not evaluation.thin_ground(family) for family in FAMILIES if family != "other")
     caveat = (
-        "'other' is within the licence line on hold-out (a) at 2.78 cm⁻¹, on 8 molecules: "
-        "resampling the hold-out's molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of "
+        "'other' is within the licence line on test set (a) at 2.78 cm⁻¹, on 8 molecules: "
+        "resampling the test set's molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of "
         "the "
         "resamples lie above the line"
     )
@@ -118,7 +118,7 @@ def test_a_caveat_counts_the_molecules_with_a_band_of_the_family() -> None:
     record["band_error_seed_mean_cm"]["other"]["a"]["n_molecules"] = 5
     (caveat,) = release.Evaluation.model_validate(record).caveats()
     assert (
-        "at 2.78 cm⁻¹, on 5 of the hold-out's 8 molecules (the others have no 'other' band): "
+        "at 2.78 cm⁻¹, on 5 of the test set's 8 molecules (the others have no 'other' band): "
         in caveat
     )
 
@@ -253,3 +253,16 @@ def test_an_evaluation_of_another_number_of_seeds_is_refused(tmp_path: Path) -> 
         RefusedError, match=r"first-order error of \[3\] seed\(s\), the release holds 2"
     ):
         release.load(folder)
+
+
+@pytest.mark.parametrize(
+    ("name", "first", "named"),
+    [
+        ("a", True, "test set (a): unseen molecules"),
+        ("b", True, "test set (b): unseen scaffolds"),
+        ("a", False, "test set (a)"),
+        ("c", True, "test set (c)"),
+    ],
+)
+def test_a_reader_is_told_of_test_sets(name: str, *, first: bool, named: str) -> None:
+    assert release.named_test_set(name, first=first) == named

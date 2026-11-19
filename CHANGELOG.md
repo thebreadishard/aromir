@@ -64,6 +64,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Readers are told of test sets: the README, the model cards, the certificate and
+  `aromir evaluate --help` say "test set (a): unseen molecules" and "test set (b): unseen
+  scaffolds" at first use and "test set (a)" / "(b)" after, where they said "hold-out".
+  Code, record fields and the `evaluate` folder layout keep the hold-outs; record text
+  (a licence basis, the sources) is quoted as recorded. Both shipped cards are written
+  again by `aromir card`; `release.json` binds the records and the seeds, not the card.
+- The certificate's statement says that the errors are against the higher level, not
+  against experiment, and that a measured spectrum is compared with the scaled B3LYP
+  positions; it said only that those were a baseline.
+- The certificate and the card say what a band height is: computed on the corrected modes
+  with B3LYP's dipole derivatives, which are not corrected. They said the heights were
+  B3LYP's, but the correction moves them through the modes.
+
 - **The licence is read on the error of what the release delivers** (decided on 16
   November 2026, after both quantities were measured on both hold-outs). That is the
   band error of the seeds' mean: the mean ΔH added to the Hessian, the sum
@@ -171,6 +184,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- `aromir.dft` said the training Hessians were psi4's at psi4's minima. They are pyscf's
+  analytic B3LYP/6-31G* Hessians at grid (99, 590), computed at geometries psi4 optimised
+  (density-fitted, grid (75, 302)).
+- Phenyl azide read from an xyz file is no longer said to leave a double bond unassigned:
+  bond perception gave some listings the quinoid structure `N#[N+]N=c1cccc[cH-]1`, whose
+  exocyclic N=C is a potential E/Z bond; the resonance step now gives every listing the
+  azide's own structure, and a test holds it in eight listings.
 - A molecule's name and atom order no longer depend on atom-map numbers in a SMILES, or
   on whether a group is written hypervalent or charge-separated or in another resonance
   structure; ties between resonance structures are resolved by the canonical SMILES.

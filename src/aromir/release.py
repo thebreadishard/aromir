@@ -90,6 +90,19 @@ _MEAN_TOLERANCE_CM: Final = 0.011
 _Record = TypeVar("_Record", bound=BaseModel)
 BUNDLED_VERSION: Final = "1.4"
 """The network version whose release ships inside the package."""
+TEST_SETS: Final = {"a": "unseen molecules", "b": "unseen scaffolds"}
+"""What each hold-out holds, in a reader's words. Readers are told of test sets; code and
+records keep the hold-outs."""
+
+
+def named_test_set(name: str, *, first: bool = False) -> str:
+    """Name a hold-out for a reader: "test set (a)", and at first use what it holds.
+
+    A hold-out without an entry in ``TEST_SETS`` is named by its letter alone.
+    """
+    named = f"test set ({name})"
+    kind = TEST_SETS.get(name)
+    return f"{named}: {kind}" if first and kind is not None else named
 
 
 class Holdout(BaseModel):
@@ -299,9 +312,9 @@ class Evaluation(BaseModel):
             for holdout, error in self.thin_ground(family).items():
                 low, high = error.interval_cm
                 sentences.append(
-                    f"'{family}' is within the licence line on hold-out ({holdout}) at "
+                    f"'{family}' is within the licence line on {named_test_set(holdout)} at "
                     f"{error.rms_cm:.2f} cm⁻¹, {self._resting_on(family, holdout)}: "
-                    "resampling the hold-out's molecules puts the error between "
+                    "resampling the test set's molecules puts the error between "
                     f"{low:.2f} and {high:.2f} "
                     f"cm⁻¹, and {1 - error.share_of_resamples_within_line:.0%} of the resamples "
                     "lie above the line"
@@ -315,7 +328,7 @@ class Evaluation(BaseModel):
         if with_bands == of:
             return f"on {of} molecules"
         return (
-            f"on {with_bands} of the hold-out's {of} molecules (the others have no '{family}' band)"
+            f"on {with_bands} of the test set's {of} molecules (the others have no '{family}' band)"
         )
 
     def thin_ground(self, family: Family) -> dict[str, BandError]:
@@ -531,15 +544,15 @@ def made_by(release: Release) -> str:
     return (
         f"The spectrum is made by the release networks of version {release.network_version}, "
         f"trained on the {shipped.n_entries} labelled entries of their training pool, the "
-        f"hold-out molecules included ({pool(release.training)}): each of the {n} networks "
+        f"test sets' molecules included ({pool(release.training)}): each of the {n} networks "
         f"is fitted on a random {100 * shipped.fitted_share:.0f} % of the entries and stopped "
         f"on the other {100 * held:.0f} %, a different {100 * held:.0f} % per seed, so not every "
         "entry is fitted by every network (with "
         f"{n} networks about {held:g}{str(n).translate(_SUPERSCRIPT)} ≈ "
         f"{100 * held**n:.1f} % by none). Its error bars were measured on the measurement "
-        "networks of the same version — the same recipe trained without the hold-out "
+        "networks of the same version — the same recipe trained without the test sets' "
         "molecules — on molecules those networks never saw; the release networks themselves "
-        "have seen the hold-out molecules, so they have no held-out error of their own."
+        "have seen the test sets' molecules, so they have no out-of-sample error of their own."
     )
 
 

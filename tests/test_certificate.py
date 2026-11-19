@@ -116,8 +116,8 @@ def test_the_seeds_range_is_their_lowest_and_highest_position(
     ("smiles", "expected"),
     [
         ("c1ccc2ccccc2c1", "in the network's training set"),
-        ("c1ccccc1", "in hold-out (a)"),
-        ("Cc1ccccc1", "in hold-out (b)"),
+        ("c1ccccc1", "in test set (a)"),
+        ("Cc1ccccc1", "in test set (b)"),
         ("c1ccncc1", "the network has not seen it"),
     ],
 )
@@ -194,7 +194,17 @@ def test_the_record_and_its_text(
     n_licensed = sum(band["licensed"] for band in record["bands"])
     assert 0 < n_licensed < N_BANDS
     assert f"{n_licensed} of {N_BANDS} bands are licensed" in record["statement"]
-    assert "on every hold-out (ring-ip, CH-stretch, CH-oop)" in record["statement"]
+    assert "on every test set (ring-ip, CH-stretch, CH-oop)" in record["statement"]
+    assert (
+        "never saw. Those molecules are test set (a): unseen molecules and test set (b): unseen "
+        "scaffolds. "
+    ) in record["statement"]
+    assert record["statement"].endswith(
+        "The errors are against ωB97X/6-31G*, not against experiment: a "
+        "corrected position estimates that level's harmonic position, which for nearly all "
+        "modes lies above the measured band, so compare a measured spectrum with the scaled "
+        "B3LYP positions, printed beside each band as the baseline."
+    )
     assert "Not in that error" not in record["statement"]
     assert "harmonic" in record["positions"]
     assert not any("imaginary (negative) position" in warning for warning in record["warnings"])

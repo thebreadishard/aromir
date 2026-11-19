@@ -121,8 +121,8 @@ def test_the_bundled_release_networks_have_no_error_of_their_own(
 def test_v14s_caveats_count_the_molecules_with_a_ch_oop_band() -> None:
     caveats = release.load(release.bundled()).evaluation.caveats()
     assert any(
-        caveat.startswith("'CH-oop' is within the licence line on hold-out (a) at ")
-        and "on 5 of the hold-out's 8 molecules (the others have no 'CH-oop' band): " in caveat
+        caveat.startswith("'CH-oop' is within the licence line on test set (a) at ")
+        and "on 5 of the test set's 8 molecules (the others have no 'CH-oop' band): " in caveat
         for caveat in caveats
     )
 

@@ -315,7 +315,7 @@ def test_the_card_states_the_measured_spreads_and_claims_no_more(
         "(8 trial(s) per molecule). These are the largest seen, not bounds."
     ) in text
     assert "- **The molecule's mirror image** moved band positions by up to 5.22 cm⁻¹" in text
-    assert "and a dihedral enters with its sign; the hold-out errors" in text
+    assert "and a dihedral enters with its sign; the test sets' errors" in text
     assert "Source: a test." in text
     assert "by construction" not in text
     assert "one canonical atom order" not in text
@@ -332,7 +332,7 @@ def test_an_order_free_release_does_not_claim_more_than_its_measurements(
     text = card.to_markdown(replace(measured, recipes=recipes))
     assert "the measurements say how far it is" in text
     assert "does not depend on how" not in text
-    assert "fixed axis in space; the hold-out errors" in text
+    assert "fixed axis in space; the test sets' errors" in text
     assert "enters with its sign" not in text
 
 

@@ -22,7 +22,7 @@ from rdkit import Chem
 from aromir import families, repair, spectrum, vibrations
 from aromir.admission import fixed_h_key
 from aromir.network import primitives
-from aromir.release import error_text, level_name, made_by
+from aromir.release import error_text, level_name, made_by, named_test_set
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -35,7 +35,10 @@ if TYPE_CHECKING:
 POSITIONS_NOTE: Final = "harmonic positions: the anharmonic shift is not included in this version"
 LEVEL_NOTE: Final = "B3LYP/6-31G* corrected"
 ATOM_ORDER: Final = "another atom order of the same molecule"
-HEIGHTS_NOTE: Final = "the heights are B3LYP's: the dipole derivatives are not corrected"
+HEIGHTS_NOTE: Final = (
+    "the heights are computed on the corrected modes with B3LYP's dipole derivatives, which "
+    "are not corrected: a height carries no error bar"
+)
 CONFORMER_NOTE: Final = (
     "one conformer was computed, the one the optimisation reached from aromir's start "
     "geometry; another conformer has another spectrum"
@@ -185,9 +188,9 @@ def _without_stereo(smiles: str) -> str:
     return smiles if molecule is None else str(Chem.MolToSmiles(molecule, isomericSmiles=False))
 
 
-UNSEEN: Final = "not in the training set or a hold-out: the network has not seen it"
+UNSEEN: Final = "not in the training set or a test set: the network has not seen it"
 UNSEEN_NEUTRAL: Final = (
-    "not in the training set or a hold-out as a neutral molecule: the network has not seen it "
+    "not in the training set or a test set as a neutral molecule: the network has not seen it "
     "as one"
 )
 RELEASE_TRAINED: Final = (
@@ -222,10 +225,10 @@ def _a_stereoisomer_of(smiles: str, training: Training) -> bool:
 def _met(smiles: str, training: Training) -> str:
     """Say whether the networks of a training record have met a molecule."""
     if _among(smiles, training.trained_smiles):
-        return "in the network's training set: the hold-out error is not this molecule's measure"
+        return "in the network's training set: the test sets' error is not this molecule's measure"
     for holdout, held_out in training.held_out_smiles.items():
         if _among(smiles, held_out):
-            return f"in hold-out ({holdout}): never trained on; the measured error includes it"
+            return f"in {named_test_set(holdout)}: never trained on; the measured error includes it"
     if _a_stereoisomer_of(smiles, training):
         return (
             "a stereoisomer of it, or the molecule itself written with other stereo labels, "
@@ -376,19 +379,30 @@ def _statement(
             "minimum of the low level: the number printed there is no band position and "
             "nothing is claimed for it. "
         )
+    test_sets = " and ".join(named_test_set(name, first=True) for name in evaluation.holdouts)
     return (
         f"{admitted.smiles}: the harmonic infrared spectrum of ΔH network "
         f"v{release.network_version} ({len(release.networks)} seeds), {LEVEL_NOTE} towards "
         f"{evaluation.higher_level}{', ' if release.shipped is None else '. '}{made_by(release)} "
+        f"Those molecules are {test_sets}. "
         f"{sum(row.licensed for row in rows)} of {len(rows)} bands are licensed: a band "
-        f"is licensed when its family's error is within {line:g} cm⁻¹ on every hold-out "
+        f"is licensed when its family's error is within {line:g} cm⁻¹ on every test set "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
         "its low-level mode is real, the band is real for the seeds' mean and for every "
         "seed, and a band of a C–H "
         "family moves carbon-bound "
         f"hydrogens. {flat}{thin}{beyond}"
-        f"Coupled cluster: {evaluation.coupled_cluster}. The scaled B3LYP positions are a "
-        "baseline for comparison only."
+        f"Coupled cluster: {evaluation.coupled_cluster}. {_not_experiment(evaluation)}"
+    )
+
+
+def _not_experiment(evaluation: Evaluation) -> str:
+    """Say what the errors are against, and what to compare a measured spectrum with."""
+    return (
+        f"The errors are against {level_name(evaluation.higher_level)}, not against "
+        "experiment: a corrected position estimates that level's harmonic position, which for "
+        "nearly all modes lies above the measured band, so compare a measured spectrum with "
+        "the scaled B3LYP positions, printed beside each band as the baseline."
     )
 
 
@@ -483,7 +497,7 @@ def build(
 
 def _band_lines(record: dict[str, Any]) -> list[str]:
     holdouts = list(record["accuracy"]["holdouts"])
-    error_header = " / ".join(f"({name})" for name in holdouts)
+    error_header = "test set " + " / ".join(f"({name})" for name in holdouts)
     lines = [
         (
             "| position (cm⁻¹) | height (km/mol) | range over seeds and mean | B3LYP "
@@ -508,7 +522,9 @@ def _band_lines(record: dict[str, Any]) -> list[str]:
 
 def _accuracy_lines(accuracy: dict[str, Any]) -> list[str]:
     holdouts = accuracy["holdouts"]
-    header = " | ".join(f"({name}), {h['n_molecules']} molecules" for name, h in holdouts.items())
+    header = " | ".join(
+        f"{named_test_set(name)}, {h['n_molecules']} molecules" for name, h in holdouts.items()
+    )
     lines = [
         f"| family | {header} | within the licence line |",
         "|---|" + "---|" * (len(holdouts) + 1),
@@ -523,7 +539,12 @@ def _accuracy_lines(accuracy: dict[str, Any]) -> list[str]:
         licensed = "yes" if family in accuracy["licensed_families"] else "no"
         lines.append(f"| {family} | {cells} | {licensed} |")
     lines += ["", *(f"- {caveat[0].upper()}{caveat[1:]}." for caveat in accuracy["caveats"])]
-    lines += [*(f"- ({name}): {h['description']}" for name, h in holdouts.items())]
+    lines += [
+        *(
+            f"- {named_test_set(name, first=True)} — {h['description']}"
+            for name, h in holdouts.items()
+        )
+    ]
     lines.append(f"- sources: {'; '.join(accuracy['sources'])}")
     lines += [
         "",
@@ -553,7 +574,7 @@ def _whose_error(kind: str) -> str:
         return "what this certificate's positions are"
     return (
         "the error of the version's measurement networks, the same recipe trained without the "
-        "hold-outs, and the error bar of this certificate's positions"
+        "test sets, and the error bar of this certificate's positions"
     )
 
 
@@ -590,7 +611,7 @@ def to_markdown(record: dict[str, Any]) -> str:
         "## What the measured error does not cover",
         "",
         (
-            "Each hold-out molecule was read in one orientation and one atom order. For this "
+            "Each test-set molecule was read in one orientation and one atom order. For this "
             "molecule:"
         ),
         "",
@@ -602,7 +623,7 @@ def to_markdown(record: dict[str, Any]) -> str:
             "The rms error of the corrected band positions of the seeds' mean against "
             f"{level_name(network['higher_level'])}, in cm⁻¹: "
             f"{_whose_error(network['kind'])}. In square brackets the 95 % interval when the "
-            "hold-out's molecules are resampled. The licence is read on "
+            "test set's molecules are resampled. The licence is read on "
             f"{record['accuracy']['licence_basis']}."
         ),
         "",

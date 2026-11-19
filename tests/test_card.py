@@ -28,7 +28,10 @@ def test_the_card_states_the_releases_own_numbers(loaded: release.Release) -> No
     assert text.startswith("---\nlicense: cc-by-4.0\n")
     assert "# aromir ΔH network v1.3" in text
     assert "- **Seeds:** 2 (0, 1)" in text
-    assert "- **Licensed families:** ring-ip, CH-stretch, CH-oop." in text
+    assert (
+        "- **Licensed families:** ring-ip, CH-stretch, CH-oop (within 3 cm⁻¹ on "
+        "test set (a): unseen molecules and on test set (b): unseen scaffolds)."
+    ) in text
     assert "- **Not licensed:** other." in text
     seeds = loaded.evaluation.first_order_error_per_seed_cm["ring-ip"]
     brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
@@ -44,7 +47,11 @@ def test_the_card_states_the_releases_own_numbers(loaded: release.Release) -> No
     assert "- Elements: C, H, N, O." in text
     assert "- Sizes: 10 to 30 atoms." in text
     assert "- 1 molecules, neutral" in text
-    assert "1 in (a); 1 in (b)" in text
+    assert "1 in test set (a); 1 in test set (b)" in text
+    assert "| family | test set (a), 1 molecules | test set (b), 1 molecules | licensed |" in text
+    assert "- test set (a): unseen molecules — " in text
+    assert "on every test set." in text
+    assert "They are computed on the corrected modes with the cheap level's dipole" in text
     n_parameters = sum(parameter.numel() for parameter in loaded.networks[0].parameters())
     assert f"- {n_parameters:,} parameters per seed." in text
     for sha256 in loaded.tensor_sha256:
@@ -60,8 +67,8 @@ def test_a_held_out_molecule_that_was_trained_on_is_not_counted_as_held_out(
     )
     text = card.to_markdown(replace(loaded, training=leaked))
     assert (
-        "- Held out and never trained on: 1 in (a), not counting 1 the network also trained "
-        "on; 1 in (b)." in text
+        "- Held out and never trained on: 1 in test set (a), not counting 1 the network "
+        "also trained on; 1 in test set (b)." in text
     )
 
 
@@ -72,8 +79,8 @@ def test_a_hold_out_list_is_counted_by_molecule_and_none_is_said(
     training = loaded.training.model_copy(update={"held_out_smiles": twice})
     text = card.to_markdown(replace(loaded, training=training))
     assert (
-        "- Held out and never trained on: 0 in (a), not counting 1 the network also trained "
-        "on; 1 in (b)." in text
+        "- Held out and never trained on: 0 in test set (a), not counting 1 the network "
+        "also trained on; 1 in test set (b)." in text
     )
     nothing = loaded.training.model_copy(update={"held_out_smiles": {}})
     assert "- Held out and never trained on: none." in card.to_markdown(
@@ -136,7 +143,7 @@ def test_a_release_with_no_licensed_family_says_so(loaded: release.Release) -> N
     }
     evaluation = loaded.evaluation.model_copy(update={"band_error_seed_mean_cm": errors})
     text = card.to_markdown(replace(loaded, evaluation=evaluation))
-    assert "- **Licensed families:** none." in text
+    assert "- **Licensed families:** none (within 3 cm⁻¹ on test set (a): " in text
     assert "- **Not licensed: ring-ip, CH-stretch, CH-oop, other.**" in text
 
 

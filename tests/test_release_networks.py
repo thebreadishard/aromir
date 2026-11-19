@@ -103,15 +103,15 @@ def test_the_sentence_says_what_made_the_spectrum_and_what_the_errors_are_of(
     sentence = release.made_by(pair)
     assert sentence.startswith(
         "The spectrum is made by the release networks of version 1.3, trained on the 4 "
-        "labelled entries of their training pool, the hold-out molecules included (3 distinct "
+        "labelled entries of their training pool, the test sets' molecules included (3 distinct "
         "neutral molecules by SMILES and the radical cations of 1 molecule): each of the 2 "
         "networks is fitted on a random 85 % of the entries and stopped on the other 15 %, a "
         "different 15 % per seed,"
     )
     assert f"(with 2 networks about 0.15² ≈ {100 * (1 - 0.85) ** 2:.1f} % by none)" in sentence
     assert sentence.endswith(
-        "the release networks themselves have seen the hold-out molecules, so they have no "
-        "held-out error of their own."
+        "the release networks themselves have seen the test sets' molecules, so they have no "
+        "out-of-sample error of their own."
     )
 
 
@@ -345,7 +345,7 @@ def test_a_molecule_trained_on_beside_its_cation_gets_no_cation_clause() -> None
         TRAINING | {"cation_parent_smiles": ["c1ccccc1"], "cation_test": CATION_TEST}
     )
     assert certificate.acquaintance("c1ccccc1", alone).startswith(
-        "in hold-out (a): never trained on; "
+        "in test set (a): never trained on; "
     )
 
 
@@ -356,8 +356,8 @@ def test_the_measurement_networks_hold_out_molecules_that_the_release_networks_t
     assert f"- **Networks:** {release.made_by(pair)}" in text
     assert "on molecules the measurement networks never trained on" in text
     assert (
-        "- Held out from the measurement networks, on which every error is read: 1 in (a); 1 "
-        "in (b); the release networks trained on these molecules." in text
+        "- Held out from the measurement networks, on which every error is read: 1 in "
+        "test set (a); 1 in test set (b); the release networks trained on these molecules." in text
     )
     assert "Held out and never trained on" not in text
     assert (
@@ -365,7 +365,7 @@ def test_the_measurement_networks_hold_out_molecules_that_the_release_networks_t
         "radical cation of one, with an aromatic ring: 3 distinct neutral molecules by SMILES "
         "and the radical cations of 1 molecule. The measurement networks, on which every error "
         "is read, trained on 1 of those neutral molecules; the release networks on all of the "
-        "entries, the hold-out molecules included." in text
+        "entries, the test sets' molecules included." in text
     )
 
 

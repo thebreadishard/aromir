@@ -222,6 +222,17 @@ def test_an_xyz_sulfoxide_keeps_the_configuration_of_its_geometry(tmp_path: Path
     assert from_xyz.unassigned_stereo == ()
 
 
+def test_an_azide_leaves_no_double_bond_open_in_any_listing(tmp_path: Path) -> None:
+    # Before the resonance step, bond perception gave some listings of phenyl azide the
+    # quinoid structure N#[N+]N=c1cccc[cH-]1, whose exocyclic N=C is a potential E/Z bond,
+    # and the certificate said a double bond was left unassigned. The azide has none.
+    from_smiles, made = pipeline.admit(pipeline.MoleculeInput(smiles="[N-]=[N+]=Nc1ccccc1"))
+    assert from_smiles.unassigned_stereo == ()
+    for seed in range(8):
+        from_xyz = admission.admit(admission.read(_listed(made, tmp_path / f"{seed}.xyz", seed)))
+        assert (from_xyz.smiles, from_xyz.unassigned_stereo) == ("[N-]=[N+]=Nc1ccccc1", ())
+
+
 SYDNONE = "[O-]c1c[n+](-c2ccccc2)no1"
 
 

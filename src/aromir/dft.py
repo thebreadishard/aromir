@@ -1,10 +1,14 @@
 """The low level of theory: B3LYP/6-31G* in pyscf, converged tightly.
 
 The level is not a setting. The learned correction is trained on B3LYP/6-31G* Hessians, so
-another functional or basis would feed it inputs it has never seen. Those Hessians were
-computed with psi4 (density-fitted, grid (75, 302)) at psi4's minima, not with this code at
-its own; how far that moves a corrected band has not been measured end to end. Only the
-machine's resources are the caller's to choose.
+another functional or basis would feed it inputs it has never seen. Those Hessians are
+pyscf's analytic B3LYP/6-31G* Hessians (Cartesian d, grid (99, 590), as here), computed at
+geometries optimised with psi4 (density-fitted, grid (75, 302)); aromir optimises with
+pyscf, so its minima differ slightly, and how far that moves a corrected band has not been
+measured end to end. Sources: the training project's
+``modules/05_support_predictor/corpus/analytic_hessians.py`` (the Hessians) and
+``corpus/decks/deck_v1.json`` (the geometries). Only the machine's resources are the
+caller's to choose.
 """
 
 from __future__ import annotations

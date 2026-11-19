@@ -38,10 +38,16 @@ against that calculation. Measured bands lie, for nearly all modes, below harmon
 by most for the CH stretches (the scaled baseline's factors say as much: 0.960 above
 2500 cm⁻¹, 0.979 below 1111 cm⁻¹), and aromir does not yet add that anharmonic shift. The scaled B3LYP position
 printed beside each band is the conventional estimate of a measured position, and is
-there as the baseline; band heights are B3LYP's and carry no error bar. A band is
+there as the baseline; band heights are computed on the corrected modes with B3LYP's
+dipole derivatives, which are not corrected, and carry no error bar. The errors are
+measured on two test sets of molecules the networks the error is measured on never saw:
+*test set (a): unseen molecules*, molecules set aside before any network was trained, and
+*test set (b): unseen scaffolds*, the substituted molecules of two ring scaffolds,
+fluorene and fluoranthene, set aside as a whole (the model card says what the training
+set holds of them). In code and records these are the hold-outs: never trained on in
+any form — a twin or another charge state included. A band is
 *licensed* — a word for "passes the accuracy test", not the software licence — when its
-family's error on the hold-out sets — molecules the networks the error is measured on
-never saw — is at most the release's line (3 cm⁻¹ for v1.3 and v1.4) on every one of them,
+family's error is at most the release's line (3 cm⁻¹ for v1.3 and v1.4) on both test sets,
 and the band meets the other conditions listed under
 [What works today](#what-works-today).
 
@@ -85,15 +91,15 @@ $ aromir spectrum "c1ccccc1" --out results/benzene
 
 `--release <folder>` names another release. A release is a folder with one weight file
 and recipe per seed, `evaluation.json` (the
-version's measured error per mode family and hold-out), `training.json` (the elements,
+version's measured error per mode family and test set), `training.json` (the elements,
 sizes and molecules it was trained on) and, where it was measured, `invariance.json`
 (how far the answer moves when the same molecule is turned, mirrored or listed in
 another atom order).
 
 A version can be a pair of networks trained on one recipe. Its *measurement networks* are
-trained without the hold-out molecules, and every error and the licence are read on them;
+trained without the test sets' molecules, and every error and the licence are read on them;
 its *release networks* are trained on the labelled entries of their training pool, the
-hold-out molecules included, and are what the folder ships. v1.4 is such a pair. Its folder holds the release networks'
+test sets' molecules included, and are what the folder ships. v1.4 is such a pair. Its folder holds the release networks'
 seeds and `training.json`, the measurement networks' training record as
 `measurement.json`, and `release.json`: the hashes of the shipped seeds' tensor files
 (a folder whose seeds are other ones is refused), the SHA-256 of the content of the four
@@ -102,7 +108,7 @@ record changed afterwards is refused: a guard against an accidental
 change, not a signature, and `release.json`'s own fields are bound by nothing), the
 checkpoints of both kinds by hash and the
 checks the release networks passed before they were shipped (the same recipe, agreement
-with the measurement networks on the pool, the hold-outs learnt, early stopping off the
+with the measurement networks on the pool, the test sets learnt, early stopping off the
 cap, and benzene by name). The certificate and the card say in one sentence that the
 spectrum is made by the release networks and that its error bars are the measurement
 networks', and a molecule the release networks trained on is said to be in their
@@ -119,8 +125,8 @@ The result folder then also holds
   mode's position and motion, which the certificate spells out) and the error measured
   for that family on molecules the network never saw (for release networks: that the
   measurement networks never saw);
-- whether the band is licensed: the family's error is within the licence line on every
-  hold-out, the molecule lies inside the training sizes, its low-level mode is real, the
+- whether the band is licensed: the family's error is within the licence line on both
+  test sets, the molecule lies inside the training sizes, its low-level mode is real, the
   band is real for the seeds'
   mean and for every seed, and a CH-stretch or CH-oop band moves carbon-bound hydrogens
   (an O–H stretch
@@ -135,15 +141,15 @@ package: every number comes from the release's records.
 The error printed for a family is the error of the corrected band positions of the seeds'
 mean against the reference, on molecules the networks never trained on: for v1.3 the error
 of what aromir delivers, for v1.4 that of its measurement networks, the error bar of what
-its release networks deliver. `aromir evaluate <folder>` measures it for a release on a folder of hold-out
+its release networks deliver. `aromir evaluate <folder>` measures it for a release on a folder of test-set
 molecules with stored Hessians (the format is in `aromir.evaluation`), together with the
 first-order error of each seed that a training run reports, which is a different and
-larger number. It refuses release networks, which trained on the hold-outs: v1.4's errors
+larger number. It refuses release networks, which trained on the test sets: v1.4's errors
 were measured with it on the version's measurement networks (whose weights are not
 shipped), and agree to 0.005 cm⁻¹ with a second read by aromir's code on the training
 project's stored Hessians in the same atom order; the training project's own read, in its
 corpus atom order, differs by up to 0.05 cm⁻¹, because the network is not order-free. For
-v1.4 all four families are within the licence line; on the smaller hold-out, of eight
+v1.4 all four families are within the licence line; on test set (a), of eight
 molecules, the resampling intervals of CH-oop and 'other' cross it, and the card and the
 certificate say what that is worth.
 

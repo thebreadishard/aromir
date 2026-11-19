@@ -84,13 +84,14 @@ def _parser() -> argparse.ArgumentParser:
         )
     evaluate = commands.add_parser(
         "evaluate",
-        help="measure a release on hold-out molecules with stored Hessians: the error of what "
+        help="measure a release on test-set molecules with stored Hessians: the error of what "
         "it delivers, per family, and the first-order error of each seed",
     )
     evaluate.add_argument(
         "holdouts",
         type=Path,
-        help="a folder of hold-out folders of .npz molecules (see aromir.evaluation)",
+        help="a folder of test-set folders of .npz molecules, one per test set; in code and "
+        "records these are the hold-outs (see aromir.evaluation)",
     )
     evaluate.add_argument("--release", type=Path, help=RELEASE_HELP)
     evaluate.add_argument("--out", type=Path, help="the JSON file to write (default: print)")
@@ -163,7 +164,7 @@ def _evaluate(arguments: argparse.Namespace) -> None:
         print(json.dumps(measured, indent=1, ensure_ascii=False))  # noqa: T201  the command's answer
         return
     records.write_json(out, measured)
-    print(f"done: {len(measured)} hold-out(s) measured, in {out}")  # noqa: T201  the command's answer
+    print(f"done: {len(measured)} test set(s) measured, in {out}")  # noqa: T201  the command's answer
 
 
 def _run(arguments: argparse.Namespace) -> int:

@@ -172,7 +172,7 @@ def test_the_command_writes_what_it_measured_and_never_over_a_file(
     out = tmp_path / "measured.json"
     asked = ["evaluate", str(folder), "--release", str(release_folder), "--out", str(out)]
     assert cli.main(asked) == cli.EXIT_DONE
-    assert capsys.readouterr().out == f"done: 2 hold-out(s) measured, in {out}\n"
+    assert capsys.readouterr().out == f"done: 2 test set(s) measured, in {out}\n"
     assert json.loads(out.read_text(encoding="utf-8")) == evaluation.evaluate(loaded, folder)
     assert cli.main(asked) == cli.EXIT_REFUSED
     assert "exists: a result is never overwritten" in capsys.readouterr().err
@@ -193,8 +193,8 @@ def test_release_v13_is_licensed_on_what_it_delivers() -> None:
     record = certificate.build(admitted, start, low, bundled.corrections(start, hessian), bundled)
     assert record["accuracy"]["licensed_families"] == list(families.FAMILIES)
     plain = (
-        "'other' is within the licence line on hold-out (a) at 2.78 cm⁻¹, on 8 molecules: "
-        "resampling the hold-out's molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of "
+        "'other' is within the licence line on test set (a) at 2.78 cm⁻¹, on 8 molecules: "
+        "resampling the test set's molecules puts the error between 1.68 and 3.76 cm⁻¹, and 30% of "
         "the "
         "resamples lie above the line."
     )

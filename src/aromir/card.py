@@ -22,6 +22,7 @@ from aromir.release import (
     error_text,
     level_name,
     made_by,
+    named_test_set,
     pool,
 )
 
@@ -52,6 +53,7 @@ def _summary(release: Release) -> list[str]:
     evaluation = release.evaluation
     licensed = [family for family in families.FAMILIES if evaluation.licensed(family)]
     unlicensed = [family for family in families.FAMILIES if family not in licensed]
+    test_sets = " and on ".join(named_test_set(name, first=True) for name in evaluation.holdouts)
     return [
         f"# aromir ΔH network v{release.network_version}",
         "",
@@ -68,7 +70,10 @@ def _summary(release: Release) -> list[str]:
             "correction is their mean, and their spread is reported per band."
         ),
         *([] if release.shipped is None else [f"- **Networks:** {made_by(release)}"]),
-        f"- **Licensed families:** {', '.join(licensed) or 'none'}.",
+        (
+            f"- **Licensed families:** {', '.join(licensed) or 'none'} (within "
+            f"{evaluation.licence_line_cm:g} cm⁻¹ on {test_sets})."
+        ),
         f"- **Not licensed:** {', '.join(unlicensed) or 'none'}.",
         *(f"- **On thin ground:** {caveat}." for caveat in evaluation.caveats()),
         (
@@ -80,7 +85,9 @@ def _summary(release: Release) -> list[str]:
 
 def _evaluation_table(evaluation: Evaluation) -> list[str]:
     holdouts = evaluation.holdouts
-    header = " | ".join(f"({name}), {h.n_molecules} molecules" for name, h in holdouts.items())
+    header = " | ".join(
+        f"{named_test_set(name)}, {h.n_molecules} molecules" for name, h in holdouts.items()
+    )
     lines = [f"| family | {header} | licensed |", "|---|" + "---|" * (len(holdouts) + 1)]
     for family in families.FAMILIES:
         errors = evaluation.band_error_seed_mean_cm[family]
@@ -96,7 +103,7 @@ def _evaluation_table(evaluation: Evaluation) -> list[str]:
 
 def _first_order_table(evaluation: Evaluation) -> list[str]:
     holdouts = evaluation.holdouts
-    header = " | ".join(f"({name})" for name in holdouts)
+    header = " | ".join(named_test_set(name) for name in holdouts)
     lines = [f"| family | {header} |", "|---|" + "---|" * len(holdouts)]
     for family in families.FAMILIES:
         means = evaluation.first_order_error_per_seed_mean_cm[family]
@@ -115,7 +122,7 @@ def _evaluation(release: Release) -> list[str]:
         "the network never trained on: the error of what aromir prints"
         if release.shipped is None
         else "the measurement networks never trained on — the same recipe trained without "
-        "the hold-outs, whose error is the error bar of what aromir prints; the release "
+        "the test sets, whose error is the error bar of what aromir prints; the release "
         "networks aromir runs trained on these molecules too"
     )
     return [
@@ -125,13 +132,16 @@ def _evaluation(release: Release) -> list[str]:
             "The rms error of the corrected band positions of the seeds' mean against "
             f"{level_name(evaluation.higher_level)}, in cm⁻¹, on molecules {networks}. "
             "In square brackets the 95 % "
-            "interval when the hold-out's molecules are resampled. The licence is read on "
+            "interval when the test set's molecules are resampled. The licence is read on "
             f"{evaluation.licence_basis}."
         ),
         "",
         *_evaluation_table(evaluation),
         "",
-        *(f"- ({name}): {h.description}" for name, h in evaluation.holdouts.items()),
+        *(
+            f"- {named_test_set(name, first=True)} — {h.description}"
+            for name, h in evaluation.holdouts.items()
+        ),
         "",
         (
             "For comparison, the first-order error of each seed alone, the number a training "
@@ -145,7 +155,7 @@ def _evaluation(release: Release) -> list[str]:
         (
             "A family is licensed when the band error of the seeds' mean, as recorded to two "
             "decimals, is within "
-            f"{evaluation.licence_line_cm:g} cm⁻¹ on every hold-out. aromir's certificate marks "
+            f"{evaluation.licence_line_cm:g} cm⁻¹ on every test set. aromir's certificate marks "
             "each band with its family, that family's error and whether the band itself is "
             "licensed, which asks more: see the limits below."
         ),
@@ -167,7 +177,7 @@ def _held_out(training: Training) -> str:
     for name, smiles in training.held_out_smiles.items():
         held_out = set(smiles)
         n_trained = len(held_out & trained)
-        part = f"{len(held_out) - n_trained} in ({name})"
+        part = f"{len(held_out) - n_trained} in {named_test_set(name)}"
         if n_trained:
             part += f", not counting {n_trained} the network also trained on"
         parts.append(part)
@@ -194,7 +204,7 @@ def _molecule_count(release: Release) -> str:
         f"{pool(training)}{twice}. The measurement networks, on which every error is read, "
         "trained on "
         f"{len(release.measured_training.trained_smiles)} of those neutral molecules; the "
-        "release networks on all of the entries, the hold-out molecules included."
+        "release networks on all of the entries, the test sets' molecules included."
     )
 
 
@@ -290,7 +300,7 @@ def _sameness(release: Release) -> list[str]:
     )
     return [
         *lines,
-        f"  {reason}; the hold-out errors hold none of this. Source: {invariance.source}.",
+        f"  {reason}; the test sets' errors hold none of this. Source: {invariance.source}.",
     ]
 
 
@@ -321,7 +331,10 @@ def _limits(release: Release) -> list[str]:
         ),
         f"- {_order_statement(release)}",
         *_sameness(release),
-        "- **Band heights are the cheap level's.** The dipole derivatives are not corrected.",
+        (
+            "- **Band heights have no error bar.** They are computed on the corrected modes "
+            "with the cheap level's dipole derivatives, which are not corrected."
+        ),
         (
             "- **A family is a rule, not a kind of bond.** "
             + " ".join(f"{family}: {rule}." for family, rule in families.RULES.items())
