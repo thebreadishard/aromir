@@ -243,7 +243,16 @@ def _training(release: Release) -> list[str]:
 def _measured_spread(release: Release) -> str:
     spread = release.evaluation.atom_order_spread
     if spread is None:
-        return "The spread between atom orders was not measured for this release."
+        unmeasured = (
+            "The spread between arbitrary atom orders (the evaluation's atom-order spread) "
+            "was not measured for this release"
+        )
+        if release.invariance is None:
+            return f"{unmeasured}."
+        return (
+            f"{unmeasured}; the spread between xyz listings put into aromir's canonical order "
+            "is below."
+        )
     return (
         f"Measured: band positions move by up to {spread.max_cm:g} cm⁻¹ between atom orders "
         f"({spread.n_molecules} molecules, {spread.n_orders} orders each; {spread.source})."

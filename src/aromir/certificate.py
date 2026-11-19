@@ -379,7 +379,16 @@ def _not_in_the_error(release: Release, molecule: dict[str, Any]) -> list[str]:
             f"molecule(s){which}{above}"
         )
     if release.evaluation.atom_order_spread is None:
-        lines.append("the spread between atom orders was not measured for this release")
+        unmeasured = (
+            "the spread between arbitrary atom orders (the evaluation's atom-order spread) was "
+            "not measured for this release"
+        )
+        if release.invariance is not None:
+            unmeasured += (
+                "; the spread between xyz listings put into aromir's canonical order is the "
+                "one above"
+            )
+        lines.append(unmeasured)
     if release.invariance is None:
         lines.append(
             "the spread under a rotation, a reflection and another listing of an xyz file's "

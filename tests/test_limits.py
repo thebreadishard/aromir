@@ -198,6 +198,11 @@ def test_the_certificate_says_what_the_error_does_not_cover(measured: release.Re
         "on 3 molecule(s) with a linear group; that is more than the licence line of 3 cm⁻¹"
     ) in nitrile["not_in_the_error"]
     assert "positions up to 5.34 cm⁻¹ away, more than the licence line" in nitrile["statement"]
+    assert (
+        "the spread between arbitrary atom orders (the evaluation's atom-order spread) was not "
+        "measured for this release; the spread between xyz listings put into aromir's canonical "
+        "order is the one above"
+    ) in nitrile["not_in_the_error"]
     benzene = _record("c1ccccc1", "random", measured)
     assert benzene["molecule"]["linear_group"] is False
     assert (
@@ -265,8 +270,8 @@ def test_a_release_without_the_measurements_says_so(loaded: release.Release) -> 
     record = _record("c1ccccc1", "random", loaded)
     assert loaded.invariance is None
     assert (
-        "the spread between atom orders was not measured for this release"
-        in (record["not_in_the_error"])
+        "the spread between arbitrary atom orders (the evaluation's atom-order spread) was not "
+        "measured for this release" in (record["not_in_the_error"])
     )
     assert any("a reflection" in line for line in record["not_in_the_error"])
     assert "Not in that error" not in record["statement"]

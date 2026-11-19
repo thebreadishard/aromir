@@ -27,6 +27,10 @@ from aromir.molecule import Geometry
 from support import rotation_matrix
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from _pytest.mark import ParameterSet
+
     from aromir.molecule import FloatArray
 
 DATA = Path(__file__).parent / "data" / "release"
@@ -126,8 +130,21 @@ def _change(version: str, case: str) -> float:
     return _largest_listing_change(loaded)
 
 
-def _differs(reason: str) -> pytest.MarkDecorator:
-    return pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)
+def _recorded(version: str) -> release.Invariance:
+    """Return a release's invariance record, read without loading its networks."""
+    path = release.bundled().parent / version / release.INVARIANCE_FILE
+    return release.Invariance.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _differs(reason: Callable[[str], str]) -> list[ParameterSet]:
+    """Return each version as a parameter expected to fail, with its own reason."""
+    return [
+        pytest.param(
+            version,
+            marks=pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason(version)),
+        )
+        for version in VERSIONS
+    ]
 
 
 @pytest.mark.parametrize("version", VERSIONS)
@@ -143,22 +160,14 @@ NITRILE_REASON = (
 
 @pytest.mark.parametrize(
     "version",
-    [
-        pytest.param(
-            "v1.3",
-            marks=_differs(
-                f"turned benzonitrile gets bands up to 3.7 cm⁻¹ away here, 5.34 over the "
-                f"molecules of invariance.json: {NITRILE_REASON}"
-            ),
-        ),
-        pytest.param(
-            "v1.4",
-            marks=_differs(
-                f"turned benzonitrile gets bands up to 0.92 cm⁻¹ away here, 11.20 over the "
-                f"molecules of invariance.json: {NITRILE_REASON}"
-            ),
-        ),
-    ],
+    _differs(
+        lambda version: (
+            f"turned benzonitrile gets bands up to "
+            f"{LARGEST_CHANGE_CM[version]['turned nitrile']:.2f} cm⁻¹ away here, "
+            f"{_recorded(version).rotation.with_linear_group_cm:.2f} over the molecules of "
+            f"invariance.json: {NITRILE_REASON}"
+        )
+    ),
 )
 def test_a_nitrile_turns_with_its_spectrum(version: str) -> None:
     assert _change(version, "turned nitrile") < SAME_CM
@@ -169,22 +178,12 @@ MIRROR_REASON = "a dihedral enters with its sign (the audit's W3); the cos encod
 
 @pytest.mark.parametrize(
     "version",
-    [
-        pytest.param(
-            "v1.3",
-            marks=_differs(
-                f"the mirror image of twisted biphenyl gets bands up to 2.6 cm⁻¹ away: "
-                f"{MIRROR_REASON}"
-            ),
-        ),
-        pytest.param(
-            "v1.4",
-            marks=_differs(
-                f"the mirror image of twisted biphenyl gets bands up to 2.67 cm⁻¹ away: "
-                f"{MIRROR_REASON}"
-            ),
-        ),
-    ],
+    _differs(
+        lambda version: (
+            f"the mirror image of twisted biphenyl gets bands up to "
+            f"{LARGEST_CHANGE_CM[version]['mirrored biphenyl']:.2f} cm⁻¹ away: {MIRROR_REASON}"
+        )
+    ),
 )
 def test_a_mirror_image_has_the_same_spectrum(version: str) -> None:
     assert _change(version, "mirrored biphenyl") < SAME_CM
@@ -198,22 +197,12 @@ LISTING_REASON = (
 
 @pytest.mark.parametrize(
     "version",
-    [
-        pytest.param(
-            "v1.3",
-            marks=_differs(
-                f"listings of one biphenyl geometry get bands up to 3.1 cm⁻¹ apart: "
-                f"{LISTING_REASON}"
-            ),
-        ),
-        pytest.param(
-            "v1.4",
-            marks=_differs(
-                f"listings of one biphenyl geometry get bands up to 2.85 cm⁻¹ apart: "
-                f"{LISTING_REASON}"
-            ),
-        ),
-    ],
+    _differs(
+        lambda version: (
+            f"listings of one biphenyl geometry get bands up to "
+            f"{LARGEST_CHANGE_CM[version]['listed biphenyl']:.2f} cm⁻¹ apart: {LISTING_REASON}"
+        )
+    ),
 )
 def test_every_listing_of_one_geometry_has_the_same_spectrum(version: str) -> None:
     assert _change(version, "listed biphenyl") < SAME_CM

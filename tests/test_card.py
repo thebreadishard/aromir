@@ -180,8 +180,15 @@ def test_a_release_record_missing_a_field_names_it(
 
 
 def test_the_card_states_the_measured_spread_between_atom_orders(loaded: release.Release) -> None:
-    assert "The spread between atom orders was not measured for this release." in (
-        card.to_markdown(loaded)
+    unmeasured = (
+        "The spread between arbitrary atom orders (the evaluation's atom-order spread) was not "
+        "measured for this release"
+    )
+    assert f"{unmeasured}." in card.to_markdown(loaded)
+    with_listings = replace(loaded, invariance=release.load(release.bundled()).invariance)
+    assert (
+        f"{unmeasured}; the spread between xyz listings put into aromir's canonical order is "
+        "below." in card.to_markdown(with_listings)
     )
     spread = release.AtomOrderSpread(
         max_cm=2.9, n_molecules=3, n_orders=5, source="order_spread_v1.3.json"
