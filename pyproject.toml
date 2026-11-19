@@ -35,15 +35,14 @@ dependencies = [
     # Apple silicon — it has no wheel there, and its sdist lacks pyscf/lib/libxcfun.patch,
     # so every build from source fails. The bound moves when an arm64 wheel or a whole
     # sdist of a 2.15 release exists and the tests pass on it on every platform.
-    # RDKit starts at 2026.9.2: from 2024.9.1 to 2026.9.1 admission leaves phenyl
-    # azide a double bond open (CI runs 44583990091, 44586387779, 44588142122), and
-    # series before 2024.9 are built against numpy 1. CI's rdkit-range job runs the
-    # lower bound and the newest 2026.9.
+    # RDKit starts at 2024.9: older series are built against numpy 1 and do not
+    # import under numpy 2, which the numpy bound allows. CI's rdkit-range job runs
+    # the lower bound and the newest 2026.9.
     "geometric>=1.1,<1.2",
     "numpy>=1.26,<2.6",
     "pydantic>=2.6,<3",
     "pyscf>=2.15,<2.15.1",
-    "rdkit>=2026.9.2,<2026.10",
+    "rdkit>=2024.9,<2026.10",
     "safetensors>=0.4,<1",
     "scipy>=1.11,<1.19",
     "torch>=2.2,<2.16",

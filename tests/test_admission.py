@@ -222,6 +222,29 @@ def test_an_xyz_sulfoxide_keeps_the_configuration_of_its_geometry(tmp_path: Path
     assert from_xyz.unassigned_stereo == ()
 
 
+@pytest.mark.parametrize(
+    ("smiles", "can"),
+    [
+        ("[N-]=[N+]=Nc1ccccc1", [False, False]),
+        ("C=C=Cc1ccccc1", [False, False]),
+        ("O=C=Cc1ccccc1", [False, False]),
+        ("C(=Cc1ccccc1)c1ccccc1", [True]),
+        ("CC=NC", [True]),
+    ],
+)
+def test_only_a_double_bond_that_can_be_cis_or_trans_is_left_open(
+    smiles: str, can: list[bool]
+) -> None:
+    # Whatever RDKit offers as potential stereo, a terminal or cumulated double bond has no
+    # E/Z configuration (RDKit before 2026.9.2 offered the azide's N=N bonds).
+    molecule = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    doubles = [
+        bond.GetIdx() for bond in molecule.GetBonds() if bond.GetBondType() == Chem.BondType.DOUBLE
+    ]
+    found = [admission._can_be_cis_or_trans(molecule, index) for index in doubles]  # noqa: SLF001  the rule itself
+    assert found == can
+
+
 def test_an_azide_leaves_no_double_bond_open_in_any_listing(tmp_path: Path) -> None:
     # Before the resonance step, bond perception gave some listings of phenyl azide the
     # quinoid structure N#[N+]N=c1cccc[cH-]1, whose exocyclic N=C is a potential E/Z bond,

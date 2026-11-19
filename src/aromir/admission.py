@@ -381,12 +381,39 @@ def fixed_h_key(smiles: str) -> str | None:
     return key or None
 
 
+def _can_be_cis_or_trans(molecule: Mol, bond_index: int) -> bool:
+    """Tell whether a double bond can have an E/Z configuration at all.
+
+    It cannot when one of its atoms is terminal (=O, =N⁻: nothing on it to lie on one side)
+    or carries a second double bond (the middle N of an azide, an allene's carbon: such an
+    atom is linear). RDKit before 2026.9.2 offers the azide's N=N bonds as potential stereo
+    bonds; ``Chem.FindPotentialStereo`` is documented as returning *possible* stereo
+    elements, so its candidates are filtered here by what a configuration needs.
+    """
+    bond = molecule.GetBondWithIdx(bond_index)
+    for atom in (bond.GetBeginAtom(), bond.GetEndAtom()):
+        doubles = sum(other.GetBondType() == Chem.BondType.DOUBLE for other in atom.GetBonds())
+        if atom.GetDegree() < 2 or doubles > 1:
+            return False
+    return True
+
+
 def _unassigned_stereo(molecule: Mol) -> tuple[str, ...]:
-    """Name the double bonds and stereocentres an input does not assign."""
+    """Name the double bonds and stereocentres an input does not assign.
+
+    ``Chem.FindPotentialStereo`` gives each candidate's ``type``, ``specified`` and
+    ``centeredOn`` (the bond's index for a double bond): RDKit's own
+    ``rdkit/Chem/EnumerateStereoisomers.py`` reads a ``Bond_Double`` candidate's bond with
+    ``mol.GetBondWithIdx(si.centeredOn)``.
+    """
     open_elements = [
         element.type
         for element in Chem.FindPotentialStereo(molecule)
         if element.specified == Chem.StereoSpecified.Unspecified
+        and (
+            element.type != Chem.StereoType.Bond_Double
+            or _can_be_cis_or_trans(molecule, element.centeredOn)
+        )
     ]
     counts = {
         "double bond": sum(kind == Chem.StereoType.Bond_Double for kind in open_elements),
