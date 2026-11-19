@@ -79,8 +79,9 @@ class Band:
         licensed: Whether the band passes every condition of the licence: its family's
             error is within the licence line on every hold-out, the molecule lies inside
             the training sizes, its low-level mode is real, the band is real for the
-            seed mean and for every seed, a molecule with a linear group has its
-            recorded spread within the licence line (``withheld_for_linear_group``),
+            seed mean and for every seed, the molecule's group (with or without a
+            linear group) has its recorded spread within the licence line
+            (``withheld_by_spread``),
             and a band of a C–H family moves carbon-bound hydrogens.
         licence_note: The first condition the band fails; empty when it is licensed.
         measured_error_cm: The family's band error of the seeds' mean, per hold-out.
@@ -118,7 +119,7 @@ class Mode:
 
 @dataclass(frozen=True)
 class Withheld:
-    """Why no band of a molecule with a linear group is licensed.
+    """Why no band of a molecule is licensed: its group's recorded spread.
 
     Attributes:
         spread_cm: The recorded spread above the licence line; None when it was not
@@ -132,74 +133,134 @@ class Withheld:
     reason: str
 
 
-SPREAD_CHANGES: Final = "a rotation, a mirror image or another xyz listing of the atoms"
-"""The changes of the invariance record a user's input can make, all three: an xyz file in
-any orientation, the other configuration of a molecule whose one stereo element is one
-centre (``only_mirror_images``) and any listing of an xyz file's atoms. The evaluation's
-arbitrary SMILES orders are not among them: aromir writes every SMILES of a molecule in
-one order."""
+CHANGE_PHRASES: Final = {
+    "a rigid rotation of the molecule": "a rotation",
+    "the molecule's mirror image": "a mirror image",
+    "another listing of the same atoms in an xyz file": "another xyz listing",
+}
+"""The changes of the invariance record (``Invariance.spreads``) the licence reads, each
+with the phrase its sentences use. A user's input can make all three: an xyz file in any
+orientation, the other configuration of a molecule whose one stereo element is one centre
+(``only_mirror_images``) and any listing of an xyz file's atoms. The evaluation's arbitrary
+SMILES orders are not among them: aromir writes every SMILES of a molecule in one order."""
+CHANGES: Final = ", ".join(list(CHANGE_PHRASES.values())[:-1]) + (
+    f" or {list(CHANGE_PHRASES.values())[-1]}"
+)
+SPREAD_CHANGES: Final = f"{CHANGES} of the atoms"
 STILL_PRINTED: Final = (
     "so the network's correction for this molecule is not licensed; the corrected positions "
     "are still printed"
 )
 
 
-def linear_group_spread_cm(release: Release) -> tuple[float | None, bool]:
-    """Return the largest spread recorded for molecules with a linear group, and its completeness.
+@dataclass(frozen=True)
+class GroupSpread:
+    """What a release's invariance record says of the molecules of one group.
 
-    The spread is the largest, cm⁻¹, over the changes of ``SPREAD_CHANGES`` the release's
-    invariance record measured on such molecules; None when it measured none. The flag
-    says whether the record measured every one of those changes on them.
+    Attributes:
+        spread_cm: The largest spread, cm⁻¹, over the changes of ``CHANGE_PHRASES``
+            measured on molecules of the group; None when none was.
+        change: The phrase of the change that gave it; empty when none was measured.
+        complete: Whether every one of those changes was measured on the group.
+    """
+
+    spread_cm: float | None
+    change: str
+    complete: bool
+
+
+def group_spread(release: Release, *, linear_group: bool) -> GroupSpread:
+    """Return the largest spread recorded for molecules with or without a linear group.
+
+    Raises:
+        ValueError: The record names other changes than ``CHANGE_PHRASES``: a change
+            the licence does not read would otherwise stay out of the largest.
     """
     if release.invariance is None:
-        return None, False
-    values = [spread.of(linear_group=True)[0] for spread in release.invariance.spreads().values()]
-    measured = [value for value in values if value is not None]
-    return max(measured, default=None), len(measured) == len(values)
+        return GroupSpread(spread_cm=None, change="", complete=False)
+    spreads = release.invariance.spreads()
+    if list(spreads) != list(CHANGE_PHRASES):
+        msg = (
+            f"the invariance record names the changes {list(spreads)}, the licence reads "
+            f"{list(CHANGE_PHRASES)}"
+        )
+        raise ValueError(msg)
+    measured = {
+        CHANGE_PHRASES[name]: value
+        for name, spread in spreads.items()
+        if (value := spread.of(linear_group=linear_group)[0]) is not None
+    }
+    if not measured:
+        return GroupSpread(spread_cm=None, change="", complete=False)
+    change = max(measured, key=measured.__getitem__)
+    return GroupSpread(
+        spread_cm=measured[change], change=change, complete=len(measured) == len(spreads)
+    )
 
 
-def withheld_for_linear_group(release: Release, *, linear_group: bool) -> Withheld | None:
-    """Say why a molecule's bands are not licensed for its linear group; None when they may be.
-
-    A molecule with a linear group is licensed only while the release's invariance record
-    shows its spread under ``SPREAD_CHANGES`` within the licence line. A release whose
-    record does not measure it there licenses no such molecule: a licence is a claim that
-    needs its measurement, and v1.3 and v1.4, the releases measured, were both above the
-    line.
-    """
-    if not linear_group:
-        return None
-    line = release.evaluation.licence_line_cm
-    spread, complete = linear_group_spread_cm(release)
-    if spread is not None and spread > line:
+def _too_far(spread: GroupSpread, line: float, *, linear_group: bool) -> Withheld:
+    """Say that a molecule's group moved by more than the licence line."""
+    value = spread.spread_cm
+    if linear_group:
         return Withheld(
-            spread_cm=spread,
+            spread_cm=value,
             note=(
                 "the molecule has a linear group, and molecules with one moved by up to "
-                f"{spread:.2f} cm⁻¹ under a rotation, a mirror image or another xyz listing, "
-                "more than the licence line"
+                f"{value:.2f} cm⁻¹ under {CHANGES}, more than the licence line"
             ),
             reason=(
                 "the molecule has a linear group (an angle near 180°, as in a nitrile or an "
                 f"alkyne), and the measured spread under {SPREAD_CHANGES} for molecules with "
-                f"one ({spread:.2f} cm⁻¹, from the release's invariance record) exceeds the "
+                f"one ({value:.2f} cm⁻¹, from the release's invariance record) exceeds the "
                 f"licence line of {line:g} cm⁻¹, {STILL_PRINTED}"
             ),
         )
-    if not complete:
-        return Withheld(
-            spread_cm=None,
-            note=(
-                "the molecule has a linear group, and the spread of molecules with one under a "
-                "rotation, a mirror image or another xyz listing was not measured for this "
-                "release"
-            ),
-            reason=(
-                "the molecule has a linear group (an angle near 180°, as in a nitrile or an "
-                f"alkyne), and the spread under {SPREAD_CHANGES} was not measured for this "
-                f"release on a molecule with one, {STILL_PRINTED}"
-            ),
-        )
+    return Withheld(
+        spread_cm=value,
+        note=(
+            f"molecules without a linear group moved by up to {value:.2f} cm⁻¹ under "
+            f"{spread.change}, more than the licence line"
+        ),
+        reason=(
+            "the molecule has no linear group, and the measured spread under "
+            f"{spread.change} for molecules without one ({value:.2f} cm⁻¹, from the "
+            f"release's invariance record) exceeds the licence line of {line:g} cm⁻¹, "
+            f"{STILL_PRINTED}"
+        ),
+    )
+
+
+UNMEASURED: Final = Withheld(
+    spread_cm=None,
+    note=(
+        "the molecule has a linear group, and the spread of molecules with one under "
+        f"{CHANGES} was not measured for this release"
+    ),
+    reason=(
+        "the molecule has a linear group (an angle near 180°, as in a nitrile or an "
+        f"alkyne), and the spread under {SPREAD_CHANGES} was not measured for this "
+        f"release on a molecule with one, {STILL_PRINTED}"
+    ),
+)
+
+
+def withheld_by_spread(release: Release, *, linear_group: bool) -> Withheld | None:
+    """Say why a molecule's bands are not licensed for its group's spread; None when they may be.
+
+    A molecule is licensed only while the release's invariance record shows the largest
+    spread of its group (with or without a linear group) under ``CHANGE_PHRASES`` within
+    the licence line. A release whose record does not measure every change on molecules
+    with a linear group licenses no such molecule: a licence is a claim that needs its
+    measurement, and v1.3 and v1.4, the releases measured, were both above the line. A
+    molecule without one keeps its licence where its group was not measured, as before
+    releases had the record: for it the licence is withheld only on a measured spread.
+    """
+    line = release.evaluation.licence_line_cm
+    spread = group_spread(release, linear_group=linear_group)
+    if spread.spread_cm is not None and spread.spread_cm > line:
+        return _too_far(spread, line, linear_group=linear_group)
+    if linear_group and not spread.complete:
+        return UNMEASURED
     return None
 
 
@@ -542,7 +603,8 @@ def _statement(
             "nothing is claimed for it. "
         )
     test_sets = " and ".join(named_test_set(name, first=True) for name in evaluation.holdouts)
-    linear = "" if withheld is None else f"{withheld.reason[0].upper()}{withheld.reason[1:]}. "
+    spread = "" if withheld is None else f"{withheld.reason[0].upper()}{withheld.reason[1:]}. "
+    group = "with" if molecule["linear_group"] else "without"
     return (
         f"{admitted.smiles}: the harmonic infrared spectrum of ΔH network "
         f"v{release.network_version} ({len(release.networks)} seeds), {LEVEL_NOTE} towards "
@@ -552,10 +614,10 @@ def _statement(
         f"is licensed when its family's error is within {line:g} cm⁻¹ on every test set "
         f"({', '.join(within) or 'no family'}), the molecule lies inside the training sizes, "
         "its low-level mode is real, the band is real for the seeds' mean and for every "
-        "seed, a molecule with a linear group moved by no more than the licence line under "
-        f"{SPREAD_CHANGES} in the release's invariance record, and a band of a C–H "
+        f"seed, molecules {group} a linear group moved by no more than the licence line "
+        f"under {SPREAD_CHANGES} in the release's invariance record, and a band of a C–H "
         "family moves carbon-bound "
-        f"hydrogens. {linear}{flat}{thin}{beyond}"
+        f"hydrogens. {spread}{flat}{thin}{beyond}"
         f"Coupled cluster: {evaluation.coupled_cluster}. {_not_experiment(evaluation)}"
     )
 
@@ -626,7 +688,7 @@ def build(
     evaluation = release.evaluation
     within = [family for family in families.FAMILIES if evaluation.licensed(family)]
     molecule = _molecule(admitted, geometry, release)
-    withheld = withheld_for_linear_group(release, linear_group=molecule["linear_group"])
+    withheld = withheld_by_spread(release, linear_group=molecule["linear_group"])
     rows = bands(
         geometry,
         low,

@@ -72,15 +72,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- No band of a molecule with a linear group (the certificate's linear angle: a nitrile, an
-  alkyne) is licensed while the release's `invariance.json` gives such molecules a spread
-  above the licence line under a rotation, a mirror image or another xyz listing, or does
-  not measure it; the reason is stated in the certificate's statement and in every band's
-  licence column, and the corrected positions are printed unchanged. v1.4's record gives
-  11.20 cm⁻¹ and v1.3's 5.34, so neither licenses diphenylacetylene or benzonitrile any more
-  (benzonitrile by its group: its own turns move it less). A release whose record puts the
-  spread at or below the line licenses them again. The card states the rule with its
-  release's number.
+- No band of a molecule is licensed while the release's `invariance.json` gives the
+  molecules of its group — with a linear group (the certificate's linear angle: a nitrile,
+  an alkyne) or without — a largest spread above the licence line under a rotation, a
+  mirror image or another xyz listing; nor of a molecule with a linear group while that
+  spread is not measured (a molecule without one keeps its licence there). The reason is
+  stated in the certificate's statement and in every band's licence column, and the
+  corrected positions are printed unchanged. v1.4's record gives 11.20 cm⁻¹ with a linear
+  group and 2.85 without, so diphenylacetylene and benzonitrile are no longer licensed
+  (benzonitrile by its group: its own turns move it less) and the others keep the licence;
+  v1.3's gives 5.34 and 3.07, so with `--release` v1.3 licenses no band. A release whose
+  record puts a group's spread at or below the line licenses it again. The card states the
+  rule with its release's numbers.
 - 'Seen' follows one stereo rule, the training project's: a row without stereo labels
   stands for both mirror images of a molecule whose one stereo element is one tetrahedral
   centre (an xyz sulfoxide that names its configuration is in the training set when the

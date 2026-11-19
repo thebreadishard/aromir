@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 from aromir import dft, families, repair
-from aromir.certificate import SPREAD_CHANGES, linear_group_spread_cm, withheld_for_linear_group
+from aromir.certificate import SPREAD_CHANGES, group_spread, withheld_by_spread
 from aromir.release import (
     EVALUATION_FILE,
     INVARIANCE_FILE,
@@ -315,25 +315,34 @@ def _sameness(release: Release) -> list[str]:
     ]
 
 
-def _linear_group_licence(release: Release) -> str:
-    """State the licence rule for molecules with a linear group, with this release's number."""
-    line = release.evaluation.licence_line_cm
-    withheld = withheld_for_linear_group(release, linear_group=True)
-    if withheld is None:
-        spread, _ = linear_group_spread_cm(release)
-        verdict = f"for this release it is {spread:.2f} cm⁻¹, so their bands keep the licence"
-    elif withheld.spread_cm is None:
-        verdict = "for this release it was not measured, so their bands are not licensed"
+def _group_verdict(release: Release, *, linear_group: bool) -> str:
+    """Say what this release's record gives one group, and whether its bands are licensed."""
+    spread = group_spread(release, linear_group=linear_group)
+    if spread.spread_cm is None:
+        value = "not measured"
+    elif spread.complete:
+        value = f"{spread.spread_cm:.2f} cm⁻¹"
     else:
-        verdict = (
-            f"for this release it is {withheld.spread_cm:.2f} cm⁻¹, so their bands are not licensed"
-        )
+        value = f"{spread.spread_cm:.2f} cm⁻¹ on the changes measured"
+    group = "with" if linear_group else "without"
+    withheld = withheld_by_spread(release, linear_group=linear_group) is not None
+    verdict = "are not licensed" if withheld else "keep the licence"
+    return f"{value} {group} a linear group, so their bands {verdict}"
+
+
+def _spread_licence(release: Release) -> str:
+    """State the licence rule of the groups' spreads, with this release's numbers."""
+    line = release.evaluation.licence_line_cm
+    verdicts = " and ".join(
+        _group_verdict(release, linear_group=linear_group) for linear_group in (True, False)
+    )
     return (
-        "- **A molecule with a linear group is licensed only within the line.** aromir's "
-        "certificate licenses no band of a molecule with an angle near 180° (a nitrile, an "
-        "alkyne) while the largest spread this release's invariance record gives for such "
-        f"molecules under {SPREAD_CHANGES} exceeds {line:g} cm⁻¹ or was not measured; "
-        f"{verdict}; the corrected positions are printed either way."
+        "- **A molecule's licence follows its group's measured spread.** aromir's certificate "
+        "licenses no band of a molecule while the largest spread this release's invariance "
+        "record gives for molecules of its group (with or without a linear group, an angle "
+        f"near 180° as in a nitrile or an alkyne) under {SPREAD_CHANGES} exceeds {line:g} "
+        "cm⁻¹, nor of a molecule with a linear group while that spread was not measured; for "
+        f"this release it is {verdicts}; the corrected positions are printed either way."
     )
 
 
@@ -364,7 +373,7 @@ def _limits(release: Release) -> list[str]:
         ),
         f"- {_order_statement(release)}",
         *_sameness(release),
-        _linear_group_licence(release),
+        _spread_licence(release),
         (
             "- **Band heights have no error bar.** They are computed on the corrected modes "
             "with the cheap level's dipole derivatives, which are not corrected."
@@ -375,8 +384,9 @@ def _limits(release: Release) -> list[str]:
             + " aromir's certificate licenses a band only when its family is within the "
             "licence line, the molecule lies inside the training sizes, its low-level mode "
             "is real, the band is real for "
-            "the seeds' mean and for every seed, a molecule with a linear group moved by no "
-            "more than the licence line in the record above, and a CH-stretch or CH-oop band moves "
+            "the seeds' mean and for every seed, molecules of the molecule's group (with or "
+            "without a linear group) moved by no more than the licence line in the release's "
+            "invariance record, and a CH-stretch or CH-oop band moves "
             "carbon-bound hydrogens. A "
             "ring-ip band is licensed as the rule takes it, C=O stretches included."
         ),

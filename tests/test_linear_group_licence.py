@@ -100,24 +100,37 @@ def _unruled_bands(name: str) -> list[certificate.Band]:
     )
 
 
-def _with_spreads(with_group: float | None, n_with: int) -> release.Invariance:
-    """Return a v1.4 invariance record whose rotation spread with a linear group is given."""
+def _record_with(
+    *, linear_group: bool, rotation: float | None, mirror: float | None, listing: float | None
+) -> release.Invariance:
+    """Return v1.4's invariance record with one group's three spreads replaced."""
     recorded = _v14().invariance
     assert recorded is not None
-    rotation = recorded.rotation.model_copy(
-        update={"with_linear_group_cm": with_group, "n_with_linear_group": n_with}
-    )
-    others = {
-        "with_linear_group_cm": min(2.5, with_group or 2.5),
-        "n_with_linear_group": 3,
-    }
+    group = "with_linear_group" if linear_group else "without_linear_group"
+
+    def spread(old: release.MeasuredSpread, value: float | None) -> release.MeasuredSpread:
+        counts = 0 if value is None else 3
+        return old.model_copy(update={f"{group}_cm": value, f"n_{group}": counts})
+
     return recorded.model_copy(
         update={
-            "rotation": rotation,
-            "mirror_image": recorded.mirror_image.model_copy(update=others),
-            "xyz_atom_order": recorded.xyz_atom_order.model_copy(update=others),
+            "rotation": spread(recorded.rotation, rotation),
+            "mirror_image": spread(recorded.mirror_image, mirror),
+            "xyz_atom_order": spread(recorded.xyz_atom_order, listing),
         }
     )
+
+
+def _within(value: float | None, *, linear_group: bool = True) -> release.Release:
+    """Return v1.4 with one group's three spreads at one value."""
+    invariance = _record_with(
+        linear_group=linear_group, rotation=value, mirror=value, listing=value
+    )
+    return replace(_v14(), invariance=invariance)
+
+
+def _capital(sentence: str) -> str:
+    return f"{sentence[0].upper()}{sentence[1:]}."
 
 
 @pytest.mark.parametrize(
@@ -137,8 +150,13 @@ def test_on_v14_no_band_of_a_molecule_with_a_linear_group_is_licensed_by_its_gro
     assert record["bands"]
     assert all(not band["licensed"] for band in record["bands"])
     assert {band["licence_note"] for band in record["bands"]} == {V14_NOTE}
-    assert f"{V14_REASON[0].upper()}{V14_REASON[1:]}." in record["statement"]
+    assert _capital(V14_REASON) in record["statement"]
     assert "0 of " in record["statement"]
+    assert (
+        "molecules with a linear group moved by no more than the licence line under a "
+        "rotation, a mirror image or another xyz listing of the atoms in the release's "
+        "invariance record"
+    ) in record["statement"]
     text = certificate.to_markdown(record)
     assert text.count(f"| no: {V14_NOTE} |") == len(record["bands"])
 
@@ -150,60 +168,139 @@ def test_the_rule_leaves_the_printed_positions_as_they_are(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", ["biphenyl", "benzene"])
-def test_a_molecule_without_a_linear_group_keeps_its_licence(name: str) -> None:
+def test_on_v14_a_molecule_without_a_linear_group_keeps_its_licence(name: str) -> None:
+    # v1.4's largest spread without a linear group is 2.85 cm⁻¹, within the line.
     record = _record(name, _v14())
     assert record["molecule"]["linear_group"] is False
     notes = [band["licence_note"] for band in record["bands"]]
     assert notes == [band.licence_note for band in _unruled_bands(name)]
-    assert "linear group (an angle near 180°" not in record["statement"]
+    assert "the network's correction for this molecule is not licensed" not in record["statement"]
+    assert "molecules without a linear group moved by no more than" in record["statement"]
     assert any(band["licensed"] for band in record["bands"])
 
 
 @pytest.mark.parametrize("spread", [2.5, 3.0])
 def test_a_record_at_or_below_the_line_restores_the_licence(spread: float) -> None:
-    within = replace(_v14(), invariance=_with_spreads(spread, 3))
-    assert certificate.withheld_for_linear_group(within, linear_group=True) is None
+    within = _within(spread)
+    assert certificate.withheld_by_spread(within, linear_group=True) is None
     record = _record("benzonitrile", within)
     assert [band["licence_note"] for band in record["bands"]] == [
         band.licence_note for band in _unruled_bands("benzonitrile")
     ]
     assert all(band["licensed"] for band in record["bands"])
     assert (
-        f"for this release it is {spread:.2f} cm⁻¹, so their bands keep the licence; the "
-        "corrected positions are printed either way."
+        f"for this release it is {spread:.2f} cm⁻¹ with a linear group, so their bands keep "
+        "the licence and 2.85 cm⁻¹ without a linear group, so their bands keep the licence; "
+        "the corrected positions are printed either way."
     ) in card.to_markdown(within)
 
 
 def test_a_record_just_above_the_line_withholds_the_licence() -> None:
-    above = replace(_v14(), invariance=_with_spreads(3.01, 3))
-    withheld = certificate.withheld_for_linear_group(above, linear_group=True)
+    above = _within(3.01)
+    withheld = certificate.withheld_by_spread(above, linear_group=True)
     assert withheld is not None
     assert withheld.spread_cm == pytest.approx(3.01)
-    assert certificate.withheld_for_linear_group(above, linear_group=False) is None
+    assert certificate.withheld_by_spread(above, linear_group=False) is None
+    record = _record("benzonitrile", above)
+    assert all(not band["licensed"] for band in record["bands"])
+    assert {band["licence_note"] for band in record["bands"]} == {withheld.note}
+
+
+@pytest.mark.parametrize(
+    ("mirror", "listing", "change"),
+    [(3.5, 2.5, "a mirror image"), (2.5, 3.5, "another xyz listing")],
+)
+@pytest.mark.parametrize("linear_group", [True, False], ids=["with", "without"])
+def test_a_change_other_than_the_rotation_above_the_line_withholds_the_licence(
+    *, mirror: float, listing: float, change: str, linear_group: bool
+) -> None:
+    invariance = _record_with(
+        linear_group=linear_group, rotation=2.5, mirror=mirror, listing=listing
+    )
+    above = replace(_v14(), invariance=invariance)
+    withheld = certificate.withheld_by_spread(above, linear_group=linear_group)
+    assert withheld is not None
+    assert withheld.spread_cm == 3.5
+    name = "benzonitrile" if linear_group else "biphenyl"
+    record = _record(name, above)
+    assert all(not band["licensed"] for band in record["bands"])
+    if not linear_group:
+        assert withheld.note == (
+            f"molecules without a linear group moved by up to 3.50 cm⁻¹ under {change}, more "
+            "than the licence line"
+        )
 
 
 @pytest.mark.parametrize("record_kind", ["no record", "no molecule with one rotated"])
 def test_a_release_that_did_not_measure_a_linear_group_licenses_none(record_kind: str) -> None:
-    invariance = None if record_kind == "no record" else _with_spreads(None, 0)
+    invariance = (
+        None
+        if record_kind == "no record"
+        else _record_with(linear_group=True, rotation=None, mirror=2.5, listing=2.5)
+    )
     unmeasured = replace(_v14(), invariance=invariance)
     record = _record("benzonitrile", unmeasured)
     assert all(not band["licensed"] for band in record["bands"])
-    assert f"{UNMEASURED_REASON[0].upper()}{UNMEASURED_REASON[1:]}." in record["statement"]
-    assert (
-        "for this release it was not measured, so their bands are not licensed"
-        in card.to_markdown(unmeasured)
+    assert _capital(UNMEASURED_REASON) in record["statement"]
+    assert "with a linear group, so their bands are not licensed" in card.to_markdown(unmeasured)
+
+
+@pytest.mark.parametrize("record_kind", ["no record", "no molecule without one listed"])
+def test_a_molecule_without_a_linear_group_keeps_its_licence_where_it_was_not_measured(
+    record_kind: str,
+) -> None:
+    invariance = (
+        None
+        if record_kind == "no record"
+        else _record_with(linear_group=False, rotation=0.0, mirror=2.5, listing=None)
     )
+    unmeasured = replace(_v14(), invariance=invariance)
+    assert certificate.withheld_by_spread(unmeasured, linear_group=False) is None
     benzene = _record("benzene", unmeasured)
     assert [band["licence_note"] for band in benzene["bands"]] == [
         band.licence_note for band in _unruled_bands("benzene")
     ]
+    if invariance is None:
+        assert (
+            "for this release it is not measured with a linear group, so their bands are not "
+            "licensed and not measured without a linear group, so their bands keep the licence"
+        ) in card.to_markdown(unmeasured)
 
 
-def test_the_cards_state_the_rule_with_their_records_numbers() -> None:
-    assert "for this release it is 11.20 cm⁻¹, so their bands are not licensed" in card.to_markdown(
-        _v14()
-    )
+def test_on_v13_a_molecule_without_a_linear_group_is_not_licensed_by_its_group() -> None:
     v13 = release.load(release.bundled().parent / "v1.3")
-    withheld = certificate.withheld_for_linear_group(v13, linear_group=True)
-    assert withheld is not None
-    assert withheld.spread_cm == 5.34
+    record = _record("benzene", v13)
+    assert record["molecule"]["linear_group"] is False
+    note = (
+        "molecules without a linear group moved by up to 3.07 cm⁻¹ under another xyz "
+        "listing, more than the licence line"
+    )
+    assert {band["licence_note"] for band in record["bands"]} == {note}
+    reason = (
+        "the molecule has no linear group, and the measured spread under another xyz listing "
+        "for molecules without one (3.07 cm⁻¹, from the release's invariance record) exceeds "
+        "the licence line of 3 cm⁻¹, so the network's correction for this molecule is not "
+        "licensed; the corrected positions are still printed"
+    )
+    assert _capital(reason) in record["statement"]
+    assert (
+        "for this release it is 5.34 cm⁻¹ with a linear group, so their bands are not "
+        "licensed and 3.07 cm⁻¹ without a linear group, so their bands are not licensed"
+    ) in card.to_markdown(v13)
+
+
+def test_the_v14_card_states_the_rule_with_its_records_numbers() -> None:
+    assert (
+        "for this release it is 11.20 cm⁻¹ with a linear group, so their bands are not "
+        "licensed and 2.85 cm⁻¹ without a linear group, so their bands keep the licence"
+    ) in card.to_markdown(_v14())
+
+
+def test_the_rule_reads_every_change_of_the_record(monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded = _v14().invariance
+    assert recorded is not None
+    assert list(certificate.CHANGE_PHRASES) == list(recorded.spreads())
+    four = recorded.spreads() | {"a fourth change": recorded.rotation}
+    monkeypatch.setattr(release.Invariance, "spreads", lambda _: four)
+    with pytest.raises(ValueError, match="a fourth change"):
+        certificate.group_spread(_v14(), linear_group=True)

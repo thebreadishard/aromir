@@ -128,9 +128,10 @@ The result folder then also holds
 - whether the band is licensed: the family's error is within the licence line on both
   test sets, the molecule lies inside the training sizes, its low-level mode is real, the
   band is real for the seeds'
-  mean and for every seed, a molecule with a linear group (a nitrile, an alkyne) moved by
-  no more than the licence line under a rotation, a mirror image or another xyz listing in
-  the release's `invariance.json`, and a CH-stretch or CH-oop band moves carbon-bound
+  mean and for every seed, molecules of the molecule's group (with or without a linear
+  group: a nitrile, an alkyne) moved by no more than the licence line under a rotation, a
+  mirror image or another xyz listing in the release's `invariance.json`, and a CH-stretch
+  or CH-oop band moves carbon-bound
   hydrogens (an O–H stretch
   falls under the CH-stretch rule and is not licensed), with the reason where it is not;
 
@@ -155,13 +156,17 @@ v1.4 all four families are within the licence line; on test set (a), of eight
 molecules, the resampling intervals of CH-oop and 'other' cross it, and the card and the
 certificate say what that is worth.
 
-A molecule with a linear group is a case of its own. Its internal coordinates measure the
-linear angle against a fixed axis in space, so the same molecule turned or listed in
-another order gets other positions: v1.4's `invariance.json` records up to 11.20 cm⁻¹ for
-such molecules (v1.3's 5.34), more than the licence line. While a release's record says
-so, or does not measure it, no band of a molecule with a linear group is licensed; its
-corrected positions are printed all the same, with the reason. A release whose record
-puts the spread at or below the line gets the licence back with no change to the code.
+The licence also reads how far the same molecule's positions move when it is turned,
+mirrored or listed in another order, which a release's `invariance.json` records for
+molecules with a linear group (a nitrile, an alkyne) and without one. While the largest of
+those spreads for a molecule's group is above the licence line, no band of the molecule
+is licensed; its corrected positions are printed all the same, with the reason. A
+molecule with a linear group is not licensed either where its group's spread was not
+measured; one without keeps its licence there. A linear angle is measured against a fixed
+axis in space, which is why such molecules move most: v1.4's record gives up to 11.20
+cm⁻¹ with a linear group and 2.85 without, so molecules with one are not licensed and
+the others are; v1.3's gives 5.34 and 3.07, so none is. A release whose record puts the
+spread at or below the line gets the licence back with no change to the code.
 
 `aromir card` writes the release's model card the same way: what
 the network is, what it was trained on, its measured error per family, and where it
