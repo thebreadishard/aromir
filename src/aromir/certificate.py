@@ -703,6 +703,9 @@ def build(
         "network": {
             "version": release.network_version,
             "seeds": [recipe.seed for recipe in release.recipes],
+            "tensor_sha256": release.seed_sha256,
+            "release_folder": str(release.folder),
+            "bundled": release.is_bundled,
             "higher_level": evaluation.higher_level,
             "kind": "measurement" if release.shipped is None else "release",
             "errors_measured_on": (
@@ -806,6 +809,16 @@ def _whose_error(kind: str) -> str:
     )
 
 
+def _network_line(network: dict[str, Any]) -> str:
+    """Say which release folder and which weights, by their tensors' SHA-256, made the spectrum."""
+    where = " (the release inside the package)" if network["bundled"] else ""
+    tensors = ", ".join(f"{name} `{sha256}`" for name, sha256 in network["tensor_sha256"].items())
+    return (
+        f"*Network:* release v{network['version']} read from `{network['release_folder']}`"
+        f"{where}; the seeds' tensor files by SHA-256: {tensors}."
+    )
+
+
 def to_markdown(record: dict[str, Any]) -> str:
     """Render a certificate record as a Markdown document."""
     molecule, network = record["molecule"], record["network"]
@@ -831,6 +844,8 @@ def to_markdown(record: dict[str, Any]) -> str:
         ),
         "",
         *_band_lines(record),
+        "",
+        _network_line(network),
         "",
         f"*Positions:* {record['positions']}.",
         *([f"*Soft modes:* {record['soft_modes']}."] if record["soft_modes"] else []),

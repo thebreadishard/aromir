@@ -10,8 +10,10 @@ import numpy as np
 import pytest
 from rdkit import Chem
 
-from aromir import admission, card, certificate, cli, release
+from aromir import admission, card, certificate, cli, geometry, lowlevel, release, response
 from aromir.molecule import Geometry
+
+from support import random_hessian
 
 N_SEEDS = 3
 PINS = Path(__file__).parent / "data" / "release"
@@ -75,10 +77,10 @@ def test_each_release_corrects_a_twisted_biphenyl_alike_on_every_platform(
     # and every seed's ΔH was 1e29. A numerical step that depends on the platform shows
     # here as a difference above single-precision noise.
     with np.load(PINS / name) as pin:
-        geometry = Geometry(tuple(str(symbol) for symbol in pin["symbols"]), pin["coords_bohr"])
+        molecule = Geometry(tuple(str(symbol) for symbol in pin["symbols"]), pin["coords_bohr"])
         hessian, pinned = pin["hessian"], pin[key]
     folder = release.bundled().parent / f"v{version}"
-    corrections = release.load(folder).corrections(geometry, hessian)
+    corrections = release.load(folder).corrections(molecule, hessian)
     assert len(corrections.per_seed) == len(pinned) == N_SEEDS
     for ours, theirs in zip(corrections.per_seed, pinned, strict=True):
         assert 0.03 < float(np.abs(theirs).max()) < 0.05
@@ -96,7 +98,9 @@ def test_the_bundled_release_ships_release_networks_and_names_both_kinds() -> No
         f"seed-{recipe.seed}": sha
         for recipe, sha in zip(loaded.recipes, loaded.tensor_sha256, strict=True)
     }
-    assert loaded.shipped.seed_sha256 == seeds
+    assert loaded.shipped.seed_sha256 == seeds == loaded.seed_sha256
+    assert loaded.is_bundled
+    assert not release.load(release.bundled().parent / "v1.3").is_bundled
     assert loaded.shipped.fitted_share == 0.85
     assert set(loaded.shipped.checks) == {
         "same_recipe",
@@ -167,3 +171,27 @@ def test_a_mapped_writing_of_a_trained_molecule_is_said_to_be_trained() -> None:
     admitted = admission.admit(admission.read("[cH:1]1ccccc1"))
     seen = certificate.acquaintance(admitted.smiles, loaded.training, loaded.measurement)
     assert seen == certificate.RELEASE_TRAINED
+
+
+def test_a_certificate_names_the_bundled_release_and_its_weights() -> None:
+    loaded = release.load(release.bundled())
+    benzene = geometry.start_from_smiles("c1ccccc1")
+    low = lowlevel.LowLevel(
+        energy=-232.0,
+        hessian=random_hessian(benzene.n_atoms, seed=0),
+        polar_tensor=np.random.default_rng(1).normal(size=(3, 3 * benzene.n_atoms)),
+        refinement=response.Refinement(1e-9, 1e-9, 0, 0),
+        sum_rule_violation=1e-7,
+        seconds=1.0,
+    )
+    admitted = admission.admit(admission.read("c1ccccc1"))
+    corrections = loaded.corrections(benzene, low.hessian)
+    record = certificate.build(admitted, benzene, low, corrections, loaded)
+    assert loaded.shipped is not None
+    assert record["network"]["tensor_sha256"] == loaded.shipped.seed_sha256
+    assert record["network"]["release_folder"] == str(release.bundled().resolve())
+    assert record["network"]["bundled"] is True
+    text = certificate.to_markdown(record)
+    assert f"`{release.bundled().resolve()}` (the release inside the package); the seeds'" in text
+    for sha256 in loaded.shipped.seed_sha256.values():
+        assert f"`{sha256}`" in text

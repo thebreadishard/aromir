@@ -72,6 +72,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The certificate names the weights and the release it was made with: `certificate.json`
+  records each seed's tensor SHA-256 by seed name (as `release.json` binds them), the
+  release folder it was read from and whether that is the release inside the package, and
+  `certificate.md` says the same in one line under the band table.
 - No band of a molecule is licensed while the release's `invariance.json` gives the
   molecules of its group — with a linear group (the certificate's linear angle: a nitrile,
   an alkyne) or without — a largest spread above the licence line under a rotation, a

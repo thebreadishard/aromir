@@ -390,6 +390,8 @@ def test_the_certificate_of_release_networks_names_both(
     assert f"towards {level}. {release.made_by(pair)} " in record["statement"]
     assert record["network"]["kind"] == "release"
     assert record["network"]["errors_measured_on"] == SHIPPED["measurement_checkpoints"]
+    assert pair.shipped is not None
+    assert record["network"]["tensor_sha256"] == pair.shipped.seed_sha256
     assert record["molecule"]["seen"] == certificate.RELEASE_TRAINED
     text = certificate.to_markdown(record)
     assert "and the error bar of this certificate's positions. In square brackets" in text

@@ -95,6 +95,11 @@ TEST_SETS: Final = {"a": "unseen molecules", "b": "held-out scaffolds"}
 records keep the hold-outs."""
 
 
+def seed_name(seed: int) -> str:
+    """Return the name a seed's files and records go by: ``seed-0``."""
+    return f"seed-{seed}"
+
+
 def named_test_set(name: str, *, first: bool = False) -> str:
     """Name a hold-out for a reader: "test set (a)", and at first use what it holds.
 
@@ -663,11 +668,13 @@ class Corrections:
 
 @dataclass(frozen=True, eq=False)
 class Release:
-    """A loaded release: its networks, their recipes and file hashes, and its records."""
+    """A loaded release: its networks, their recipes and file hashes, its folder and records."""
 
     networks: tuple[DeltaHessianNetwork, ...]
     recipes: tuple[weights.Recipe, ...]
     tensor_sha256: tuple[str, ...]
+    folder: Path
+    """The folder the release was read from, as an absolute path."""
     evaluation: Evaluation
     training: Training
     invariance: Invariance | None = None
@@ -684,6 +691,19 @@ class Release:
     def network_version(self) -> str:
         """The version every part of the release belongs to."""
         return self.evaluation.network_version
+
+    @property
+    def seed_sha256(self) -> dict[str, str]:
+        """Return each seed's tensor hash by seed name, as ``release.json`` binds them."""
+        return {
+            seed_name(recipe.seed): sha256
+            for recipe, sha256 in zip(self.recipes, self.tensor_sha256, strict=True)
+        }
+
+    @property
+    def is_bundled(self) -> bool:
+        """Tell whether the release is the one inside the package."""
+        return self.folder == bundled().resolve()
 
     @property
     def measured_training(self) -> Training:
@@ -986,7 +1006,7 @@ def _load_seeds(folder: Path) -> list[tuple[Path, DeltaHessianNetwork, weights.R
         except (OSError, ValueError, RuntimeError, SafetensorError) as error:
             # torch reports tensors that do not fit the recipe's network as a RuntimeError
             raise RefusedError([f"{path}: {error}"]) from error
-        if path.name != f"seed-{recipe.seed}.json":
+        if path.name != f"{seed_name(recipe.seed)}.json":
             raise RefusedError([f"{path} holds the recipe of seed {recipe.seed}"])
         loaded.append((path, network, recipe))
     return loaded
@@ -1015,7 +1035,7 @@ def load(folder: Path) -> Release:
     measured = training if pair is None else pair[1]
     loaded = _load_seeds(folder)
     recipes = tuple(recipe for _, _, recipe in loaded)
-    seeds = {f"seed-{recipe.seed}": weights.recorded_sha256(path) for path, _, recipe in loaded}
+    seeds = {seed_name(recipe.seed): weights.recorded_sha256(path) for path, _, recipe in loaded}
     reasons = _reasons_to_refuse(recipes, evaluation, measured, invariance)
     reasons += _pair_reasons(seeds, evaluation, training, pair)
     reasons += _measured_reasons(folder, evaluation)
@@ -1026,7 +1046,8 @@ def load(folder: Path) -> Release:
     return Release(
         networks=tuple(network for _, network, _ in loaded),
         recipes=recipes,
-        tensor_sha256=tuple(weights.recorded_sha256(path) for path, _, _ in loaded),
+        tensor_sha256=tuple(seeds.values()),
+        folder=folder.resolve(),
         evaluation=evaluation,
         training=training,
         invariance=invariance,

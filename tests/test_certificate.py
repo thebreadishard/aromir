@@ -255,6 +255,12 @@ def test_the_record_and_its_text(
     assert record["network"] == {
         "version": "1.3",
         "seeds": [0, 1],
+        "tensor_sha256": {
+            "seed-0": loaded.tensor_sha256[0],
+            "seed-1": loaded.tensor_sha256[1],
+        },
+        "release_folder": str(loaded.folder),
+        "bundled": False,
         "higher_level": loaded.evaluation.higher_level,
         "kind": "measurement",
         "errors_measured_on": None,
@@ -281,6 +287,10 @@ def test_the_record_and_its_text(
     text = certificate.to_markdown(record)
     assert text.startswith("# Certificate: c1ccccc1\n")
     assert "the training set spans 10–30 atoms: inside" in text
+    assert (
+        f"*Network:* release v1.3 read from `{loaded.folder}`; the seeds' tensor files by "
+        f"SHA-256: seed-0 `{loaded.tensor_sha256[0]}`, seed-1 `{loaded.tensor_sha256[1]}`.\n"
+    ) in text
     seeds = loaded.evaluation.first_order_error_per_seed_cm["other"]
     in_brackets = {name: ", ".join(f"{error:.2f}" for error in seeds[name]) for name in seeds}
     assert "| other | 2.78 [1.68–3.76], 156 bands | 3.89 [3.50–4.20], 1225 bands | no |" in text
